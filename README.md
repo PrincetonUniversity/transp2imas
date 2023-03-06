@@ -1,0 +1,29 @@
+# transp2imas
+ 
+The application transp2imas converts a TRANSP NetCDF output file, aided 
+by information and data from the namelist file, to data in an IMAS tree. 
+
+# need to rewrite everything below this line#
+
+#To use it, do the following:
+#1. Copy the files 38530B17TR.DAT and 38530B17.CDF to this directory
+#2. Edit Makefile as needed
+#3. Type "make"
+#4. Type "./transp2imas 38530B17"
+
+#In this case transp2imas uses the namelist 38530B17TR.DAT to convert the 
+#output data in 38530B17.CDF to the files ids_3850030.tree, 
+#ids_3850030.datafile and ids_3850030.characteristics in the directory 
+#$MDSPLUS_TREE_BASE_0 .
+
+#The code has so far been tested and confirmed to work with gcc-4.8.3
+#and version 3.7.0 of the IMAS library (the default "module add imas"
+#versions) on the ITER cluster. However, it only works with the manually
+#built, unoptimized library, without memory debugging(Makefile) or with
+#memory debugging enabled (Makefile.debug). When linked with the module
+#library (Makefile.module), transp2imas seg faults, possibly due to the
+#module library being compiled with too much optimzation.
+
+#To work properly transp2imas must thus currently be built with either
+#Makefile or Makefile.debug, linking with the manually built, without
+#optimzation (-O0, minus oh zero), IMAS 3.7.0 library.
