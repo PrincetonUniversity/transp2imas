@@ -63,10 +63,11 @@ program transp2imas
    integer istype                    ! data item subtype code
    integer idims(8),irank
    
-   character(len=25) :: IMAS_TOK_ID = 'iter'
+   character(len=25) :: IMAS_TOK_ID = ''
    character(len=25) :: zstr = ''
-   character(len=8)  :: IMAS_VERSION='3.36.0'
+   character(len=8)  :: IMAS_VERSION='3'
    integer :: IMAS_RUN, IMAS_SHOT
+   integer :: ibackend = HDF5_BACKEND ! HDF5_BACKEND MDSPLUS_BACKEND ASCII_BACKEND
    integer :: ilen
    character(len=25) :: cshot
 
@@ -3314,7 +3315,12 @@ program transp2imas
    write(*,*) 'Open shot and write in IMAS !'
 
    call getenv('USER',user)
-   call imas_create_env(treename,IMAS_SHOT,IMAS_RUN,refshot,refrun,idsidx, trim(user),IMAS_TOK_ID,IMAS_VERSION) 
+   call getenv('IMAS_VERSION', IMAS_VERSION)
+   call ual_begin_pulse_action(ibackend, imas_shot, imas_run, user, TRIM(imas_tok_id), &
+                                  trim(imas_version), idsidx, ier)
+   call ual_open_pulse(idsidx, OPEN_PULSE, "", ier)
+ 
+   !call imas_create_env(treename,IMAS_SHOT,IMAS_RUN,refshot,refrun,idsidx, trim(user),IMAS_TOK_ID,IMAS_VERSION) 
 !
 !  save ids data
 !
