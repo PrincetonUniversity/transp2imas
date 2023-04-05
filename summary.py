@@ -103,6 +103,7 @@ class Summary:
         self.occur = occur if occur is not None else conv.occur
         self.do_convert()
 
+    # why do we need mds_tree and mds_node?
     def fill_ids_interp_mds(self, times, ids, mds_tree, mds_node):
         try:
             dat, vtimes = self.conv.get_mds_data(mds_tree, mds_node, dim=True)
@@ -147,6 +148,7 @@ class Summary:
         else:
             ids.resize(len(dat), refcheck=False)
             ids = mult*dat
+            # wrong spelling in line below
             print('poistion', var, ids)
 
     #from TRANSP output CDF file
@@ -172,6 +174,7 @@ class Summary:
             print(f'ntime_prof {ntimep} ntime_sc {ntimes} nx {naxis_x} nxb {naxis_xb}')
             print('ntimes', ntimes, times)
 
+        # this is incorrect if you are taking both TIME and TIME3 from the NETCDF file
         sid.ids_properties.homogeneous_time = 1
         sid.time.resize(ntimes)
         #scalar time
@@ -181,6 +184,7 @@ class Summary:
         #ip : Total plasma current (toroidal component).
         #PCURC (TIME)
 
+        # need to check that the current and magnetic field are written consistently with the COCOS definition 
         self.fill_value_nc(sid.global_quantities.ip, 'PCURC', mult=sgn)
         #b0  BZ(TIME) - BZ @R=RMAJOR OUTSIDE PLASMA
         bz = self.nc.get_ncvar('BZ')
@@ -190,6 +194,7 @@ class Summary:
         bzxR = self.nc.get_ncvar('BZXR')
         if bzxR is not None:
             rvalues = bzxR/bz
+            # I do not understand the line below
             r0s = 0.5*(rvalues[0]+rvalues[-1])*1.0e-2
             self.fill_value(sid.global_quantities.r0, r0s, rsz=0)
 
@@ -258,6 +263,7 @@ class Summary:
         # current_non_inductive. Toroidal component.
         # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
         cur_tot = self.nc.get_ncvar('CUR')
+        # I think the integration over surface is incorrect.
         if cur_tot is not None:
             j_nonind = 1.0e4 * np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
             print(cur_tot.shape, grid_area.shape, j_nonind.shape)
@@ -276,6 +282,7 @@ class Summary:
         self.fill_value_nc(sid.global_quantities.q_95, 'Q95')
 
         #Bootstrap current (toroidal component). CURBS(TIME3, X) AMPS/CM2
+        # check surface itnegration
         curbs = self.nc.get_ncvar('CURBS')
         if curbs is not None:
             curbsxa = 1.0e4 * sgn * np.sum(np.multiply(curbs, grid_area), axis=1)
@@ -283,8 +290,13 @@ class Summary:
 
 
         #rho_tor_norm. XB(TIME3, XB). RHOVN
+        # X and XB represent two different radial coordinates.
+        # Need to make sure that the radial coordinate is consistent with the profiles
+        # X is sqrt(norm. toroidal flux) defined in zone center
+        # XB is sqrt(norm. toroidal flux) defined in zone boundary
         xb = self.nc.get_ncvar('XB')
         #self.fill_value(sid.local.magnetic_axis.rho_tor_norm, xb[:,-1]) #TODO
+        # the line below should be removed
         #rho_tor= sqrt(b_flux_tor/(pi*b0)) ~ sqrt(pi*r^2*b0/(pi*b0)) ~ r [m].
 
         #self.fill_value_nc(sid.local.magnetic_axis.rho_tor, rho_tor)
@@ -311,12 +323,14 @@ class Summary:
         #t_i_average
         self.fill_value_nc(sid.local.magnetic_axis.t_i_average, 'TI0')
         #zeff
+        # if only the value on-axis is needed, we can take ZEFFC
         zeff = self.nc.get_ncvar('ZEFFP')
         self.fill_value(sid.local.magnetic_axis.zeff, zeff[:,0])
         #q
         self.fill_value_nc(sid.local.magnetic_axis.q, 'Q0')
 
         #magnetic_shear=rho_tor/q*dq/drho_tor; SHAT(TIME3, X)=(r/q)*(dq/dr)
+        # not sure this is correct
         mag = self.nc.get_ncvar('SHAT')
         if mag is not None:
             magsh = mag.copy()
@@ -351,6 +365,7 @@ class Summary:
         #EC
         #Set of ECRH/ECCD launchers. 6 Max. in MDS+.
         #PECIN1 .. PEECH6,  6 gyrotrons. (TIME3, X) WATTS/CM3
+        # do not harcode the number of gyrotrons. The IDS needs to be allocated for the number of gyrotron used.
         ec_ngyro = 6
         peech, pecin = 0., 0.
         sid.heating_current_drive.ec.resize(ec_ngyro)
@@ -361,6 +376,8 @@ class Summary:
                 powerl = 1.0e6 * np.sum(np.multiply(peechi, gvol), axis=1)
                 self.fill_value(sid.heating_current_drive.ec[i].power_launched, powerl)
 
+            # this is wrong. PECIN is the input power, not the absorbed power.
+            # We need to integrate PEECH over volume to get the total power absorbed.
             pecini = self.nc.get_ncvar('PECIN'+str(i))
             if pecini is not None:
                 pecin += pecini
@@ -374,22 +391,27 @@ class Summary:
 
             #Toroidal angle of ECRH at resonance [rad]
             #PHAIECHn(TIME) DEGREES; Toroidal aiming, GYROTRON n
+            # this is wrong. TRANSP defines angles in the laboratory frame. IDS defines angles in the EC frame.
             self.fill_value_nc(sid.heating_current_drive.ec[i].angle_tor, 'PHAIECH'+str(i), scipy.pi/180.0)
 
             #Poloidal angle of ECRH at resonance [rad]
             #THETECHn(TIME) DEGREES Poloidal aiming, GYROTRON n
+            # this is wrong. TRANSP defines angles in the laboratory frame. IDS defines angles in the EC frame.
             self.fill_value_nc(sid.heating_current_drive.ec[i].angle_tor, 'THETECH'+str(i), scipy.pi/180.0)
 
         # Total EC power, into vacuum vessel [W]. PECIN(TIME), ECRF INPUT POWER
         if np.any(pecin > 0.):
             self.fill_value(sid.heating_current_drive.power_launched_ec, pecin)
         # Total EC power coupled to plasma. PEECH(TIME3,X) WATTS/CM3 ;ECRH ELECTRON HEATING
+        # this is wrong. The power coupled to the plasma is PEECH, PECIN is the total injected power.
+        # PECIN1, 2, ... is the power injected from individual gyrotrons
         if np.any(peech > 0.):
             power_ec =  1.0e6 * np.sum(np.multiply(peech, gvol), axis=1)
             self.fill_value(sid.heating_current_drive.power_ec, power_ec)
 
 
         #IC
+        # do not hardcode the number of IC antennae
         nic_ant = 2
         picha, pichant = 0., 0.
         sid.heating_current_drive.ic.resize(nic_ant)
@@ -400,8 +422,10 @@ class Summary:
                 picha += pichai
                 self.fill_value(sid.heating_current_drive.ic[i].power_launched, pichai)
             #RFPWRABn  WATTS. Power ABSORBED, Antenna #n  (PICF01N01 WATTS/CM3)
+            # this needs to be replaced
             self.fill_value_nc(sid.heating_current_drive.ic[i].power, 'RFPWRAB'+str(i))
             #FREQAn(TIME)
+            # this is wrong, FREQ is the frequency of the antenna, not the current drive
             self.fill_value_nc(sid.heating_current_drive.ic[i].frequency, 'FREQA'+str(i))
 
             pichanti = self.nc.get_ncvar('PICHANT'+str(i))
@@ -437,6 +461,7 @@ class Summary:
         self.conv.putdb_imas(ids, self.occur)
         print('done summary')
 
+# not needed
 #call this only to create separate instance of conversion
 def run_convertor(db, shot, run, occur:int=0, mds_shot:int=None, new_db:bool=False,
       _deb:bool=False, user:str=None, backend:str=None, plot:bool=False,
