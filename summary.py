@@ -263,7 +263,6 @@ class Summary:
         # current_non_inductive. Toroidal component.
         # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
         cur_tot = self.nc.get_ncvar('CUR')
-        # I think the integration over surface is incorrect.
         if cur_tot is not None:
             j_nonind = 1.0e4 * np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
             print(cur_tot.shape, grid_area.shape, j_nonind.shape)
@@ -370,6 +369,7 @@ class Summary:
         peech, pecin = 0., 0.
         sid.heating_current_drive.ec.resize(ec_ngyro)
         for i in range(ec_ngyro):
+            # the power launched is PECINx
             peechi = self.nc.get_ncvar('PEECH'+str(i))
             if peechi is not None:
                 peech += peechi
@@ -422,10 +422,9 @@ class Summary:
                 picha += pichai
                 self.fill_value(sid.heating_current_drive.ic[i].power_launched, pichai)
             #RFPWRABn  WATTS. Power ABSORBED, Antenna #n  (PICF01N01 WATTS/CM3)
-            # this needs to be replaced
+            #  I will doublecheck this 
             self.fill_value_nc(sid.heating_current_drive.ic[i].power, 'RFPWRAB'+str(i))
             #FREQAn(TIME)
-            # this is wrong, FREQ is the frequency of the antenna, not the current drive
             self.fill_value_nc(sid.heating_current_drive.ic[i].frequency, 'FREQA'+str(i))
 
             pichanti = self.nc.get_ncvar('PICHANT'+str(i))
