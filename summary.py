@@ -90,28 +90,13 @@ class CdfReader:
 
 
 class Summary:
-    def __init__(self, conv:Convertor, occur:int=None, plot:bool=False,
-      ncfile:str=None, iter_:bool=False, _deb:bool=False):
+    def __init__(self, conv:Convertor, ncfile:str=None):
         self.conv = conv
         self.ncfile = ncfile
         self.nc = None
         self.src = None
-        self.nresize = 0
-        self.iter_ = iter_
-        self._deb = _deb
-        self._plot = plot
-        self.occur = occur if occur is not None else conv.occur
+        self._deb = conv._deb
         self.do_convert()
-
-    # why do we need mds_tree and mds_node?
-    def fill_ids_interp_mds(self, times, ids, mds_tree, mds_node):
-        try:
-            dat, vtimes = self.conv.get_mds_data(mds_tree, mds_node, dim=True)
-        except:
-            print(f'{mds_node} not found in {self.mds_shot}.{mds_tree}')
-            return
-        dat = np.interp(times, vtimes, dat)
-        self.fill_value(ids, dat, len(times))
 
     def set_resize_len(self, rsz):
         self.nresize = rsz
@@ -123,7 +108,6 @@ class Summary:
                 print(name, ' is None')
             return
 
-        #nresize = self.nresize if rsz==-1 else rsz
         nresize = len(dat) if rsz==-1 else rsz
 
         if nresize > 0:
@@ -148,23 +132,24 @@ class Summary:
         else:
             ids.resize(len(dat), refcheck=False)
             ids = mult*dat
-            # wrong spelling in line below
-            print('poistion', var, ids)
+
 
     #from TRANSP output CDF file
     def convert_summary(self):
-        occur = 0
         sid = self.conv.outdb.summary
+        iter_ = conv.iter_
         sgn = -1 if iter_ else 1
         self.nc = CdfReader(self.ncfile)
         src = 'Calculated'
 
-        naxis_x = self.nc.get_ncvar('X').shape[1]
-        naxis_xb = self.nc.get_ncvar('XB').shape[1]
+        coord_x = self.nc.get_ncvar('X')
+        coord_xb = self.nc.get_ncvar('XB')
+        naxis_x = coord_x.shape[1]
+        naxis_xb = coord_xb.shape[1]
 
         #scalar time
-        times = self.nc.get_ncvar('TIME')
-        ntimes = len(times)
+        timesc = self.nc.get_ncvar('TIME')
+        ntimes = len(timesc)
         self.set_resize_len(ntimes)
 
         #profile time
@@ -172,19 +157,19 @@ class Summary:
         ntimep = len(timep)
         if self._deb:
             print(f'ntime_prof {ntimep} ntime_sc {ntimes} nx {naxis_x} nxb {naxis_xb}')
-            print('ntimes', ntimes, times)
+            print('ntimes', ntimes, timesc)
 
-        # this is incorrect if you are taking both TIME and TIME3 from the NETCDF file
-        sid.ids_properties.homogeneous_time = 1
+        # both TIME and TIME3 from the NETCDF file
+        sid.ids_properties.homogeneous_time = 0
         sid.time.resize(ntimes)
         #scalar time
-        sid.time = times
+        sid.time = timesc
         sid = self.conv.fill_properties(sid)
+
         #global_quantities from CDF file
         #ip : Total plasma current (toroidal component).
         #PCURC (TIME)
-
-        # need to check that the current and magnetic field are written consistently with the COCOS definition 
+        # TODO current and magnetic field consistent  with COCOS definition
         self.fill_value_nc(sid.global_quantities.ip, 'PCURC', mult=sgn)
         #b0  BZ(TIME) - BZ @R=RMAJOR OUTSIDE PLASMA
         bz = self.nc.get_ncvar('BZ')
@@ -213,32 +198,62 @@ class Summary:
         btor = sid.global_quantities.beta_tor.value
         b0 = sid.global_quantities.b0.value
         ip = sid.global_quantities.ip.value
-        area = self.nc.get_ncvar('PAREA')*1.e-4 # PAREA(TIME) - plasma CS area[cm^2]
+        # PAREA(TIME) - plasma CS area[cm^2]
+        area = self.nc.get_ncvar('PAREA')*1.e-4
         if area is not None:
             a = np.sqrt(area/scipy.pi)
             print(type )
             data = 1.0e8*btor*a*b0/ip
             self.fill_value(sid.global_quantities.beta_tor_norm, data)
 
+        #beta_tor_thermal_norm
+
         #energy_total FLT_1D; from UTOTL(TIME3,X) JLES/CM3
-        utot = 1.0e6*self.nc.get_ncvar('UTOTL')
+        utot = self.nc.get_ncvar('UTOTL')
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
-        gvol = 1.0e-6*self.nc.get_ncvar('DVOL')
+        gvol = self.nc.get_ncvar('DVOL')
 
         if utot is not None and gvol is not None:
-            etot = np.sum(np.multiply(utot, gvol), axis=1)
+            etot = 3.0/2.0 * np.sum(np.multiply(utot, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_total, etot)
 
+        #PMHD(TIME3, X). Pressure from MHD code
+        pmhd = self.nc.get_ncvar('PMHD')
+        if pmhd is not None and gvol is not None:
+            emhd = 3.0/2.0 * np.sum(np.multiply(pmhd, gvol), axis=1)
+            self.fill_value(sid.global_quantities.energy_mhd, emhd)
+
         #volume PVOL(TIME) CM^3 : PLASMA VOLUME
-        pvol = 1.0e-6 * self.nc.get_ncvar('PVOL')
-        if pvol is not None:
-            self.fill_value(sid.global_quantities.volume, pvol)
+        self.fill_value(sid.global_quantities.volume, 'PVOL', mult=1.0e-6)
 
         #energy_thermal UTHRM(TIME3, X) JLES/CM3 THERMAL ENERGY DENSITY
-        utherm = 1.0e6*self.nc.get_ncvar('UTHRM')
+        utherm = self.nc.get_ncvar('UTHRM')
         if utherm is not None:
-            etherm = np.sum(np.multiply(utherm, gvol), axis=1)
+            etherm = 3.0/2.0 * np.sum(np.multiply(utherm, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_thermal, etherm)
+
+        #energy_b_field_pol
+        #BPOL(TIME3, XB) Tesla
+        bpol = self.nc.get_ncvar('BPOL')
+        if bpol is not None:
+            #TODO interpolate to X
+            bpol = np.interp(coord_x, coord_xb, bpol)
+            bpol2 = np.multiply(bpol, bpol)
+            ebpol = 1.0e6 * 1.0/(2.0*scipy.mu_0) * np.sum(np.multiply(bpol2, gvol), axis=1)
+            self.fill_value(sid.global_quantities.energy_b_field_pol, ebpol)
+
+        # UFASTPP(TIME3, X) JLES/CM3 FAST ION PERP ENERGY DENSITY
+        efastpp = self.nc.get_ncvar('UFASTPP')
+        if bpol is not None:
+            efastpp = 3.0/2.0 * np.sum(np.multiply(efastpp, gvol), axis=1)
+            self.fill_value(sid.global_quantities.energy_fast_perpendicular, efastpp)
+
+        # UFASTPA(IME3, X) JLES/CM3 FAST ION PLL ENERGY DENSITY
+        efastpl = self.nc.get_ncvar('UFASTPA')
+        if bpol is not None:
+            efastpl = 3.0/2.0 * np.sum(np.multiply(efastpl, gvol), axis=1)
+            self.fill_value(sid.global_quantities.energy_fast_parallel, efastpl)
+
 
         #Plasma diamagnetic energy content = 3/2*integral over the plasma volume of
         #  the total perpendicular pressure [J].
@@ -248,23 +263,24 @@ class Summary:
             edia = 3.0/2.0 * np.sum(np.multiply(pplas, gvol), axis=1)*1.0e-6 #cm3 to m3
             self.fill_value(sid.global_quantities.energy_diamagnetic, edia)
 
+
+        #denergy_diamagnetic_dt #TODO
+
+
         #current_ohm
         # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
-        grid_area = 1.0e-4 * self.nc.get_ncvar('DAREA')
+        grid_area = self.nc.get_ncvar('DAREA')
         #CUROH(TIME3, X)AMPS/CM2
-        j_ohmic = 1.0e4 * self.nc.get_ncvar('CUROH')
+        j_ohmic = self.nc.get_ncvar('CUROH')
         if grid_area is not None and j_ohmic is not None:
             current_ohm = np.sum(np.multiply(j_ohmic, grid_area), axis=1)
             self.fill_value(sid.global_quantities.current_ohm, current_ohm, mult=sgn)
-
-        #PLCURTOT(TIME3, XB) ;AMPS; TOTAL POLOIDAL CUR TO WALL
-        #POLOIDAL CUR : PLCURPRP, PLCURPLL, PLCURTOT
 
         # current_non_inductive. Toroidal component.
         # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
         cur_tot = self.nc.get_ncvar('CUR')
         if cur_tot is not None:
-            j_nonind = 1.0e4 * np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
+            j_nonind =  np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
             print(cur_tot.shape, grid_area.shape, j_nonind.shape)
             self.fill_value(sid.global_quantities.current_non_inductive, j_nonind, mult=sgn)
 
@@ -284,21 +300,80 @@ class Summary:
         # check surface itnegration
         curbs = self.nc.get_ncvar('CURBS')
         if curbs is not None:
-            curbsxa = 1.0e4 * sgn * np.sum(np.multiply(curbs, grid_area), axis=1)
+            curbsxa = sgn * np.sum(np.multiply(curbs, grid_area), axis=1)
             self.fill_value(sid.global_quantities.current_bootstrap, curbsxa)
 
+        #LHMODE(TIME)
+        self.fill_value_nc(sid.global_quantities.h_mode, 'LHMODE')
 
-        #rho_tor_norm. XB(TIME3, XB). RHOVN
+        #fusion_gain
+
+
+        #H98Y2(TIME)
+        self.fill_value_nc(sid.global_quantities.h_98, 'H98Y2')
+
+        # TAUES(TIME3, XB) PLASMA ENERGY CONFINEMENT
+        taues = self.nc.get_ncvar('TAUES')
+        if taues is not None:
+            taues = np.interpolate(coord_x, coord_xb, taues)
+            self.fill_value(sid.global_quantities.tau_energy, taues)
+
+        #TAUE98Y2(TIME) TauE98y,2 confinement scaling
+        self.fill_value_nc(sid.global_quantities.tau_energy_98, 'TAUE98Y2')
+
+        #ETA_USE(TIME3, X)OHM*CM. RESISTIVITY USED OR INFERRED
+        resist = self.nc.get_ncvar('ETA_USE')
+        if resist is not None:
+            resist = np.sum(np.multiply(resist, coord_x), axis=1) #TODO
+            self.fill_value(sid.global_quantities.resistance, resist)
+
+        #POH(TIME3, X) WATTS/CM3, OHMIC HEATING POWER
+        poh = self.nc.get_ncvar('POH')
+        if poh is not None:
+            poh = np.sum(np.multiply(poh, gvol), axis=1)
+        self.fill_value(sid.global_quantities.power_ohm, poh)
+
+        #PRAD(TIME3, X) WATTS/CM3 NET RADIATED POWER USED
+        prad = self.nc.get_ncvar('PRAD')
+        if prad is not None:
+            prad = np.sum(np.multiply(prad, gvol), axis=1)
+        self.fill_value(sid.global_quantities.power_radiated, prad)
+
+        #PRAD_LI(TIME3, X) WATTS/CM3 , LINE RADIATION
+        prad_li = self.nc.get_ncvar('PRAD_LI')
+        if prad_li is not None:
+            prad_li = np.sum(np.multiply(prad_li, gvol), axis=1)
+        self.fill_value(sid.global_quantities.power_line, prad_li)
+
+        #PRAD_BR(TIME3, X) WATTS/CM3  BREMSSTRAHLUNG RADIATION
+        prad_br = self.nc.get_ncvar('PRAD_BR')
+        if prad_br is not None:
+            prad_br = np.sum(np.multiply(prad_br, gvol), axis=1)
+        self.fill_value(sid.global_quantities.power_bremsstrahlung, prad_br)
+
+        #PRAD_CY(TIME3, X) WATTS/CM3 CYCLOTRON RADIATION
+        prad_cy = self.nc.get_ncvar('PRAD_CY')
+        if prad_cy is not None:
+            prad_cy = np.sum(np.multiply(prad_cy, gvol), axis=1)
+        self.fill_value(sid.global_quantities.power_synchrotron, prad_cy)
+
+        #power_loss through separatrix [W]
+
+        #fusion_fluence
+
+
+        #si_external_average
+
+
         # X and XB represent two different radial coordinates.
         # Need to make sure that the radial coordinate is consistent with the profiles
         # X is sqrt(norm. toroidal flux) defined in zone center
         # XB is sqrt(norm. toroidal flux) defined in zone boundary
-        xb = self.nc.get_ncvar('XB')
-        #self.fill_value(sid.local.magnetic_axis.rho_tor_norm, xb[:,-1]) #TODO
-        # the line below should be removed
-        #rho_tor= sqrt(b_flux_tor/(pi*b0)) ~ sqrt(pi*r^2*b0/(pi*b0)) ~ r [m].
+        #rho_tor_norm. XB(TIME3, XB).
 
-        #self.fill_value_nc(sid.local.magnetic_axis.rho_tor, rho_tor)
+        xcoord = np.multiply(coord_x, coord_x) #?
+        # only one coordinate at one time ?
+        #self.fill_value(sid.local.magnetic_axis.rho_tor_norm, xcoord[:,-1]) #TODO
 
 
         #magnetic axis position
@@ -316,10 +391,9 @@ class Summary:
         #n_i_total
         n_i = self.nc.get_ncvar('NI')
         if n_i is not None:
-            n_i_over_ne = 1.0e6 * np.divide(n_i, n_e)
-            self.fill_value(sid.local.magnetic_axis.n_i_total, n_i_over_ne[:,0])
+            self.fill_value(sid.local.magnetic_axis.n_i_total, n_i[:,0], mult=1.0e6)
 
-        #t_i_average
+        #t_i_average  over ion species TODO
         self.fill_value_nc(sid.local.magnetic_axis.t_i_average, 'TI0')
         #zeff
         # if only the value on-axis is needed, we can take ZEFFC
@@ -355,64 +429,65 @@ class Summary:
         # SERUN(TIME3, X) N/CM3/SEC . RUNAWAY ELEC SOURCE RATE
         serun = self.nc.get_ncvar('SERUN')
         if serun is not None:
-            run_ptcls = 1.0e6 * np.sum(np.multiply(serun, gvol), axis=1)
+            run_ptcls = np.sum(np.multiply(serun, gvol), axis=1)
             self.fill_value(sid.runaways.particles, run_ptcls)
 
         #runaways.current. Parallel current driven by the runaway electrons [A]
 
 
         #EC
-        #Set of ECRH/ECCD launchers. 6 Max. in MDS+.
-        #PECIN1 .. PEECH6,  6 gyrotrons. (TIME3, X) WATTS/CM3
-        # do not harcode the number of gyrotrons. The IDS needs to be allocated for the number of gyrotron used.
-        ec_ngyro = 6
+        #Set of ECRH/ECCD launchers. 6 Max in MDS+.
+        #PECIN1 .. PEECHn for n gyrotrons. (TIME3,X) WATTS/CM3
+        ec_ngyro = 6 #TODO get from size or namelist
         peech, pecin = 0., 0.
         sid.heating_current_drive.ec.resize(ec_ngyro)
         for i in range(ec_ngyro):
-            # the power launched is PECINx
+            # the power coupled to the plasma. Sum over volume
             peechi = self.nc.get_ncvar('PEECH'+str(i))
             if peechi is not None:
                 peech += peechi
-                powerl = 1.0e6 * np.sum(np.multiply(peechi, gvol), axis=1)
-                self.fill_value(sid.heating_current_drive.ec[i].power_launched, powerl)
+                power = np.sum(np.multiply(peechi, gvol), axis=1)
+                self.fill_value(sid.heating_current_drive.ec[i].power, power)
 
-            # this is wrong. PECIN is the input power, not the absorbed power.
-            # We need to integrate PEECH over volume to get the total power absorbed.
+            # launched or injected is PECINn
             pecini = self.nc.get_ncvar('PECIN'+str(i))
             if pecini is not None:
                 pecin += pecini
-                self.fill_value_nc(sid.heating_current_drive.ec[i].power, pecini)
+                self.fill_value_nc(sid.heating_current_drive.ec[i].power_launched, pecini)
 
             #ECCURn(TIME3, X) AMPS/CM2  ;ECRH CURRENT (GYROTRON n)
             eccur = self.nc.get_ncvar('ECCUR'+str(i))
             if eccur is not None:
-                current = 1.0e4 * np.sum(np.multiply(eccur, grid_area), axis=1)
+                current = np.sum(np.multiply(eccur, grid_area), axis=1)
                 self.fill_value(sid.heating_current_drive.ec[i].current, current)
 
             #Toroidal angle of ECRH at resonance [rad]
             #PHAIECHn(TIME) DEGREES; Toroidal aiming, GYROTRON n
-            # this is wrong. TRANSP defines angles in the laboratory frame. IDS defines angles in the EC frame.
-            self.fill_value_nc(sid.heating_current_drive.ec[i].angle_tor, 'PHAIECH'+str(i), scipy.pi/180.0)
+            #TRANSP defines angles in the laboratory frame. IDS defines angles in the EC frame.
+            angle = self.nc.get_ncvar('PHAIECH'+str(i))
+            if angle is not None:
+                angle = (angle-180.0)*scipy.pi/180.
+                self.fill_value(sid.heating_current_drive.ec[i].angle_tor, angle)
 
             #Poloidal angle of ECRH at resonance [rad]
             #THETECHn(TIME) DEGREES Poloidal aiming, GYROTRON n
-            # this is wrong. TRANSP defines angles in the laboratory frame. IDS defines angles in the EC frame.
-            self.fill_value_nc(sid.heating_current_drive.ec[i].angle_tor, 'THETECH'+str(i), scipy.pi/180.0)
+            angle = self.nc.get_ncvar('THETECH'+str(i))
+            if angle is not None:
+                angle = (angle-90.0)*scipy.pi/180.
+                self.fill_value(sid.heating_current_drive.ec[i].angle_pol, angle)
 
         # Total EC power, into vacuum vessel [W]. PECIN(TIME), ECRF INPUT POWER
         if np.any(pecin > 0.):
             self.fill_value(sid.heating_current_drive.power_launched_ec, pecin)
         # Total EC power coupled to plasma. PEECH(TIME3,X) WATTS/CM3 ;ECRH ELECTRON HEATING
-        # this is wrong. The power coupled to the plasma is PEECH, PECIN is the total injected power.
-        # PECIN1, 2, ... is the power injected from individual gyrotrons
         if np.any(peech > 0.):
-            power_ec =  1.0e6 * np.sum(np.multiply(peech, gvol), axis=1)
+            power_ec =  np.sum(np.multiply(peech, gvol), axis=1)
             self.fill_value(sid.heating_current_drive.power_ec, power_ec)
 
 
         #IC
         # do not hardcode the number of IC antennae
-        nic_ant = 2
+        nic_ant = 2  #TODO get PICHA.. and find size
         picha, pichant = 0., 0.
         sid.heating_current_drive.ic.resize(nic_ant)
         for i in range(nic_ant):
@@ -422,7 +497,7 @@ class Summary:
                 picha += pichai
                 self.fill_value(sid.heating_current_drive.ic[i].power_launched, pichai)
             #RFPWRABn  WATTS. Power ABSORBED, Antenna #n  (PICF01N01 WATTS/CM3)
-            #  I will doublecheck this 
+            #  I will doublecheck this
             self.fill_value_nc(sid.heating_current_drive.ic[i].power, 'RFPWRAB'+str(i))
             #FREQAn(TIME)
             self.fill_value_nc(sid.heating_current_drive.ic[i].frequency, 'FREQA'+str(i))
@@ -441,7 +516,7 @@ class Summary:
             self.fill_value(sid.heating_current_drive.power_launched_ic, picha)
         # PICHANT (TIME3,X)  WATTS/CM3 . ICRF HEATING by ANTENNA
         if np.any(pichant > 0.):
-            pichant = 1.0e6 * np.sum(np.multiply(pichant, gvol), axis=1)
+            pichant = np.sum(np.multiply(pichant, gvol), axis=1)
             self.fill_value(sid.heating_current_drive.power_ic, pichant)
 
 
@@ -457,37 +532,23 @@ class Summary:
         print('\nconvert summary')
         ids = self.convert_summary()
         #save IDS
-        self.conv.putdb_imas(ids, self.occur)
+        self.conv.putdb_imas(ids)
         print('done summary')
 
-# not needed
-#call this only to create separate instance of conversion
-def run_convertor(db, shot, run, occur:int=0, mds_shot:int=None, new_db:bool=False,
-      _deb:bool=False, user:str=None, backend:str=None, plot:bool=False,
-       ncfile:str=None, iter_:bool=False):
-    #create convertor
-    conv = Convertor(db, shot, run, occur, new_db, user, backend)
-    Summary(conv, ncfile=ncfile, iter_=iter_, _deb=_deb)
-    # close datafile
-    conv.close_imas_database()
 
 if __name__ == '__main__':
     occur = 0
-    if len(sys.argv) > 1:
-        occur = int(sys.argv[1])
-        print('summary occurrence', occur)
     _deb = True
     new_db = True
     plot = True
-    mds_shot =  None #141711 #205430 # also 142000, 141711
-    iter_ = False #ITER
-    #mds_run = 2502 #Y02
+
     run = 0 #2302 #W02 #this is occur
-    shot = 163303 #200001 #
+    shot = 163303 #200001
     db = 'D3D' #NSTX-U
-    user = os.getenv('USER') # or 'public'
-    dbpath = '/public/imasdb/'
+    user = os.getenv('USER') # or '~/public/imasdb'
     ncfile = '163303W02.CDF'
-    run_convertor(db, shot, run, occur, mds_shot, new_db, _deb=_deb, plot=plot, \
-      ncfile=ncfile, iter_=iter_)
+    backend = imas.imasdef.HDF5_BACKEND
+    conv = Convertor(db, shot, run, occur, new_db, user, backend, _deb=_deb, plot=plot)
+    Summary(conv, ncfile=ncfile)
+    conv.close_imas_database()
 

@@ -7,24 +7,25 @@ import numpy as np
 import imas
 
 
-
 class Convertor:
     def __init__(self, db, shot, run, occur:int=0, new_db:bool=False,
-      _deb:bool=False, user:str=None, backend:str=None):
+      user:str=None, backend:str=None, _deb:bool=False, plot:bool=False):
         self.imas_dbname = db
         self.shot = shot
         self.run = run
         self.occur = occur
         self._deb = _deb
+        self.plot = plot
         self.create_new = new_db
         self.user = user
         self.backend = backend
         self.outdb = None
+        self.iter_ = True if db[:4].upper()=='ITER' else False
         self.init_imas_database()
         self.get_imas_database()
 
     def fill_properties(self, ids):
-        ids.ids_properties.comment = 'TRANSP to IMAS'
+        ids.ids_properties.comment = 'TRANSP output to IMAS IDS'
         ids.ids_properties.creation_date = str(datetime.now())
         ids.code.name = 'transp2imas'
         ids.code.repository = 'https://github.com/PrincetonUniversity/transp2imas'
@@ -37,7 +38,7 @@ class Convertor:
             print(' create_new:', self.create_new, 'user:', self.user)
             print(' imas_db:', self.imas_dbname, 'shot:', self.shot)
 
-    #for MDS+ the directory needs to exist
+    #for MDS+ backend the directory needs to exist
     def create_dir(self, public_db:bool=True):
         if self.backend != imas.imasdef.MDSPLUS_BACKEND:
             return
@@ -46,8 +47,6 @@ class Convertor:
         if self.imas_dbname[0] == '~':
             n = 2 if self.imas_dbname[1] == '/' else 1
             dbpath = hom + self.imas_dbname[n:]
-        elif self.imas_dbname[0] != '/':
-            dbpath = hom + '/public/imasdb/' + self.imas_dbname
         else:
             dbpath = self.imas_dbname
 
@@ -122,7 +121,6 @@ if __name__ == '__main__':
     shot = 163303 #200001 #141711 #205430 # also 142000, 141711
     db = 'D3D' #NSTX-U
     user = os.getenv('USER') # or 'public'
-    dbpath = '/public/imasdb/'
     ncfile = '163303W02.CDF'
 
     #create convertor
