@@ -112,7 +112,7 @@ class Summary:
 
         if nresize > 0:
             ids.value.resize(nresize, refcheck=False)
-        ids.value = mult*dat
+        ids.value = np.multiply(mult, dat)
         #if self.src:
         #    ids.source = self.src
 
@@ -224,7 +224,7 @@ class Summary:
             self.fill_value(sid.global_quantities.energy_mhd, emhd)
 
         #volume PVOL(TIME) CM^3 : PLASMA VOLUME
-        self.fill_value(sid.global_quantities.volume, 'PVOL', mult=1.0e-6)
+        self.fill_value_nc(sid.global_quantities.volume, 'PVOL', mult=1.0e-6)
 
         #energy_thermal UTHRM(TIME3, X) JLES/CM3 THERMAL ENERGY DENSITY
         utherm = self.nc.get_ncvar('UTHRM')
@@ -237,9 +237,10 @@ class Summary:
         bpol = self.nc.get_ncvar('BPOL')
         if bpol is not None:
             #TODO interpolate to X
-            bpol = np.interp(coord_x, coord_xb, bpol)
+            for ib, bp in enumerate(bpol):
+                bpol[ib] = np.interp(coord_x[0], coord_xb[0], bp)
             bpol2 = np.multiply(bpol, bpol)
-            ebpol = 1.0e6 * 1.0/(2.0*scipy.mu_0) * np.sum(np.multiply(bpol2, gvol), axis=1)
+            ebpol = 1.0e6 * 1.0/(2.0*scipy.constants.mu_0) * np.sum(np.multiply(bpol2, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_b_field_pol, ebpol)
 
         # UFASTPP(TIME3, X) JLES/CM3 FAST ION PERP ENERGY DENSITY
@@ -271,7 +272,7 @@ class Summary:
         # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
         grid_area = self.nc.get_ncvar('DAREA')
         #CUROH(TIME3, X)AMPS/CM2
-        j_ohmic = self.nc.get_ncvar('CUROH')
+        j_ohmic = 1.0e4 * self.nc.get_ncvar('CUROH')
         if grid_area is not None and j_ohmic is not None:
             current_ohm = np.sum(np.multiply(j_ohmic, grid_area), axis=1)
             self.fill_value(sid.global_quantities.current_ohm, current_ohm, mult=sgn)
@@ -315,7 +316,8 @@ class Summary:
         # TAUES(TIME3, XB) PLASMA ENERGY CONFINEMENT
         taues = self.nc.get_ncvar('TAUES')
         if taues is not None:
-            taues = np.interpolate(coord_x, coord_xb, taues)
+            for it,ta in enumerate(taues) :
+                taues[it] = np.interp(coord_x[0], coord_xb[0], ta)
             self.fill_value(sid.global_quantities.tau_energy, taues)
 
         #TAUE98Y2(TIME) TauE98y,2 confinement scaling
@@ -442,21 +444,21 @@ class Summary:
         peech, pecin = 0., 0.
         sid.heating_current_drive.ec.resize(ec_ngyro)
         for i in range(ec_ngyro):
-            # the power coupled to the plasma. Sum over volume
-            peechi = self.nc.get_ncvar('PEECH'+str(i))
+            # the power launched is PECINx
+            peechi = self.nc.get_ncvar('PEECH'+str(i+1))
             if peechi is not None:
                 peech += peechi
                 power = np.sum(np.multiply(peechi, gvol), axis=1)
                 self.fill_value(sid.heating_current_drive.ec[i].power, power)
 
             # launched or injected is PECINn
-            pecini = self.nc.get_ncvar('PECIN'+str(i))
+            pecini = self.nc.get_ncvar('PECIN'+str(i+1))
             if pecini is not None:
                 pecin += pecini
-                self.fill_value_nc(sid.heating_current_drive.ec[i].power_launched, pecini)
+                self.fill_value(sid.heating_current_drive.ec[i].power_launched, pecini)
 
             #ECCURn(TIME3, X) AMPS/CM2  ;ECRH CURRENT (GYROTRON n)
-            eccur = self.nc.get_ncvar('ECCUR'+str(i))
+            eccur = self.nc.get_ncvar('ECCUR'+str(i+1))
             if eccur is not None:
                 current = np.sum(np.multiply(eccur, grid_area), axis=1)
                 self.fill_value(sid.heating_current_drive.ec[i].current, current)
@@ -464,14 +466,14 @@ class Summary:
             #Toroidal angle of ECRH at resonance [rad]
             #PHAIECHn(TIME) DEGREES; Toroidal aiming, GYROTRON n
             #TRANSP defines angles in the laboratory frame. IDS defines angles in the EC frame.
-            angle = self.nc.get_ncvar('PHAIECH'+str(i))
+            angle = self.nc.get_ncvar('PHAIECH'+str(i+1))
             if angle is not None:
                 angle = (angle-180.0)*scipy.pi/180.
                 self.fill_value(sid.heating_current_drive.ec[i].angle_tor, angle)
 
             #Poloidal angle of ECRH at resonance [rad]
             #THETECHn(TIME) DEGREES Poloidal aiming, GYROTRON n
-            angle = self.nc.get_ncvar('THETECH'+str(i))
+            angle = self.nc.get_ncvar('THETECH'+str(i+1))
             if angle is not None:
                 angle = (angle-90.0)*scipy.pi/180.
                 self.fill_value(sid.heating_current_drive.ec[i].angle_pol, angle)
@@ -492,17 +494,17 @@ class Summary:
         sid.heating_current_drive.ic.resize(nic_ant)
         for i in range(nic_ant):
             #PICHAn(TIME)
-            pichai = self.nc.get_ncvar('PICHA'+str(i))
+            pichai = self.nc.get_ncvar('PICHA'+str(i+1))
             if pichai is not None:
                 picha += pichai
                 self.fill_value(sid.heating_current_drive.ic[i].power_launched, pichai)
             #RFPWRABn  WATTS. Power ABSORBED, Antenna #n  (PICF01N01 WATTS/CM3)
             #  I will doublecheck this
-            self.fill_value_nc(sid.heating_current_drive.ic[i].power, 'RFPWRAB'+str(i))
+            self.fill_value_nc(sid.heating_current_drive.ic[i].power, 'RFPWRAB'+str(i+1))
             #FREQAn(TIME)
-            self.fill_value_nc(sid.heating_current_drive.ic[i].frequency, 'FREQA'+str(i))
+            self.fill_value_nc(sid.heating_current_drive.ic[i].frequency, 'FREQA'+str(i+1))
 
-            pichanti = self.nc.get_ncvar('PICHANT'+str(i))
+            pichanti = self.nc.get_ncvar('PICHANT'+str(i+1))
             if pichanti is not None:
                 pichant += pichanti
 
@@ -543,10 +545,10 @@ if __name__ == '__main__':
     plot = True
 
     run = 0 #2302 #W02 #this is occur
-    shot = 163303 #200001
+    shot = 147634 #200001 #
     db = 'D3D' #NSTX-U
-    user = os.getenv('USER') # or '~/public/imasdb'
-    ncfile = '163303W02.CDF'
+    user = os.getcwd() # os.getenv('USER') # or '~/public/imasdb'
+    ncfile = '147634T16.CDF'
     backend = imas.imasdef.HDF5_BACKEND
     conv = Convertor(db, shot, run, occur, new_db, user, backend, _deb=_deb, plot=plot)
     Summary(conv, ncfile=ncfile)
