@@ -112,7 +112,7 @@ class Summary:
 
         if nresize > 0:
             ids.value.resize(nresize, refcheck=False)
-        ids.value = np.multiply(mult, dat)
+        ids.value = mult, dat
         #if self.src:
         #    ids.source = self.src
 
@@ -272,7 +272,7 @@ class Summary:
         # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
         grid_area = self.nc.get_ncvar('DAREA')
         #CUROH(TIME3, X)AMPS/CM2
-        j_ohmic = 1.0e4 * self.nc.get_ncvar('CUROH')
+        j_ohmic = self.nc.get_ncvar('CUROH')
         if grid_area is not None and j_ohmic is not None:
             current_ohm = np.sum(np.multiply(j_ohmic, grid_area), axis=1)
             self.fill_value(sid.global_quantities.current_ohm, current_ohm, mult=sgn)
