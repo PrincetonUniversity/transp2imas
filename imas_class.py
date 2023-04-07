@@ -82,18 +82,18 @@ class Convertor:
             self.create_new = True
         if not self.outdb:
             raise Exception('outdb is not valid, call init_database first')
-
         if self.create_new:
             status, idx = self.outdb.create_env_backend(self.user,self.imas_dbname, \
                                                         os.environ['IMAS_VERSION'], \
-                                                        self.backend) 
+                                                        self.backend)
+            if status != 0:
+                raise Exception('Error creating database')
         else:
             status, idx = self.outdb.open_env_backend(self.user,self.imas_dbname, \
                                                       os.environ['IMAS_VERSION'], \
                                                       self.backend) 
-            
-        if status != 0:
-                raise Exception('Error creating/openning the database')
+            if status != 0:
+                raise Exception('Error openning database')
 
 
     def putdb_imas(self, ids, occur:int=0):

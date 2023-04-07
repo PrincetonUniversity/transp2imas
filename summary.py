@@ -2,6 +2,7 @@ import os
 import sys
 import numpy as np
 import scipy
+import re
 
 import imas
 from imas_class import Convertor
@@ -14,6 +15,7 @@ from netCDF4 import Dataset
 class CdfReader:
     def __init__(self, ncfile:str=None):
         self.ds = None
+        self.vars_ = []
         self.set_ncfile(ncfile)
         self.open_ncfile()
 
@@ -23,7 +25,8 @@ class CdfReader:
 
     def open_ncfile(self):
         self.ds = Dataset(self.ncfile,'r')
-
+        self.vars_.clear()
+        self.expand_vars(self.ds)
 
     def print_sample(self):
         for k,v in self.ds.dimensions.items():
@@ -37,13 +40,33 @@ class CdfReader:
         print('\n', self.ds.variables['TIME'].dimensions)
 
         print('DIMENSIONS')
-        for dim in self.ds.dimensionss():
+        for dim in self.ds.dimensions:
             print(dim)
+
+    def expand_vars(self, gp):
+        for key, _ in gp.variables.items():
+            self.vars_.append(key)
+        for _, sub in gp.groups.items():
+            expand_vars(self.vars_, sub)
+
+    def get_nvar_names(self, name, deb:bool=False):
+        pattern = r'\b'+name+r'\d{1,2}'
+        matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.search(pattern, s)]
+        if deb:
+            print(matches)
+        return len(matches)
 
     def get_ncvar(self, var:str):
         try:
             return np.array(self.ds.variables[var][:])
         except:
+            return None
+
+    def get_ncattr(name):
+        try:
+            return self.ncfile.getncattr(name)
+        except:
+            print(f'{name} not found in {self.ncfile}')
             return None
 
     def get_ncvarx(self, var:str, xvar:str=None, n:int=-1):
@@ -157,7 +180,7 @@ class Summary:
         ntimep = len(timep)
         if self._deb:
             print(f'ntime_prof {ntimep} ntime_sc {ntimes} nx {naxis_x} nxb {naxis_xb}')
-            print('ntimes', ntimes, timesc)
+            print('ntimes', ntimes, timesc[:3], '..', timesc[-3:])
 
         # both TIME and TIME3 from the NETCDF file
         sid.ids_properties.homogeneous_time = 0
@@ -202,7 +225,6 @@ class Summary:
         area = self.nc.get_ncvar('PAREA')*1.e-4
         if area is not None:
             a = np.sqrt(area/scipy.pi)
-            print(type )
             data = 1.0e8*btor*a*b0/ip
             self.fill_value(sid.global_quantities.beta_tor_norm, data)
 
@@ -282,7 +304,6 @@ class Summary:
         cur_tot = self.nc.get_ncvar('CUR')
         if cur_tot is not None:
             j_nonind =  np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
-            print(cur_tot.shape, grid_area.shape, j_nonind.shape)
             self.fill_value(sid.global_quantities.current_non_inductive, j_nonind, mult=sgn)
 
         #tau_energy. TAUA1(TIME), SECONDS, ENERGY CONFINEMENT (TOTAL)
@@ -304,16 +325,9 @@ class Summary:
             curbsxa = sgn * np.sum(np.multiply(curbs, grid_area), axis=1)
             self.fill_value(sid.global_quantities.current_bootstrap, curbsxa)
 
-        #LHMODE(TIME)
-        # why is this done twice?
-        self.fill_value_nc(sid.global_quantities.h_mode, 'LHMODE')
 
         #fusion_gain
 
-
-        #H98Y2(TIME)
-        # why is this done twice?
-        self.fill_value_nc(sid.global_quantities.h_98, 'H98Y2')
 
         # TAUES(TIME3, XB) PLASMA ENERGY CONFINEMENT
         # this section is incorrect, I am commenting it out for now
@@ -445,11 +459,12 @@ class Summary:
         #Set of ECRH/ECCD launchers. 6 Max in MDS+.
         #PECIN1 .. PEECHn for n gyrotrons. (TIME3,X) WATTS/CM3
         # please, fix this. The number of gyrotrons should not be hardcoded
-        ec_ngyro = 6 #TODO get from size or namelist
+        ec_ngyro = self.nc.get_nvar_names('PECIN')
+        if self._deb:
+            print('# EC gyrotrons', ec_ngyro)
         peech, pecin = 0., 0.
         sid.heating_current_drive.ec.resize(ec_ngyro)
         for i in range(ec_ngyro):
-            # the power launched is PECINx
             peechi = self.nc.get_ncvar('PEECH'+str(i+1))
             if peechi is not None:
                 peech += peechi
@@ -494,7 +509,9 @@ class Summary:
 
         #IC
         # do not hardcode the number of IC antennae
-        nic_ant = 2  #TODO get PICHA.. and find size
+        nic_ant = self.nc.get_nvar_names('PICHA')
+        if self._deb:
+            print('# IC Antenna', nic_ant)
         picha, pichant = 0., 0.
         sid.heating_current_drive.ic.resize(nic_ant)
         for i in range(nic_ant):
@@ -542,21 +559,62 @@ class Summary:
         self.conv.putdb_imas(ids)
         print('done summary')
 
+def getArgs(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('-s', '--shot', type=int, help='integer shot number')
+    parser.add_argument('-i', '--input-cdf', type=str, help='CDF TRANSP output file')
+    parser.add_argument('-b', '--backend', type=str, help='backend: MDS or HDF')
+    parser.add_argument('-d', '--db', type=str, help='tokamak or database')
+    parser.add_argument('-u', '--user', type=str, help='username or path of database')
+    parser.add_argument('-r', '--run', type=int, help='run number')
+    parser.add_argument('-o', '--occur', type=int, help='occurrence')
+    parser.add_argument('-n', '--new_db', help='new database', action="store_true")
+    parser.add_argument('-f', '--default-val', help='use default', action="store_true")
+
+    args = parser.parse_args()
+    if args.default_val:
+        args = defaults(args)
+    if not (args.db or args.shot or args.run or args.occur or args.input_cdf):
+        parser.print_help()
+        exit(1)
+
+    return args
+
+def defaults(args):
+    #fill with default values if not passed in
+    if not args.default_val:
+        return args
+    if args.occur is None:
+        args.occur = 0
+    if args.verbose is None:
+        args.verbose = False
+    if args.new_db is None:
+        args.new_db = True
+    if args.run is None:
+        args.run = 0 #2302 #W02 #this is occur
+    if args.shot is None:
+        args.shot = 147634 #200001 #
+    if args.db is None:
+        args.db = 'D3D' #NSTX-U
+    if args.user is None:
+        args.user = os.getcwd() # os.getenv('USER') # or '~/public/imasdb'
+    if args.input_cdf is None:
+        args.input_cdf = '147634T16.CDF'
+    if args.backend == 'MDS':
+        args.backend = imas.imasdef.MDSPLUS_BACKEND
+    else:
+        args.backend = imas.imasdef.HDF5_BACKEND
+    return args
+
 
 if __name__ == '__main__':
-    occur = 0
-    _deb = True
-    new_db = True
-    plot = True
+    import argparse
+    a = getArgs(sys.argv)
 
-    # we should not hardcode the shot number and the name of the netcdf file in the code
-    run = 0 #2302 #W02 #this is occur
-    shot = 147634 #200001 #
-    db = 'D3D' #NSTX-U
-    user = os.getcwd() # os.getenv('USER') # or '~/public/imasdb'
-    ncfile = '147634T16.CDF'
-    backend = imas.imasdef.HDF5_BACKEND
-    conv = Convertor(db, shot, run, occur, new_db, user, backend, _deb=_deb, plot=plot)
-    Summary(conv, ncfile=ncfile)
+    print(a.db, a.shot, a.run, a.occur, a.new_db, a.user, a.backend, a.verbose,a.input_cdf)
+
+    conv = Convertor(a.db, a.shot, a.run, a.occur, a.new_db, a.user, a.backend, _deb=a.verbose)
+    Summary(conv, ncfile=a.input_cdf)
     conv.close_imas_database()
 
