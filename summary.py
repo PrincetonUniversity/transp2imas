@@ -112,7 +112,7 @@ class Summary:
 
         if nresize > 0:
             ids.value.resize(nresize, refcheck=False)
-        ids.value = mult, dat
+        ids.value = mult*dat
         #if self.src:
         #    ids.source = self.src
 
