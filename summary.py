@@ -217,10 +217,10 @@ class Summary:
             etot = 3.0/2.0 * np.sum(np.multiply(utot, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_total, etot)
 
-        #PMHD(TIME3, X). Pressure from MHD code
+        #PMHD(TIME3, X). Pressure from equilibrium solver 
         pmhd = self.nc.get_ncvar('PMHD')
         if pmhd is not None and gvol is not None:
-            emhd = 3.0/2.0 * np.sum(np.multiply(pmhd, gvol), axis=1)
+            emhd = 1.5 * np.sum(np.multiply(pmhd, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_mhd, emhd)
 
         #volume PVOL(TIME) CM^3 : PLASMA VOLUME
@@ -229,7 +229,7 @@ class Summary:
         #energy_thermal UTHRM(TIME3, X) JLES/CM3 THERMAL ENERGY DENSITY
         utherm = self.nc.get_ncvar('UTHRM')
         if utherm is not None:
-            etherm = 3.0/2.0 * np.sum(np.multiply(utherm, gvol), axis=1)
+            etherm = 1.5 * np.sum(np.multiply(utherm, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_thermal, etherm)
 
         #energy_b_field_pol
@@ -246,13 +246,13 @@ class Summary:
         # UFASTPP(TIME3, X) JLES/CM3 FAST ION PERP ENERGY DENSITY
         efastpp = self.nc.get_ncvar('UFASTPP')
         if bpol is not None:
-            efastpp = 3.0/2.0 * np.sum(np.multiply(efastpp, gvol), axis=1)
+            efastpp = 1.5 * np.sum(np.multiply(efastpp, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_fast_perpendicular, efastpp)
 
         # UFASTPA(IME3, X) JLES/CM3 FAST ION PLL ENERGY DENSITY
         efastpl = self.nc.get_ncvar('UFASTPA')
         if bpol is not None:
-            efastpl = 3.0/2.0 * np.sum(np.multiply(efastpl, gvol), axis=1)
+            efastpl = 1.5 * np.sum(np.multiply(efastpl, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_fast_parallel, efastpl)
 
 
@@ -305,29 +305,32 @@ class Summary:
             self.fill_value(sid.global_quantities.current_bootstrap, curbsxa)
 
         #LHMODE(TIME)
+        # why is this done twice?
         self.fill_value_nc(sid.global_quantities.h_mode, 'LHMODE')
 
         #fusion_gain
 
 
         #H98Y2(TIME)
+        # why is this done twice?
         self.fill_value_nc(sid.global_quantities.h_98, 'H98Y2')
 
         # TAUES(TIME3, XB) PLASMA ENERGY CONFINEMENT
-        taues = self.nc.get_ncvar('TAUES')
-        if taues is not None:
-            for it,ta in enumerate(taues) :
-                taues[it] = np.interp(coord_x[0], coord_xb[0], ta)
-            self.fill_value(sid.global_quantities.tau_energy, taues)
+        # this section is incorrect, I am commenting it out for now
+        #taues = self.nc.get_ncvar('TAUES')
+        #if taues is not None:
+        #    for it,ta in enumerate(taues) :
+        #        taues[it] = np.interp(coord_x[0], coord_xb[0], ta)
+        #    self.fill_value(sid.global_quantities.tau_energy, taues)
 
         #TAUE98Y2(TIME) TauE98y,2 confinement scaling
         self.fill_value_nc(sid.global_quantities.tau_energy_98, 'TAUE98Y2')
 
         #ETA_USE(TIME3, X)OHM*CM. RESISTIVITY USED OR INFERRED
-        resist = self.nc.get_ncvar('ETA_USE')
-        if resist is not None:
-            resist = np.sum(np.multiply(resist, coord_x), axis=1) #TODO
-            self.fill_value(sid.global_quantities.resistance, resist)
+        #resist = self.nc.get_ncvar('ETA_USE')
+        #if resist is not None:
+        #    resist = np.sum(np.multiply(resist, coord_x), axis=1) #TODO
+        #    self.fill_value(sid.global_quantities.resistance, resist)
 
         #POH(TIME3, X) WATTS/CM3, OHMIC HEATING POWER
         poh = self.nc.get_ncvar('POH')
@@ -399,21 +402,22 @@ class Summary:
         self.fill_value_nc(sid.local.magnetic_axis.t_i_average, 'TI0')
         #zeff
         # if only the value on-axis is needed, we can take ZEFFC
-        zeff = self.nc.get_ncvar('ZEFFP')
-        self.fill_value(sid.local.magnetic_axis.zeff, zeff[:,0])
+        #zeff = self.nc.get_ncvar('ZEFFP')
+        self.fill_value_nc(sid.local.magnetic_axis.zeff, 'ZEFFC')
+        #self.fill_value(sid.local.magnetic_axis.zeff, zeff[:,0])
         #q
         self.fill_value_nc(sid.local.magnetic_axis.q, 'Q0')
 
         #magnetic_shear=rho_tor/q*dq/drho_tor; SHAT(TIME3, X)=(r/q)*(dq/dr)
-        # not sure this is correct
-        mag = self.nc.get_ncvar('SHAT')
-        if mag is not None:
-            magsh = mag.copy()
-            #average of consecutive columns, except for the last
-            magsh[:,:-1] += mag[:,1:] #add next column
-            magsh[:,-1] = 3*mag[:,-1] - mag[:,-2] # rdum
-            magsh /= 2
-            self.fill_value(sid.local.magnetic_axis.magnetic_shear, magsh[:,0])
+        # not sure this is correct, I am commenting this out
+        #mag = self.nc.get_ncvar('SHAT')
+        #if mag is not None:
+        #    magsh = mag.copy()
+        #    #average of consecutive columns, except for the last
+        #    magsh[:,:-1] += mag[:,1:] #add next column
+        #    magsh[:,-1] = 3*mag[:,-1] - mag[:,-2] # rdum
+        #    magsh /= 2
+        #    self.fill_value(sid.local.magnetic_axis.magnetic_shear, magsh[:,0])
 
         #Ion densities
         #DEUTERIUM  ND(TIME3, X); N/CM**3
@@ -440,6 +444,7 @@ class Summary:
         #EC
         #Set of ECRH/ECCD launchers. 6 Max in MDS+.
         #PECIN1 .. PEECHn for n gyrotrons. (TIME3,X) WATTS/CM3
+        # please, fix this. The number of gyrotrons should not be hardcoded
         ec_ngyro = 6 #TODO get from size or namelist
         peech, pecin = 0., 0.
         sid.heating_current_drive.ec.resize(ec_ngyro)
@@ -544,6 +549,7 @@ if __name__ == '__main__':
     new_db = True
     plot = True
 
+    # we should not hardcode the shot number and the name of the netcdf file in the code
     run = 0 #2302 #W02 #this is occur
     shot = 147634 #200001 #
     db = 'D3D' #NSTX-U
