@@ -157,6 +157,39 @@ class Summary:
             ids = mult*dat
 
 
+    #returns n species. fills volume average if plasma and grid volumes are passed in
+    def fill_ion_densities(self, ids, ind1:int=-1, ind2:int=-1, pv=None, gv=None):
+        #N/CM**3
+        mult = 1.0e6
+        #ions
+        #calculate total ion densities
+        nsp = 0
+        idss = {'NH':ids.hydrogen, 'ND':ids.deuterium, 'NT':ids.tritium, 'NHe3':ids.helium_3,
+               'NHe4':ids.helium_4, 'NBe':ids.beryllium, 'NLith':ids.lithium, 'NC':ids.carbon,
+               'NNi':ids.nitrogen, 'NNe':ids.neon, 'NAr':ids.argon, 'NXe':ids.xenon,
+               'NO2':ids.oxygen, 'NW':ids.tungsten, 'NFe':ids.iron, 'NKr':ids.krypton}
+
+        for name, idi in idss.items():
+            dat = self.nc.get_ncvar(name)
+            if dat is None:
+                if self._deb:
+                    print(f'{name} not found')
+                continue
+            if ind1 >= 0:
+                dat = dat[ind1,:]
+            elif ind2 >= 0:
+                dat = dat[:, ind2]
+            elif pv is not None:
+                 #volume average if plasma volume is passed in, and NO index passed
+                 dat = np.divide(np.sum(np.multiply(dat, gv), axis=1), 1.0e-6*pv)
+
+            idi.value.resize(len(dat), refcheck=False)
+            ids.value = mult*dat
+            nsp += 1
+        return nsp
+
+
+
     #from TRANSP output CDF file
     def convert_summary(self):
         sid = self.conv.outdb.summary
@@ -165,6 +198,7 @@ class Summary:
         self.nc = CdfReader(self.ncfile)
         src = 'Calculated'
 
+        #X(TIME3, X); XB(TIME3, XB)
         coord_x = self.nc.get_ncvar('X')
         coord_xb = self.nc.get_ncvar('XB')
         naxis_x = coord_x.shape[1]
@@ -246,7 +280,8 @@ class Summary:
             self.fill_value(sid.global_quantities.energy_mhd, emhd)
 
         #volume PVOL(TIME) CM^3 : PLASMA VOLUME
-        self.fill_value_nc(sid.global_quantities.volume, 'PVOL', mult=1.0e-6)
+        pvol = self.nc.get_ncvar('PVOL')
+        self.fill_value_nc(sid.global_quantities.volume, pvol, mult=1.0e-6)
 
         #energy_thermal UTHRM(TIME3, X) JLES/CM3 THERMAL ENERGY DENSITY
         utherm = self.nc.get_ncvar('UTHRM')
@@ -258,22 +293,21 @@ class Summary:
         #BPOL(TIME3, XB) Tesla
         bpol = self.nc.get_ncvar('BPOL')
         if bpol is not None:
-            #TODO interpolate to X
             for ib, bp in enumerate(bpol):
-                bpol[ib] = np.interp(coord_x[0], coord_xb[0], bp)
+                bpol[ib] = np.interp(coord_x[ib], coord_xb[ib], bp)
             bpol2 = np.multiply(bpol, bpol)
             ebpol = 1.0e6 * 1.0/(2.0*scipy.constants.mu_0) * np.sum(np.multiply(bpol2, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_b_field_pol, ebpol)
 
         # UFASTPP(TIME3, X) JLES/CM3 FAST ION PERP ENERGY DENSITY
         efastpp = self.nc.get_ncvar('UFASTPP')
-        if bpol is not None:
+        if efastpp is not None:
             efastpp = 1.5 * np.sum(np.multiply(efastpp, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_fast_perpendicular, efastpp)
 
         # UFASTPA(IME3, X) JLES/CM3 FAST ION PLL ENERGY DENSITY
         efastpl = self.nc.get_ncvar('UFASTPA')
-        if bpol is not None:
+        if efastpl is not None:
             efastpl = 1.5 * np.sum(np.multiply(efastpl, gvol), axis=1)
             self.fill_value(sid.global_quantities.energy_fast_parallel, efastpl)
 
@@ -399,7 +433,7 @@ class Summary:
         self.fill_data_nc(sid.local.magnetic_axis.position.r, 'RAXIS', mult=1.e-2)
         self.fill_data_nc(sid.local.magnetic_axis.position.z, 'YAXIS', mult=1.e-2)
 
-        #magnetic axis n_e, NE(TIME3,X) EV.
+        #magnetic axis n_e, NE(TIME3,X) N/CM**3
         n_e = self.nc.get_ncvar('NE')
         if n_e is not None:
             self.fill_value(sid.local.magnetic_axis.n_e, n_e[:,0], mult=1.0e6)
@@ -435,10 +469,8 @@ class Summary:
 
         #Ion densities
         #DEUTERIUM  ND(TIME3, X); N/CM**3
-        dens_h = self.nc.get_ncvar('ND')
-        if dens_h is not None:
-            dens_h = 1.0e6 * dens_h
-            self.fill_value(sid.local.magnetic_axis.n_i.deuterium, dens_h[:,0])
+        self.fill_ion_densities(sid.local.magnetic_axis.n_i, ind2=0)
+
         #VTORD_NC(TIME3, RMAJM) CM/SEC ; NC D+ toroidal velocity
 
         #OMEGA(TIME3, X)
@@ -543,7 +575,110 @@ class Summary:
             pichant = np.sum(np.multiply(pichant, gvol), axis=1)
             self.fill_value(sid.heating_current_drive.power_ic, pichant)
 
+        #heating_current_drive.nbi
 
+
+
+
+
+        #Boundary
+        '''
+        RMJSYM CM,  MAJOR RADII (DATA MAPPING), radial grid for symmetrization;
+        RMAJDIFF(TIME) ; CM ;MAX DIFF BOUND AND FLUX MIDPLANE
+        RMAJBLIM(TIME) ;CM;  RMAJ EXTENT OF THE BOUNDARY   '
+        RBOUN(TIME3, XB)
+        '''
+        bzxR = self.nc.get_ncvar('BZXR')
+        if bzxR is not None:
+            rvalues = bzxR/bz
+            rcent = 0.5*(rvalues[0]+rvalues[-1])*1.0e-2
+        self.fill_value(sid.boundary.geometric_axis_r, rcent)
+
+        #sid.boundary.geometric_axis_z
+
+
+        self.fill_value_nc(sid.boundary.magnetic_axis_r, 'RAXIS', mult=1.e-2)
+        self.fill_value_nc(sid.boundary.magnetic_axis_z, 'YAXIS', mult=1.e-2)
+
+        #boundary.minor_radius
+        # 1/XB last * radius  ?
+
+        #ELONG(TIME3, XB)
+        elong = self.nc.get_ncvar('ELONG')
+        self.fill_value(sid.boundary.elongation, elong[-1])
+
+        #TRIANGU(TIME3, XB)
+        triang = self.nc.get_ncvar('TRIANGU')
+        self.fill_value(sid.boundary.triangularity_upper, triang[-1])
+
+        #TRIANGL(TIME3, XB)
+        triang = self.nc.get_ncvar('TRIANGL')
+        self.fill_value(sid.boundary.triangularity_lower, triang[-1])
+
+        '''
+        boundary.strike_point_inner_r
+        boundary.strike_point_inner_z
+        boundary.strike_point_outer_r
+        boundary.strike_point_outer_z
+        boundary.strike_point_configuration
+        boundary.gap_limiter_wall
+        boundary.distance_inner_outer_separatrices
+        boundary.x_point_main
+        '''
+
+        # volume_average
+        #t_e.  TE(TIME3,X); EV,  ELECTRON TEMPERATURE
+        t_e = self.nc.get_ncvar('TE')
+        if t_e is not None:
+            t_e = np.divide(np.sum(np.multiply(t_e, gvol), axis=1), pvol)
+        self.fill_value(sid.volume_average.t_e, t_e)
+
+        #n_e average, NE(TIME3,X) N/CM**3
+        n_e = self.nc.get_ncvar('NE')
+        if n_e is not None:
+            n_e = np.divide(np.sum(np.multiply(n_e, gvol), axis=1), 1.0e-6*pvol)
+        self.fill_value(sid.volume_average.n_e, n_e)
+
+        #ni_total
+        #NI(TIME3, X) N/CM**3
+        self.fill_value_nc(sid.volume_average.n_i_total, 'NI', mult=1.0e6)
+
+        #n_i
+        nsp = self.fill_ion_densities(sid.volume_average.n_i, pv=pvol, gv=gvol)
+
+        #t_i_average
+        #TI(TIME3, X) EV ION TEMPERATURE
+        ntot = self.nc.get_ncvar('TI')
+        if ntot is not None and nsp > 0:
+            ntot /= nsp
+            ntot = np.divide(np.sum(np.multiply(ntot, gvol), axis=1), 1.0e-6*pvol)
+            self.fill_value(sid.volume_average.t_i_average, ntot)
+
+        #dn_e_dt
+        #DNEDT(TIME3, X) N/CM3/SEC D/DT(ELECTRON DENSITY)
+        self.fill_value_nc(sid.volume_average.dn_e_dt, 'DNEDT', mult=1.0e6)
+
+        #zeff
+        #ZEFFP(TIME3, X) "PLASMA COMPOSITION ZEFF PROFILE
+        self.fill_value_nc(sid.volume_average.zeff, 'ZEFFP')
+
+        #meff_hydrogenic [amu]. Effective mass of the hydrogenic species
+        nh = self.nc.get_ncvar('NH')
+        nd = self.nc.get_ncvar('ND')
+        nt = self.nc.get_ncvar('NT')
+        mh = imasdef.constants.mh #TODO
+        md = imasdef.constants.md #TODO
+        mt = imasdef.constants.mt #TODO
+        if not(nh is None or nd is None or nt is None):
+            nH = np.divide(np.sum(np.multiply(nh, gvol), axis=1), 1.0e-6*pvol)
+            nD = np.divide(np.sum(np.multiply(nd, gvol), axis=1), 1.0e-6*pvol)
+            nT = np.divide(np.sum(np.multiply(nt, gvol), axis=1), 1.0e-6*pvol)
+            meffh = np.divide(mh*nH + md*nD + mt*nT, nH+nD+nT)
+            self.fill_value(sid.volume_average.meff_hydrogenic, meffh)
+
+            #isotope_fraction_hydrogen. nH/(nH+nD+nT))
+            fh = np.divide(nh, nH+nD+nT)
+            self.fill_value(sid.volume_average.isotope_fraction_hydrogen, fh)
 
 
         #MBTOR
