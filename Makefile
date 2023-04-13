@@ -6,7 +6,15 @@
 F90 = gfortran
 COPTS = -cpp -g -O0 -fPIE
 #COPTS = -cpp -O2
-INCLUDES = -I$(IMAS_PREFIX)/include/gfortran -I$(NETCDF_FORTRAN_HOME)/include -I$(LOCAL)/mod -I$(PSPLINE_HOME)/include
+
+UFILES_ROOT=/p/pshare/transp/opt/ufiles/0.2.8/gcc/9.3.0
+EZCDF_ROOT=/p/pshare/transp/opt/ezcdf/0.0.3/gcc/9.3.0/
+
+INCLUDES = -I$(IMAS_PREFIX)/include/gfortran \
+		   -I$(NETCDF_FORTRAN_HOME)/include \
+		   -I$(LOCAL)/mod -I$(PSPLINE_HOME)/include \
+		   -I$(EZCDF_ROOT)/mod -I$(UFILES_ROOT)/mod
+
 #LIBS = -L$(IMAS_PREFIX)/lib -limas-gfortran -limas \
 
 LIBS = \
@@ -19,7 +27,7 @@ LIBS = \
 	$(LOCAL)/lib/librplot_mod.a \
 	$(LOCAL)/lib/librplot_io.a \
 	$(UFILES_ROOT)/lib/libureadsub.a \
-        $(LOCAL)/lib/libtokyr.a \
+    $(LOCAL)/lib/libtokyr.a \
 	$(LOCAL)/lib/libxdatmgr.a \
 	$(UFILES_ROOT)/lib/libuflib.a \
 	$(UFILES_ROOT)/lib/libmds_sub.a \
@@ -39,14 +47,16 @@ LIBS = \
 	$(LOCAL)/lib/libcomput.a \
 	$(LOCAL)/lib/libvaxonly.a \
 	$(PSPLINE_HOME)/lib/libpspline.a \
-	$(LOCAL)/lib/libezcdf.a \
+	$(EZCDF_ROOT)/lib/libezcdf.a \
 	$(LOCAL)/lib/liblsode.a \
 	$(LOCAL)/lib/liblsode_linpack.a \
 	$(LOCAL)/lib/libportlib.a \
+	$(NETCDF_FORTRAN_HOME)/lib/libnetcdff.a \
 	-L$(IMAS_PREFIX)/lib -limas-gfortran -limas \
 	-L$(MDSPLUS_DIR)/lib -lMdsLib -lMdsShr \
-	$(NETCDF_FORTRAN_HOME)/lib/libnetcdff.a $(NETCDF_C_HOME)/lib/libnetcdf.so $(BLAS_LIBS) \
-	-lxml2 -lrt -lpthread -lblas -L$(EBROOTGCC)/lib64 -lstdc++ -ldl
+	$(NETCDF_C_HOME)/lib/libnetcdf.so \
+	$(BLAS_LIBS) -lxml2 -lrt -lpthread -lblas \
+	-L$(EBROOTGCC)/lib64 -lstdc++ -ldl
 
 transp2imas : transp2imas_mod.o transp2imas.o t1mhdgeq.o
 	@echo "   * $^ -> $@"
