@@ -7,91 +7,72 @@ import numpy as np
 import imas
 
 
-class Convertor:
-    def __init__(self, db, shot, run, occur:int=0, new_db:bool=False,
-      user:str=None, backend:str=None, _deb:bool=False, plot:bool=False):
+class imas_connection:
+    def __init__(self, db:str, shot:int, run:int=0, backend:str=None,
+                 occur:int=0, user:str=None, new_db:bool=False):
         self.imas_dbname = db
         self.shot = shot
         self.run = run
         self.occur = occur
-        self._deb = _deb
-        self.plot = plot
         self.create_new = new_db
         self.user = user
         self.backend = backend
-        self.outdb = None
+        self.ids = None
         self.iter_ = True if db[:4].upper()=='ITER' else False
         self.init_imas_database()
         self.get_imas_database()
 
-    def fill_properties(self, ids):
-        ids.ids_properties.comment = 'TRANSP output to IMAS IDS'
-        ids.ids_properties.creation_date = str(datetime.now())
-        ids.code.name = 'transp2imas'
-        ids.code.repository = 'https://github.com/PrincetonUniversity/transp2imas'
-        return ids
-
     def print_debug(self, msg:str=''):
-        if self._deb:
-            print(msg)
-            print(' backend:', self.backend, 'run:', self.run)
-            print(' create_new:', self.create_new, 'user:', self.user)
-            print(' imas_db:', self.imas_dbname, 'shot:', self.shot)
+        print(msg)
+        print(' backend:', self.backend, 'run:', self.run)
+        print(' create_new:', self.create_new, 'user:', self.user)
+        print(' imas_db:', self.imas_dbname, 'shot:', self.shot)
 
-    #for MDS+ backend the directory needs to exist
+    #for MDS+ backend the directory needs to exist in ~/public/imasdb
     def create_dir(self, public_db:bool=True):
         if self.backend != imas.imasdef.MDSPLUS_BACKEND:
             return
-        version = str(os.getenv('IMAS_VERSION')[0])
         hom = os.path.expanduser('~')
-        if self.imas_dbname[0] == '~':
-            n = 2 if self.imas_dbname[1] == '/' else 1
-            dbpath = hom + self.imas_dbname[n:]
-        else:
-            dbpath = self.imas_dbname
-
-        outdir = f"{dbpath}/{version}/{self.run}"
+        dbpath = f'{hom}/public/imasdb/{self.imas_dbname}'
+        version = str(os.getenv('IMAS_VERSION')[0])
+        outdir = f"{dbpath}/{version}/{str(self.run)}"
         if not os.path.exists(outdir):
-            if self._deb:
-                print('Creating', outdir)
             os.makedirs(outdir)
 
     def init_imas_database(self):
-        if self.outdb is not None:
-            print('outdb exists')
+        if self.ids is not None:
+            print('ids exists')
             return
-        if not self.backend:
+        if self.backend=='HDF5':
+            self.backend = imas.imasdef.HDF5_BACKEND
+        elif self.backend=='MDS':
             self.backend = imas.imasdef.MDSPLUS_BACKEND
         if not self.user:
             self.user = os.getenv('USER')
         if self.create_new is None:
             self.create_new = True
 
-        version = str(os.getenv('IMAS_VERSION')[0])
         #TODO thread lock
-        if self.outdb is None:
-            self.print_debug('* variables to be used:')
-            self.create_dir()
+        if self.ids is None:
+            self.create_dir() #only for MDS+
             try:
-                self.outdb = imas.ids(self.shot, self.run, 0, 0)
+                self.ids = imas.ids(self.shot, self.run, 0, 0)
             except:
                 raise Exception('Error initializing IMAS database')
 
     def get_imas_database(self, create:bool=False):
         if create:
             self.create_new = True
-        if not self.outdb:
-            raise Exception('outdb is not valid, call init_database first')
+        if not self.ids:
+            raise Exception('ids is not valid, call init_database first')
         if self.create_new:
-            status, idx = self.outdb.create_env_backend(self.user,self.imas_dbname, \
-                                                        os.environ['IMAS_VERSION'], \
-                                                        self.backend)
+            status, idx = self.ids.create_env_backend(self.user,self.imas_dbname,
+                                            os.environ['IMAS_VERSION'], self.backend)
             if status != 0:
                 raise Exception('Error creating database')
         else:
-            status, idx = self.outdb.open_env_backend(self.user,self.imas_dbname, \
-                                                      os.environ['IMAS_VERSION'], \
-                                                      self.backend) 
+            status, idx = self.ids.open_env_backend(self.user,self.imas_dbname,
+                                       os.environ['IMAS_VERSION'], self.backend)
             if status != 0:
                 raise Exception('Error openning database')
 
@@ -100,32 +81,18 @@ class Convertor:
         if ids:
             ids.put(occur)
         else:
-            raise TypeError('outdb not valid')
+            raise TypeError('ids not valid')
 
 
     def close_imas_database(self):
-        if self.outdb:
-            self.outdb.close()
-            del self.outdb
+        if self.ids:
+            self.ids.close()
+            del self.ids
         else:
-            raise TypeError('outdb not valid')
-
+            raise TypeError('ids not valid')
 
 if __name__ == '__main__':
-    occur = 0
-    _deb = True
-    new_db = True
-    plot = True
-    iter_ = False #ITER
-    run = 0 #2302 #W02 #this is occur
-    shot = 163303 #200001 #141711 #205430 # also 142000, 141711
-    db = 'D3D' #NSTX-U
-    user = os.getenv('USER') # or 'public'
-    ncfile = '163303W02.CDF'
-
-    #create convertor
-    conv = Convertor(db, shot, run, occur, new_db, _deb, user)
-    #call IDS creator
-
-    # close datafile
-    conv.close_imas_database()
+    con = imas_connection('TOK', 123456, 0, imas.imasdef.MDSPLUS_BACKEND,
+          0, os.getenv('USER'), True)
+    con.print_debug()
+    con.close_imas_database()
