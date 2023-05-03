@@ -9,32 +9,26 @@ class imas_ec_launchers:
         self.im.print_debug()
         self.create_ids()
 
-    def get_ec_launch_positions(self):
-        #launching_position r. major radius of source. From namelist
-        src_r = self.im.get_namelist_vars('XECECH?')
-        # height above midplane of source
-        src_z = self.im.get_namelist_vars('ZECECH?')
-        #Phi location of source (degrees)
-        src_phi = self.im.get_namelist_vars('PHECECH?')
-        if len(src_r)>0 and len(src_z)>0 and len(src_phi)>0:
-            print('type src_r', len(src_r))
-            src_r = 1.0e-2 * src_r
-            src_z *= 1.0e-2
-            src_phi *= scipy.constants.pi/180.
-        return src_r, src_z, src_phi
-
     def create_ids(self):
         ec = self.im.ids.ec_launchers
+        cm2m = 0.01
+
         #get from namelist
-        src_r, src_z, src_phi = self.get_ec_launch_positions()
-        freq = self.im.get_namelist_vars('FREQECH?')
+        #launching_position r. major radius of source. From namelist
+        src_r = self.im.get_namelist_vars('XECECH?', float, cm2m)
+        # height above midplane of source
+        src_z = self.im.get_namelist_vars('ZECECH?', float, cm2m)
+        #Phi location of source (degrees)
+        src_phi = self.im.get_namelist_vars('PHECECH?', float, scipy.constants.pi/180.0)
+
+        freq = self.im.get_namelist_vars('FREQECH?', float)
 
         #scalar time
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)
 
-        self.im.fill_properties(ec)
-        self.im.fill_code_properties(ec)
+        ec = self.im.fill_properties(ec)
+        ec = self.im.fill_code_properties(ec)
         ec.ids_properties.homogeneous_time = 1
         ec.time.resize(ntimes)
         ec.time = timesc

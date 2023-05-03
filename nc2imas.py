@@ -27,14 +27,24 @@ class nc2imas(imas_connection, netcdf_connection):
         self.set_logger(log)
         self.logger.info('creating nc2imas')
         self.load_namelist()
-        self._deb = True #TODO
 
+    def checkErrExit(*variables):
+        for var in variables:
+            if isinstance(var, np.ndarray):
+                sh = var.shape
+                if sh[0]==0 or (len(sh)>1 and sh[1]==0):
+                    self.logger.Exception('empty np.array')
+            elif isinstance(var, (list, tuple, set)):
+                if len(var) == 0:
+                    self.logger.Exception('empty array')
+            else:
+                if var == 0:
+                    self.logger.Exception(f'empty {var}')
 
     def fill_value(self, ids, dat, rsz:int=-1, mult:float=None, name:str=None):
         name_ = name if name else 'data'
         if dat is None:
-            if self._deb:
-                print(name, ' is None')
+            self.logger.info(f'{name} is None')
             return
 
         nresize = len(dat) if rsz==-1 else rsz
@@ -50,16 +60,14 @@ class nc2imas(imas_connection, netcdf_connection):
     def fill_value_nc(self, ids, var:str, rsz:int=-1, mult:float=None):
         dat = self.get_ncvar(var)
         if dat is None:
-            if self._deb:
-                print(f'{var} not found')
+            self.logger.info(f'{var} not found')
         else:
             self.fill_value(ids, dat, rsz=rsz, mult=mult, name=var)
 
     def fill_data_nc(self, ids, var:str, mult:float=None):
         dat = self.get_ncvar(var)
         if dat is None:
-            if self._deb:
-                print(f'{var} not found')
+            self.logger.info(f'{var} not found')
         else:
             ids.resize(len(dat), refcheck=False)
             if mult is not None:
@@ -88,8 +96,7 @@ class nc2imas(imas_connection, netcdf_connection):
         for name, ids in idss.items():
             dat = self.get_ncvar(name)
             if dat is None:
-                if self._deb:
-                    print(f'{name} not found')
+                self.logger.info(f'{name} not found')
                 continue
             if ind1 >= 0:
                 dat = dat[ind1,:]
@@ -166,7 +173,7 @@ class nc2imas(imas_connection, netcdf_connection):
 
 
     #return list. name's last character is discarded. Eg. XECECH?
-    def get_namelist_vars(self, name:str, tp=None):
+    def get_namelist_vars(self, name:str, tp=None, scale=0):
         n = self.get_namelist_nvars(name)
         name0 = name[-1]
         try:
@@ -179,6 +186,8 @@ class nc2imas(imas_connection, netcdf_connection):
         else:
             if tp in [int, float]:
                 val = [tp(x) for x in val]
+            if scale > 0:
+                val = scale*val
             return val
 
     #returns single value

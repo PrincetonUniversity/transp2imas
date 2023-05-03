@@ -57,15 +57,19 @@ class netcdf_connection:
         matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.search(pattern, s)]
         return len(matches)
 
-    def get_ncvar(self, var:str):
+    def get_ncvar(self, var:str, scale:float=0.) -> np.array:
         try:
-            return np.array(self.nc.variables[var][:])
+            res = np.array(self.nc.variables[var][:])
+            if scale > 0:
+                return scale*res
+            else:
+                return res
         except:
-            return None
+            return np.array([])
 
-    def get_ncattr(name):
+    def get_ncattr(self, name):
         try:
-            return self.ncfile.getncattr(name)
+            return self.nc.getncattr(name)
         except:
             print(f'{name} not found in {self.ncfile}')
             return None
