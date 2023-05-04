@@ -30,7 +30,9 @@ class nc2imas(imas_connection, netcdf_connection):
 
     def checkErrExit(*variables):
         for var in variables:
-            if isinstance(var, np.ndarray):
+            if var is None:
+                self.logger.Exception(f'var is None')
+            elif isinstance(var, np.ndarray):
                 sh = var.shape
                 if sh[0]==0 or (len(sh)>1 and sh[1]==0):
                     self.logger.Exception('empty np.array')
