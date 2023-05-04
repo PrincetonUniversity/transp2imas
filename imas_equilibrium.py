@@ -20,7 +20,7 @@ class imas_equilibrium:
         ntimep = len(timep)
         coord_x = self.im.get_ncvar('X')
         nrad = self.im.get_ncattr('X')
-        self.im.checkErrExit(timesc, timep, nrad)
+        self.im.checkErrExit(timesc, timep)
 
         eqm = self.im.fill_properties(eqm)
         self.im.fill_code_properties(eqm)
@@ -131,13 +131,14 @@ class imas_equilibrium:
         rgrid = self.im.get_ncvar('RGRID', cm2m)
         zgrid = self.im.get_ncvar('ZGRID', cm2m)
         psirz = self.im.get_ncvar('PSIRZ', 2.*pi)
+        self.logger.info(f'rgrid {rgrid.shape} psirz {psirz.shape}')
 
         #RSURF - flux surface R locations
         #rsurf, ysurf
 
         self.logger.info(f'equilibrium #time slices {ntimes}')
         for i in range(ntimes):
-            if i%20==0:
+            if i==0 or i==ntimes-1:
                 self.logger.info(f'time slice: {i}')
             #global
             if len(currents) > i :
@@ -260,16 +261,22 @@ class imas_equilibrium:
                 eqm.time_slice[i].profiles_2d[0].grid.dim2.resize(len(zgrid[i]))
                 eqm.time_slice[i].profiles_2d[0].grid.dim1 = rgrid[i]
                 eqm.time_slice[i].profiles_2d[0].grid.dim2 = zgrid[i]
-                eqm.time_slice[i].profiles_2d[0].grid_type = 1 #rectangular
-                #eqm.time_slice[i].profiles_2d[0].r.resize()
-                #eqm.time_slice[i].profiles_2d[0].z.resize()
-                #eqm.time_slice[i].profiles_2d[0].r =
-                #eqm.time_slice[i].profiles_2d[0].z =
+                ##eqm.time_slice[i].profiles_2d[0].grid_type = 1 #Error
 
-                eqm.time_slice[i].profiles_2d[0].psi.resize(psirz.shape[1])
-                eqm.time_slice[i].profiles_2d[0].psi = psirz[i]
+                xv, yv = np.meshgrid(rgrid[i], zgrid[i])
+                eqm.time_slice[i].profiles_2d[0].r.resize(xv.shape)
+                eqm.time_slice[i].profiles_2d[0].z.resize(yv.shape)
+                eqm.time_slice[i].profiles_2d[0].r = xv
+                eqm.time_slice[i].profiles_2d[0].z = yv
+
+                rn = len(rgrid[i])
+                zn = int(len(psirz[i])/rn)
+                eqm.time_slice[i].profiles_2d[0].psi.resize((zn,rn))
+                eqm.time_slice[i].profiles_2d[0].psi = np.reshape(psirz[i], (-1, rn))
                 eqm.time_slice[i].profiles_2d[0].type = 0 #total
                 #self.outdb.put_slice(eq, occur)
+                if i==ntimes-1:
+                    self.logger.info(f'wrote 2d profile : psi, rgrid {rn}, zgrid{zn}')
             elif i==0:
                 self.logger.info('2d profile : psi, rgrid, zgrid not available')
 
@@ -286,12 +293,18 @@ class imas_equilibrium:
                 #eqm.time_slice[i].coordinate_system.r = rsurf[i]
                 #eqm.time_slice[i].coordinate_system.z = ysurf[i]
 
-
+        self.logger.info('writing ids')
         self.im.putdb_imas(eqm)
 
 if __name__ == '__main__':
     a = get_args(sys.argv)
-    nci = nc2imas(db='D3D', shot=147634, backend='MDS', run=1, occur=0, user=os.getenv('USER'),
-          new_db=True, ncfile='147634G14.CDF', nml_file='147634G14TR.DAT', log='debug')
+
+    sh, rn, mach = 142202, 'U01', 'NSTX' #  142202U01.CDF
+    #sh, rn, mach = 147634, 'G14', 'D3D' # 147634G14.CDF
+
+    ncf = str(sh)+rn+'.CDF'
+    nml = str(sh)+rn+'TR.DAT'
+    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=1, occur=0, user=os.getenv('USER'),
+          new_db=True, ncfile=ncf, nml_file=nml, log='debug')
     imas_equilibrium(nci)
 
