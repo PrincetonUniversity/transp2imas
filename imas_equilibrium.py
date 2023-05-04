@@ -9,7 +9,6 @@ class imas_equilibrium:
         self.create_ids()
 
 
-
     def create_ids(self):
         eqm = self.im.ids.equilibrium
         cm2m = 0.01
@@ -30,19 +29,28 @@ class imas_equilibrium:
         eqm.time = timesc
         eqm.time_slice.resize(ntimes)
 
-        currents = self.im.get_ncvar('PCUREQ') #'PCUR' TODO
+        currents = self.im.get_ncvar('PCURC') #(TIME)
         raxis = self.im.get_ncvar('RAXIS', cm2m) #RAXISEQ
         yaxis = self.im.get_ncvar('YAXIS', cm2m) #YAXISEQ
 
-        bzxr = self.im.get_ncvar('BZXR', cm2m) #(TIME) TESLA*CM. vac field
-        b_field_tor = bzxr / raxis
         psi_axis = self.im.get_ncvar('PSI0_TR') # Wb/rad
         #psi_bdry =
         q95 = self.im.get_ncvar('Q95')
         qaxis  = self.im.get_ncvar('Q0')
         li3 = self.im.get_ncvar('LI_3')
-        bpeq = self.im.get_ncvar('BPEQ') #poloidal beta
-        bteq = self.im.get_ncvar('BTEQ') #toroidal beta
+        bpeq = self.im.get_ncvar('BETAT') #poloidal beta
+        btor = self.im.get_ncvar('BTEQ') #toroidal beta
+        #Zone volume
+        gvol = self.im.get_ncvar('DVOL', 1.0e-6) #(TIME3,X) cm^3
+        #plasma volume
+        pvol = self.im.get_ncvar('PVOL', 1.0e-6) #(TIME) cm^3
+        self.im.checkErrExit(gvol, pvol)
+
+        #PMHD(TIME3, X). Pressure from equilibrium solver
+        pmhd = self.im.get_ncvar('PMHD')
+        emhd = []
+        if len(pmhd)> 0 and len(gvol) > 0:
+            emhd = 1.5 * np.sum(np.multiply(pmhd, gvol), axis=1)
 
         self.logger.info(f'ntimesc {ntimes} nrad {nrad} raxis {raxis.shape}')
         #
@@ -51,26 +59,28 @@ class imas_equilibrium:
         #boundary_separatrix
         #psi_sepx = self.im.get_ncvar('
 
-        #Zone volume
-        dvol = self.im.get_ncvar('DVOL', 1.0e-6) #(TIME3,X) cm^3
-        #plasma volume
-        pvol = self.im.get_ncvar('PVOL', 1.0e-6) #(TIME) cm^3
-        self.im.checkErrExit(dvol, pvol)
-
         #TOTAL BETA TOROIDAL.
         # 2 mu0 integral(p dV) / V / B0^2   ??
         bttot = self.im.get_ncvar('BTTOT') #(TIME3, X)
         # BTPL: PLASMA BETA TOROIDAL  ??
 
-        # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
-        beta_normal = []
+        beta_normal = [] #replaced by beta_tor_norm
         try:
           for i in range(nimep):
-              beta_normal.append( np.multiply(bttot, dvol) / pvol[:,None] )
+              beta_normal.append( np.multiply(bttot, gvol) / pvol[:,None] )
         except:
-          self.logger.info(f'Error calculating beta_normal: bttot {bttot.shape} dvol {dvol.shape}')
+          self.logger.info(f'Error- beta_normal: bttot {bttot.shape} gvol {gvol.shape}')
         else:
           beta_normal = np.array(beta_normal)
+
+        beta_tor_norm = []
+        bz = self.im.get_ncvar('BZ') #(TIME) T
+        # PAREA(TIME) - plasma CS area[cm^2]
+        area = self.im.get_ncvar('PAREA')*1.e-4
+        if len(area) > 0:
+            # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
+            a = np.sqrt(area/pi)
+            beta_tor_norm = 1.0e8*btor*a*bz/currents
 
         #Area of the LCFS poloidal cross section
         #ZONE CROSS SECTIONAL AREA
@@ -101,11 +111,19 @@ class imas_equilibrium:
         qpsi = self.im.get_ncvar('Q')
         pres = self.im.get_ncvar('PPLAS') #'PMHD')
         fbz = self.im.get_ncvar('GFUN')
-
         nprof1d = psi.shape[1]
-        self.logger.info(f'nprof1d {nprof1d} bzxr {bzxr.shape} fbz {fbz.shape}')
 
-        fprof = fbz * bzxr[:,None] # BZXR*FBZ
+        bzxR = self.im.get_ncvar('BZXR', cm2m) #(TIME) TESLA*CM. vac field
+        b_field_tor = bzxR / raxis
+
+        #RMJMP flux surface centers
+        geom_axisr = self.im.get_ncvar('RMJMP', cm2m)
+        geom_axisz = []
+
+        #f
+        fprof = fbz * bzxR[:,None] # BZXR*FBZ
+
+        self.logger.info(f'nprof1d {nprof1d} bzxR {bzxR.shape} fbz {fbz.shape}')
 
         #Normalised tor flux coord
         rho_tor_norm = np.multiply(coord_x, coord_x)
@@ -145,10 +163,10 @@ class imas_equilibrium:
                 eqm.time_slice[i].global_quantities.li_3 = li3[i].astype(float)
             if len(bpeq) >i:
                 eqm.time_slice[i].global_quantities.beta_pol = bpeq[i].astype(float)
-            if len(bteq) >i:
-                eqm.time_slice[i].global_quantities.beta_tor = bteq[i].astype(float)
-            if len(beta_normal):
-                eqm.time_slice[i].global_quantities.beta_normal = beta_normal[i].astype(float)
+            if len(btor) >i:
+                eqm.time_slice[i].global_quantities.beta_tor = btor[i].astype(float)
+            if len(beta_tor_norm):
+                eqm.time_slice[i].global_quantities.beta_normal = beta_tor_norm[i].astype(float)
             if len(pvol) > i:
                 eqm.time_slice[i].global_quantities.volume = pvol[i].astype(float)
             if len(darea) > i:
@@ -156,6 +174,9 @@ class imas_equilibrium:
             #last ??
             if len(surface) > i:
                 eqm.time_slice[i].global_quantities.surface = surface[i,-1].astype(float)
+
+            if len(emhd) >i:
+                eqm.time_slice[i].global_quantities.energy_mhd = emhd[i].astype(float)
 
             #if len(rminor) > i:
             #    eqm.time_slice[i].boundary.minor_radius = rminor[i]
@@ -190,6 +211,8 @@ class imas_equilibrium:
                 eqm.time_slice[i].profiles_1d.q = qpsi[i]
                 eqm.time_slice[i].profiles_1d.f = fprof[i]
                 eqm.time_slice[i].profiles_1d.pressure = pres[i]
+            else:
+                self.logger.info(f'psi {len(psi)} phi {len(phi)} q {len(qpsi)} f {len(fprof)} p {len(pres)}')
 
             if len(rho_tor_norm)>i:
                 eqm.time_slice[i].profiles_1d.rho_tor_norm.resize(nprof1d)
@@ -209,6 +232,15 @@ class imas_equilibrium:
                 eqm.time_slice[i].profiles_1d.triangularity_lower.resize(nprof1d)
                 eqm.time_slice[i].profiles_1d.triangularity_upper = triang_up[i]
                 eqm.time_slice[i].profiles_1d.triangularity_lower = triang_lo[i]
+
+            if len(geom_axisr) > i:
+                eqm.time_slice[i].profiles_1d.geometric_axis.r.resize(nprof1d)
+                eqm.time_slice[i].profiles_1d.geometric_axis.r = geom_axisr[i]
+            if len(geom_axisz) > i:
+                eqm.time_slice[i].profiles_1d.geometric_axis.z.resize(nprof1d)
+                eqm.time_slice[i].profiles_1d.geometric_axis.z = geom_axisz[i]
+
+
 
             #if len(jtor)>i and len(fdp_dspi)>i:
             #   eqm.time_slice[i].profiles_1d.j_tor.resize(nprof1d)
@@ -238,7 +270,7 @@ class imas_equilibrium:
                 eqm.time_slice[i].profiles_2d[0].psi = psirz[i]
                 eqm.time_slice[i].profiles_2d[0].type = 0 #total
                 #self.outdb.put_slice(eq, occur)
-            else:
+            elif i==0:
                 self.logger.info('2d profile : psi, rgrid, zgrid not available')
 
 
