@@ -28,7 +28,28 @@ class nc2imas(imas_connection, netcdf_connection):
         self.logger.info('creating nc2imas')
         self.load_namelist()
 
-    def checkErrExit(*variables):
+
+    def checkValid(self, *variables):
+        for var in variables:
+          if var is None:
+              self.logger.info(f'var is None')
+              return False
+          elif isinstance(var, np.ndarray):
+              sh = var.shape
+              if sh[0]==0 or (len(sh)>1 and sh[1]==0):
+                  self.logger.info('empty np.array')
+                  return False
+          elif isinstance(var, (list, tuple, set)):
+              if len(var) == 0:
+                  self.logger.info('empty array')
+                  return False
+          else:
+              if var == 0:
+                  self.logger.info(f'empty {var}')
+                  return False
+          return True
+
+    def checkErrExit(self, *variables):
         for var in variables:
             if var is None:
                 self.logger.Exception(f'var is None')
@@ -77,8 +98,9 @@ class nc2imas(imas_connection, netcdf_connection):
             ids[:] = dat
 
     def fill_data(self, ids, dat, mult:float=None):
-        if not(dat is None or np.isscalar(dat)):
-            ids.resize(len(dat), refcheck=False)
+        if self.checkValid(dat):
+            if not np.isscalar(dat):
+                ids.resize(len(dat), refcheck=False)
             if mult is not None:
                 dat = mult*dat
             ids[:] = dat
@@ -204,6 +226,20 @@ class nc2imas(imas_connection, netcdf_connection):
             if tp in [int, float]:
                 val = tp(val)
             return val
+
+    def fluxBdryToCenter(self, data, dat0=None):
+        dat = []
+        if not self.valid(data):
+            return dat
+
+        dat = dat.copy()
+        #average of consecutive columns, except first
+        dat[:,1:] += dat[:,:-1] #add previous column
+        if self.valid(dat0):
+            dat[:,0] += dat0
+        else:
+            dat[:,0] *= 2.
+        return dat/2.
 
     def set_logger(self, log:str = None):
         self.logger = logging.getLogger(__name__)
