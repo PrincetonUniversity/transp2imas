@@ -1,0 +1,339 @@
+
+from nc2imas import *
+from ions_class import ions_base
+
+
+class ion_data(ion_base):
+    def __init__(self, label):
+      ion_base.__init__(self, label)
+        #arrays for times
+        self.dens = []
+        self.temp = []
+        self.vel_rad = []
+        self.vel_tor = []
+        self.vel_pol = []
+        self.vel_par = []
+
+
+class imas_core_profiles:
+    def __init__(self, ncimas:nc2imas):
+        self.im = ncimas
+        self.logger = ncimas.logger
+        self.im.print_debug()
+        self.create_ids()
+
+    def valid(self, *vars_) -> bool:
+        return self.im.checkValid(vars_)
+
+    #returns list of ion_data
+    def get_ion_data(**entries) -> list:
+        ions = []
+        for label, symb in entries.items():
+            if symb != 'H' or symb != 'D':
+                print(f'{symb} ion not handled')
+                continue
+            ion = ion_data(label)
+            ion.dens = self.im.get_ncvar(f'N{symb}', 1.0e-6)
+            ion.temp = self.im.get_ncvar(f'T{symb}')
+            ion.vel_rad = self.im.get_ncvar(f'VNDNC_{symb}', 0.01)
+            ion.vel_pol = self.im.get_ncvar(f'VPOL{symb}_NC', 0.01)
+            ion.vel_tor = self.im.get_ncvar(f'VTOR{symb}_NC', 0.01)
+            #ion.vel_par
+            ions.append(ion)
+        return ions
+
+
+    def create_ids(self):
+        cp = self.im.ids.core_profiles
+        cm2m = 0.01
+        aconv = 1.0e-4
+        vconv = 1.0e-6
+        pi = constants.pi  #scipy
+        sgn = -1 if self.im.iter_ else 1
+
+        #scalar time
+        timesc = self.im.get_ncvar('TIME')
+        ntimes = len(timesc)
+        timep = self.im.get_ncvar('TIME3')
+        ntimep = len(timep)
+        coord_x = self.im.get_ncvar('X')
+        coord_xb = self.im.get_ncvar('XB')
+        self.im.checkErrExit(timesc, timep)
+
+        cp = self.im.fill_properties(cp)
+        self.im.fill_code_properties(cp)
+        cp.ids_properties.homogeneous_time = 1
+        cp.time.resize(ntimes)
+        cp.time = timesc
+
+        #vacuum toroidal field
+        raxis = self.im.get_ncvar('RAXIS', cm2m) #RAXISEQ
+        bzxR = self.im.get_ncvar('BZXR', cm2m) #(TIME) TESLA*CM. vac field
+        b_field_tor = bzxR / raxis
+        av_r0 = np.average(raxis)  #TODO
+        cp.vacuum_toroidal_field.r0 = av_r0.astype(float)
+        self.im.fill_data(cp.vacuum_toroidal_field.b0, b_field_tor)
+
+        #global_quantities
+        #------------------------------------------------------------------
+        self.im.fill_data_nc(cp.global_quantities.ip, 'PCURC', mult=sgn)
+
+        #current_non_inductive
+        # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
+        grid_area = self.im.get_ncvar('DAREA', aconv)
+
+        # current_non_inductive. Toroidal component.
+        # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
+        cur_tot = self.im.get_ncvar('CUR', aconv)
+        j_ohmic = self.im.get_ncvar('CUROH', aconv)
+        if self.valid(cur_tot, j_ohmic, grid_area):
+            j_nonind =  np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
+            self.im.fill_data(cp.global_quantities.current_non_inductive, j_nonind, mult=sgn)
+
+        #Bootstrap current (toroidal component). CURBS(TIME3, X) AMPS/CM2
+        # check surface itnegration
+        curbs = self.im.get_ncvar('CURBS', aconv)
+        if len(curbs) > 0:
+            curbsxa = sgn * np.sum(np.multiply(curbs, grid_area), axis=1)
+            self.im.fill_data(cp.global_quantities.current_bootstrap, curbsxa)
+
+        #vloop VSURC(TIME)
+        self.im.fill_data_nc(cp.global_quantities.v_loop, 'VSURC')
+
+        #li  LI_3(TIME)
+        self.im.fill_data_nc(cp.global_quantities.li, 'LI_3')
+
+        #beta_tor BTEQ(TIME) EQUILIBRIUM BETA(TOROIDAL)
+        self.im.fill_data_nc(cp.global_quantities.beta_tor, 'BTEQ')
+
+        #beta_tor_norm
+        bz = self.im.get_ncvar('BZ') #(TIME) T. BZ outside plasma
+        currents = self.im.get_ncvar('PCURC') #(TIME)
+        btor = self.im.get_ncvar('BTEQ') #toroidal beta
+        # PAREA(TIME) - plasma CS area[cm^2]
+        parea = self.im.get_ncvar('PAREA', aconv)
+        if self.valid(parea, bz, btor, currents):
+            # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
+            a = np.sqrt(parea/pi)
+            beta_tor_norm = 100.*btor*a*bz/currents
+
+        #beta_pol BETAT(TIME)
+        self.im.fill_data_nc(cp.global_quantities.beta_pol, 'BETAT')
+
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        gvol = self.im.get_ncvar('DVOL', vconv)
+
+        #Plasma diamagnetic energy content = 3/2*integral over the plasma volume of
+        #  the total perpendicular pressure [J].
+        #PPLAS(TIME3, X) PASCALS PLASMA PRESSURE
+        pplas = self.im.get_ncvar('PPLAS') #TODO
+        if len(pplas)> 0:
+            edia = 3.0/2.0 * np.sum(np.multiply(pplas, gvol), axis=1)
+            self.im.fill_data(cp.global_quantities.energy_diamagnetic, edia)
+
+        #z_eff_resistive
+
+        #t_e_peaking
+        te0 = self.im.get_ncvar('TE0') #magnetic axis
+        tel = self.im.get_ncvar('TE')  #TE(TIME3,X) eV
+        tev = []
+        #volume PVOL(TIME) CM^3 : PLASMA VOLUME
+        pvol = self.im.get_ncvar('PVOL', vconv)
+        if self.valid(te0, tel, pvol):
+            tev = np.sum(np.multiply(tel, gvol), axis=1) / pvol
+            self.im.fill_data(cp.global_quantities.t_e_peaking, te0/tev)
+
+        #t_i_average_peaking
+        ti0 = self.im.get_ncvar('TI0') #magnetic axis
+        tion = self.im.get_ncvar('TI')  #TE(TIME3,X)EV
+        tiv = []
+        if self.valid(ti0, tion, pvol):
+            ti_ = np.sum(np.multiply(tion, gvol), axis=1) / pvol
+            self.im.fill_data(cp.global_quantities.t_i_average_peaking, ti0/ti_)
+
+        #resistive_psi_losses
+        #ejima
+
+        #t_e_volume_average
+        if len(tev) >0:
+          self.im.fill_data(cp.global_quantities.t_e_volume_average, tev)
+
+        #n_e_volume_average
+        nel = self.im.get_ncvar('NE')
+        if len(nel) >0:
+          ne_ = np.sum(np.multiply(nel, gvol), axis=1) / pvol
+          self.im.fill_data(cp.global_quantities.n_e_volume_average, ne_)
+
+        #IONS
+        #which ion ??
+        #t_i_volume_average
+        if len(tiv) >0:
+          self.im.fill_data(cp.global_quantities.t_e_volume_average, tiv)
+
+        #n_i_volume_average
+        nion = self.im.get_ncvar('NI')
+        if len(nion) >0:
+          ni_ = np.sum(np.multiply(nion, gvol), axis=1) / pvol
+          self.im.fill_data(cp.global_quantities.n_e_volume_average, ni_)
+
+        #ion_time_slice
+        # ----------end of global -----------------------------------------
+
+        #profiles_1d
+        # X(TIME3,X) is sqrt(norm. toroidal flux)
+        rho_tor_norm = np.multiply(coord_x, coord_x)
+
+        #TRFLX(TIME3, XB)
+        bflux_tor = self.im.get_ncvar('TRFLX')
+        rho_tor = []
+        if self.valid(bz, bflux_tor):
+            rho_tor = np.sqrt(bflux_tor/(pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
+
+        psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
+
+        #Surface area of the toroidal flux surface
+        #FLUX SURFACE AREA (TIME3,X) cm^2
+        surface = self.im.get_ncvar('SURF', 1.0e-4)
+
+        psi_axis = self.im.get_ncvar('PSI0_TR') # Wb/rad
+        #Normalised poloidal flux coordinate
+        # = sqrt((psi(rho)-psi(magnetic_axis)) / (psi(LCFS)-psi(magnetic_axis)))
+        #rho_pol_norm
+        plflx = self.im.get_ncvar('PLFLX') #(TIME3, XB)
+        rho_pol_norm = np.sqrt((psi - psi[0])/(psi[-1]-psi[0]))
+
+        nrho = rho_tor_norm.shape[1]
+
+        self.logger.info(f'ntimep {ntimep} nrho {nrho}')
+        self.logger.info(f'bz {len(bz)} rho_tor {len(rho_tor)} bflux_tor {len(bflux_tor)}')
+
+        #ions
+        ionDict = {'hydrogen':'H', 'deuterium':'D', 'carbon':'C'}
+        ions = self.get_ion_data(**ionDict)
+
+
+        qpsi = self.im.get_ncvar('Q')
+        curbs = self.im.get_ncvar('CURBS', 1.e4)
+
+        #j_tor SUMCUR Summed toroidal currents
+        jtor = []   #TODO
+
+        #CUROH(TIME3, X)AMPS/CM2
+        j_ohmic = self.im.get_ncvar('CUROH', 1.0e4)
+
+        # current_non_inductive. Toroidal component.
+        # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
+        cur_tot = self.im.get_ncvar('CUR', 1.0e4)
+        j_nonind = []
+        if cur_tot is not None:
+            j_nonind =  np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
+            self.im.fill_value(sid.global_quantities.current_non_inductive, j_nonind, mult=sgn)
+
+
+        cp.profiles_1d.resize(nrho)
+        for i in range(ntimep):
+          # grid
+          #Normalised tor flux coord
+
+          #grid
+          if len(rho_tor_norm) > i:
+              cp.profiles_1d[i].grid.rho_tor_norm.resize(nrho)
+              cp.profiles_1d[i].grid.rho_tor_norm = rho_tor_norm[i]
+          if len(rho_tor) > i:
+              cp.profiles_1d[i].grid.rho_tor.resize(nrho)
+              cp.profiles_1d[i].grid.rho_tor = rho_tor[i]
+          if len(rho_pol_norm)> i:
+              cp.profiles_1d[i].grid.rho_pol_norm.resize(nrho)
+              cp.profiles_1d[i].grid.rho_pol_norm = rho_pol_norm[i]
+          if len(psi) > i:
+              cp.profiles_1d[i].grid.psi.resize(nrho)
+              cp.profiles_1d[i].grid.psi = psi[i]
+          if len(gvol) > i:
+              cp.profiles_1d[i].grid.volume.resize(nrho)
+              cp.profiles_1d[i].grid.volume = gvol[i]
+          if len(grid_area) > i:
+              cp.profiles_1d[i].grid.area.resize(nrho)
+              cp.profiles_1d[i].grid.area = grid_area[i]
+          if len(surface) > i:
+              cp.profiles_1d[i].grid.surface.resize(nrho)
+              cp.profiles_1d[i].grid.surface = surface[i]
+          if len(psi_axis) > i:
+              cp.profiles_1d[i].grid.psi_magnetic_axis.resize(nrho)
+              cp.profiles_1d[i].grid.psi_magnetic_axis = psi_axis[i].astype(float)
+          if len(psi) > i:
+              cp.profiles_1d[i].grid.psi_boundary.resize(nrho)
+              cp.profiles_1d[i].grid.psi_boundary = psi[i,-1].astype(float)
+
+          #electrons
+          if len(tel) > i:
+              cp.profiles_1d[i].electrons.temperature.resize(nrho)
+              cp.profiles_1d[i].electrons.temperature = tel[i]
+          if len(nel) > i:
+              cp.profiles_1d[i].electrons.temperature.resize(nrho)
+              cp.profiles_1d[i].electrons.density = nel[i]
+
+          #ions
+          cp.profiles_1d[i].ion.resize(len(ions))
+          for ij in range(len(ions)):
+              ion = ions[ij]
+              cp.profiles_1d[i].ion[ij].label = ion.label
+              cp.profiles_1d[i].ion[ij].element.resize(1)
+              cp.profiles_1d[i].ion[ij].element[0].a = ion.a
+              cp.profiles_1d[i].ion[ij].element[0].z_n = ion.z_n
+              cp.profiles_1d[i].ion[ij].element[0].atoms_n = ion.atoms_n
+              if len(ion.z_ion_1d) > 0:
+                  cp.profiles_1d[i].ion[ij].z_ion_1d.resize(nrho)
+                  cp.profiles_1d[i].ion[ij].z_ion_1d = ion.z_ion_1d
+              if len(ion.temp) > 0:
+                  cp.profiles_1d[i].ion[ij].temperature.resize(nrho)
+                  cp.profiles_1d[i].ion[ij].temperature = ion.temp
+              if len(ion.dens) > 0:
+                  cp.profiles_1d[i].ion[ij].density.resize(nrho)
+                  cp.profiles_1d[i].ion[ij].density = ion.dens
+              if len(ion.vel_rad) > 0:
+                  cp.profiles_1d[i].ion[ij].velocity.radial.resize(nrho)
+                  cp.profiles_1d[i].ion[ij].velocity.radial = ion.vel_rad
+              if len(ion.vel_tor) > 0:
+                  cp.profiles_1d[i].ion[ij].velocity.toroidal.resize(nrho)
+                  cp.profiles_1d[i].ion[ij].velocity.toroidal = ion.vel_tor
+              if len(ion.vel_pol) > 0:
+                  cp.profiles_1d[i].ion[ij].velocity.poloidal.resize(nrho)
+                  cp.profiles_1d[i].ion[ij].velocity.poloidal = ion.vel_pol
+              if len(ion.vel_par) > 0:
+                  cp.profiles_1d[i].ion[ij].velocity.parallel.resize(nrho)
+                  cp.profiles_1d[i].ion[ij].velocity.parallel = ion.vel_par
+
+            #Q
+            if len(qprof) > i:
+                cp.profiles_1d[i].q.resize(nrho)
+                cp.profiles_1d[i].q = qprof[i]
+            if len(curbs) > i:
+                cp.profiles_1d[i].j_bootstrap.resize(nrho)
+                cp.profiles_1d[i].j_bootstrap = curbs[i]
+            if len(j_ohmic) > i:
+                cp.profiles_1d[i].j_ohmic.resize(nrho)
+                cp.profiles_1d[i].j_ohmic = j_ohmic[i]
+            if len(cur_tot) > i:
+                cp.profiles_1d[i].j_cur_tot.resize(nrho)
+                cp.profiles_1d[i].j_cur_tot = cur_tot[i]
+            if len(j_nonind) > i:
+                cp.profiles_1d[i].j_nonind.resize(nrho)
+                cp.profiles_1d[i].j_nonind = j_nonind[i]
+            if len(j_tor) > i:
+                cp.profiles_1d[i].j_tor.resize(nrho)
+                cp.profiles_1d[i].j_tor = j_tor[i]
+
+
+        self.im.putdb_imas(cp)
+
+if __name__ == '__main__':
+    a = get_args(sys.argv)
+
+    #sh, rn, mach = 142202, 'U01', 'NSTX' #  142202U01.CDF
+    sh, rn, mach = 147634, 'G14', 'D3D' # 147634G14.CDF
+
+    ncf = str(sh)+rn+'.CDF'
+    nml = str(sh)+rn+'TR.DAT'
+    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=1, occur=0, user=os.getenv('USER'),
+          new_db=True, ncfile=ncf, nml_file=nml, log='debug')
+    imas_core_profiles(nci)
