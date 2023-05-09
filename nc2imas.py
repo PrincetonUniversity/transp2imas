@@ -3,6 +3,8 @@
 import os
 import sys
 import numpy as np
+import inspect
+
 from scipy import constants
 from scipy.interpolate import interp1d
 from datetime import datetime
@@ -14,6 +16,12 @@ from netcdf_class import netcdf_connection
 from imas_class import imas_connection
 #import imas
       
+
+def getVarName(var):
+    localVars = inspect.currentframe().f_back.f_locals.items()
+    return str([k for k, v in localVars if v is var][0])
+
+
 class nc2imas(imas_connection, netcdf_connection):
     def __init__(self, db, shot, run, backend, occur, user, new_db, ncfile,
          nml_file:str=None, log:str='error'):
@@ -28,42 +36,41 @@ class nc2imas(imas_connection, netcdf_connection):
         self.logger.info('creating nc2imas')
         self.load_namelist()
 
-
+    #scalar 0 is invalid. Don't check for
     def checkValid(self, *variables):
         for var in variables:
+          name = getVarName(var)
           if var is None:
-              self.logger.info(f'var is None')
               return False
           elif isinstance(var, np.ndarray):
               sh = var.shape
               if sh[0]==0 or (len(sh)>1 and sh[1]==0):
-                  self.logger.info('empty np.array')
                   return False
           elif isinstance(var, (list, tuple, set)):
               if len(var) == 0:
-                  self.logger.info('empty array')
                   return False
           else:
               if var == 0:
-                  self.logger.info(f'empty {var}')
                   return False
           return True
 
     def checkErrExit(self, *variables):
         for var in variables:
+            name = getVarName(var)
             if var is None:
-                self.logger.Exception(f'var is None')
+                self.logger.Exception(f'{name} is None')
             elif isinstance(var, np.ndarray):
                 sh = var.shape
                 if sh[0]==0 or (len(sh)>1 and sh[1]==0):
-                    self.logger.Exception('empty np.array')
+                    self.logger.Exception(f'empty np.array {name}')
             elif isinstance(var, (list, tuple, set)):
                 if len(var) == 0:
-                    self.logger.Exception('empty array')
+                    self.logger.Exception(f'empty array {name}')
             else:
                 if var == 0:
-                    self.logger.Exception(f'empty {var}')
+                    self.logger.Exception(f'empty {name}')
 
+    #fill ids.value
     def fill_value(self, ids, dat, rsz:int=-1, mult:float=None, name:str=None):
         name_ = name if name else 'data'
         if dat is None:
@@ -97,13 +104,19 @@ class nc2imas(imas_connection, netcdf_connection):
                 dat = mult*dat
             ids[:] = dat
 
-    def fill_data(self, ids, dat, mult:float=None):
-        if self.checkValid(dat):
+    def fill_data(self, ids, dat, mult:float=None, ind:int=-1, name:str=None):
+        try:
+          if self.checkValid(dat):
+            dat = dat[ind] if ind>= 0 else dat
             if not np.isscalar(dat):
                 ids.resize(len(dat), refcheck=False)
             if mult is not None:
                 dat = mult*dat
             ids[:] = dat
+          else:
+            self.logger.info(f'{name} is invalid')
+        except:
+            self.logger.info(f'{name} is invalid')
 
     #returns n species. fills volume average if plasma and grid volumes are passed in
     def fill_ion_densities(self, ids, ind1:int=-1, ind2:int=-1, pv=None, gv=None):

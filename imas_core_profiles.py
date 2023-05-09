@@ -1,11 +1,11 @@
 
 from nc2imas import *
-from ions_class import ions_base
+from atoms_class import atom_base
 
 
-class ion_data(ion_base):
+class ion_data(atom_base):
     def __init__(self, label):
-      ion_base.__init__(self, label)
+        super().__init__(label)
         #arrays for times
         self.dens = []
         self.temp = []
@@ -13,7 +13,15 @@ class ion_data(ion_base):
         self.vel_tor = []
         self.vel_pol = []
         self.vel_par = []
+        self.z_ion_1d = []
 
+class neutrals_data(atom_base):
+     def __init__(self, label):
+        super().__init__(label)
+        #arrays for times
+        self.dens = []
+        self.temp = []
+        self.pres = []
 
 class imas_core_profiles:
     def __init__(self, ncimas:nc2imas):
@@ -25,22 +33,53 @@ class imas_core_profiles:
     def valid(self, *vars_) -> bool:
         return self.im.checkValid(vars_)
 
-    #returns list of ion_data
-    def get_ion_data(**entries) -> list:
+    #ions data
+    def get_ion_data(self) -> list:
+        ionDict = {'hydrogen':'H', 'deuterium':'D', 'tritium':'T', 'helium3':'HE3',
+                  'helium4':'HE4', 'lithium':'LITH', 'carbon':'C'}
         ions = []
-        for label, symb in entries.items():
-            if symb != 'H' or symb != 'D':
-                print(f'{symb} ion not handled')
+        for label, symb in ionDict.items():
+            self.logger.info(f'ion: {label} {symb}')
+            dens = self.im.get_ncvar(f'N{symb}', 1.0e-6)
+            if len(dens) == 0:
                 continue
             ion = ion_data(label)
-            ion.dens = self.im.get_ncvar(f'N{symb}', 1.0e-6)
+            ion.dens = dens
+            #IMPURITY DENSITY'%XDENS TODO
+            #FUSN HE4 ION DENSITY'%'N/CM**3'%FDENS_4
+            #EFUSN_4  average fusion helium 4
+            self.logger.info(f'{symb}, dens {len(ion.dens)}')
             ion.temp = self.im.get_ncvar(f'T{symb}')
+            self.logger.info(f'{symb} temp {len(ion.temp)}')
             ion.vel_rad = self.im.get_ncvar(f'VNDNC_{symb}', 0.01)
+            self.logger.info(f'{symb} vel_rad {len(ion.vel_rad)}')
             ion.vel_pol = self.im.get_ncvar(f'VPOL{symb}_NC', 0.01)
+            self.logger.info(f'{symb} vel_pol {len(ion.vel_pol)}')
             ion.vel_tor = self.im.get_ncvar(f'VTOR{symb}_NC', 0.01)
-            #ion.vel_par
+            self.logger.info(f'{symb} vel_tor {len(ion.vel_tor)}')
+            ion.vel_par = []
+            ion.z_ion_1d = []
             ions.append(ion)
         return ions
+
+    #volume/wall neutral density
+    def get_neutral_data(self, wall:str=None):
+        dst = "DN0W" if wall else "DN0V" #volume neutral
+        neutDict = {'hydrogen':'H', 'deuterium':'D', 'tritium':'T', 'helium3':'HE3',
+                     'helium4':'HE4', 'lithium':'LITH'}
+        neuts = []
+        for label, symb in neutDict.items():
+            self.logger.info(f'neutral: {label} {symb}')
+            dens = self.im.get_ncvar(f'{dst}{symb}', 1.0e6)
+            if len(dens)==0:
+                continue
+            neut = neutrals_data(label)
+            neut.dens = dens
+            self.logger.info(f'{symb}, dens {len(neut.dens)}')
+            neut.temp = []
+            neut.pres = []
+            neuts.append(neut)
+        return neuts
 
 
     def create_ids(self):
@@ -208,15 +247,32 @@ class imas_core_profiles:
         self.logger.info(f'bz {len(bz)} rho_tor {len(rho_tor)} bflux_tor {len(bflux_tor)}')
 
         #ions
-        ionDict = {'hydrogen':'H', 'deuterium':'D', 'carbon':'C'}
-        ions = self.get_ion_data(**ionDict)
+        ions = self.get_ion_data()
 
+        n_i_total_over_n_e = []
+        if self.valid(nion, nel):
+          n_i_total_over_n_e = nion/nel
 
-        qpsi = self.im.get_ncvar('Q')
+        neutrals = self.get_neutral_data()
+
+        #ZEFFP(TIME3, X) PLASMA COMPOSITION ZEFF PROFILE
+        zeff = self.im.get_ncvar('ZEFFP')
+
+        qprof = self.im.get_ncvar('Q')
         curbs = self.im.get_ncvar('CURBS', 1.e4)
 
-        #j_tor SUMCUR Summed toroidal currents
-        jtor = []   #TODO
+        # SUMCUR Summed toroidal currents
+        pcureq = self.im.get_ncvar('PCUREQ')
+        jpfc = self.im.get_ncvar('CURSUM_PFC_MHD')
+        jpassive = self.im.get_ncvar('CURSUM_PASS_MHD')
+        j_tor = []
+        if self.valid(pcureq, jpfc, jpassive):
+          try :
+            j_tor = pcureq + jpfc + jpassive
+            #TODO convert to density
+          except :
+            self.logger.info(f'pcureq {len(pcureq)} jpfc {len(jpfc)} jpassive {len(jpassive)}')
+
 
         #CUROH(TIME3, X)AMPS/CM2
         j_ohmic = self.im.get_ncvar('CUROH', 1.0e4)
@@ -224,107 +280,81 @@ class imas_core_profiles:
         # current_non_inductive. Toroidal component.
         # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
         cur_tot = self.im.get_ncvar('CUR', 1.0e4)
-        j_nonind = []
-        if cur_tot is not None:
-            j_nonind =  np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
-            self.im.fill_value(sid.global_quantities.current_non_inductive, j_nonind, mult=sgn)
+        j_nonind = cur_tot - j_ohmic
 
-
+        self.logger.info(f'\nFilling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(nrho)
         for i in range(ntimep):
           # grid
           #Normalised tor flux coord
 
           #grid
-          if len(rho_tor_norm) > i:
-              cp.profiles_1d[i].grid.rho_tor_norm.resize(nrho)
-              cp.profiles_1d[i].grid.rho_tor_norm = rho_tor_norm[i]
-          if len(rho_tor) > i:
-              cp.profiles_1d[i].grid.rho_tor.resize(nrho)
-              cp.profiles_1d[i].grid.rho_tor = rho_tor[i]
-          if len(rho_pol_norm)> i:
-              cp.profiles_1d[i].grid.rho_pol_norm.resize(nrho)
-              cp.profiles_1d[i].grid.rho_pol_norm = rho_pol_norm[i]
-          if len(psi) > i:
-              cp.profiles_1d[i].grid.psi.resize(nrho)
-              cp.profiles_1d[i].grid.psi = psi[i]
-          if len(gvol) > i:
-              cp.profiles_1d[i].grid.volume.resize(nrho)
-              cp.profiles_1d[i].grid.volume = gvol[i]
-          if len(grid_area) > i:
-              cp.profiles_1d[i].grid.area.resize(nrho)
-              cp.profiles_1d[i].grid.area = grid_area[i]
-          if len(surface) > i:
-              cp.profiles_1d[i].grid.surface.resize(nrho)
-              cp.profiles_1d[i].grid.surface = surface[i]
+          self.im.fill_data(cp.profiles_1d[i].grid.rho_tor_norm, rho_tor_norm, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].grid.rho_tor, rho_tor, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].grid.rho_pol_norm, rho_pol_norm, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].grid.volume, gvol, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].grid.area, grid_area, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].grid.surface, surface, ind=i)
+
           if len(psi_axis) > i:
-              cp.profiles_1d[i].grid.psi_magnetic_axis.resize(nrho)
               cp.profiles_1d[i].grid.psi_magnetic_axis = psi_axis[i].astype(float)
           if len(psi) > i:
-              cp.profiles_1d[i].grid.psi_boundary.resize(nrho)
               cp.profiles_1d[i].grid.psi_boundary = psi[i,-1].astype(float)
 
           #electrons
-          if len(tel) > i:
-              cp.profiles_1d[i].electrons.temperature.resize(nrho)
-              cp.profiles_1d[i].electrons.temperature = tel[i]
-          if len(nel) > i:
-              cp.profiles_1d[i].electrons.temperature.resize(nrho)
-              cp.profiles_1d[i].electrons.density = nel[i]
+          self.im.fill_data(cp.profiles_1d[i].electrons.temperature, tel, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].electrons.density, nel, ind=i)
 
           #ions
           cp.profiles_1d[i].ion.resize(len(ions))
+          if i==0:
+              self.logger.info(f'number of ions {len(ions)}')
           for ij in range(len(ions)):
               ion = ions[ij]
+              if i==0:
+                  self.logger.info(f'filling ion {ion.label}')
               cp.profiles_1d[i].ion[ij].label = ion.label
               cp.profiles_1d[i].ion[ij].element.resize(1)
               cp.profiles_1d[i].ion[ij].element[0].a = ion.a
               cp.profiles_1d[i].ion[ij].element[0].z_n = ion.z_n
               cp.profiles_1d[i].ion[ij].element[0].atoms_n = ion.atoms_n
-              if len(ion.z_ion_1d) > 0:
-                  cp.profiles_1d[i].ion[ij].z_ion_1d.resize(nrho)
-                  cp.profiles_1d[i].ion[ij].z_ion_1d = ion.z_ion_1d
-              if len(ion.temp) > 0:
-                  cp.profiles_1d[i].ion[ij].temperature.resize(nrho)
-                  cp.profiles_1d[i].ion[ij].temperature = ion.temp
-              if len(ion.dens) > 0:
-                  cp.profiles_1d[i].ion[ij].density.resize(nrho)
-                  cp.profiles_1d[i].ion[ij].density = ion.dens
-              if len(ion.vel_rad) > 0:
-                  cp.profiles_1d[i].ion[ij].velocity.radial.resize(nrho)
-                  cp.profiles_1d[i].ion[ij].velocity.radial = ion.vel_rad
-              if len(ion.vel_tor) > 0:
-                  cp.profiles_1d[i].ion[ij].velocity.toroidal.resize(nrho)
-                  cp.profiles_1d[i].ion[ij].velocity.toroidal = ion.vel_tor
-              if len(ion.vel_pol) > 0:
-                  cp.profiles_1d[i].ion[ij].velocity.poloidal.resize(nrho)
-                  cp.profiles_1d[i].ion[ij].velocity.poloidal = ion.vel_pol
-              if len(ion.vel_par) > 0:
-                  cp.profiles_1d[i].ion[ij].velocity.parallel.resize(nrho)
-                  cp.profiles_1d[i].ion[ij].velocity.parallel = ion.vel_par
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].z_ion_1d, ion.z_ion_1d, None , i, 'z_ion_1d')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].temperature, ion.temp, None, i, 'temp')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].density, ion.dens, None, i, 'dens')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.radial, ion.vel_rad, None, i, 'vel_rad')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal, ion.vel_tor, None, i, 'vel_tor')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal, ion.vel_pol, None, i, 'vel_pol')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.parallel, ion.vel_par, None, i, 'vel_par')
 
-            #Q
-            if len(qprof) > i:
-                cp.profiles_1d[i].q.resize(nrho)
-                cp.profiles_1d[i].q = qprof[i]
-            if len(curbs) > i:
-                cp.profiles_1d[i].j_bootstrap.resize(nrho)
-                cp.profiles_1d[i].j_bootstrap = curbs[i]
-            if len(j_ohmic) > i:
-                cp.profiles_1d[i].j_ohmic.resize(nrho)
-                cp.profiles_1d[i].j_ohmic = j_ohmic[i]
-            if len(cur_tot) > i:
-                cp.profiles_1d[i].j_cur_tot.resize(nrho)
-                cp.profiles_1d[i].j_cur_tot = cur_tot[i]
-            if len(j_nonind) > i:
-                cp.profiles_1d[i].j_nonind.resize(nrho)
-                cp.profiles_1d[i].j_nonind = j_nonind[i]
-            if len(j_tor) > i:
-                cp.profiles_1d[i].j_tor.resize(nrho)
-                cp.profiles_1d[i].j_tor = j_tor[i]
+          #neutrals
+          n_neutrals = len(neutrals)
+          cp.profiles_1d[i].neutral.resize(n_neutrals)
+          if i==0:
+              self.logger.info(f'number of neutrals {n_neutrals}')
+          for ij in range(n_neutrals):
+              neut = neutrals[ij]
+              if i==0:
+                  self.logger.info(f'filling ion {neut.label}')
+              cp.profiles_1d[i].neutral[ij].label = neut.label
+              cp.profiles_1d[i].neutral[ij].element.resize(1)
+              cp.profiles_1d[i].neutral[ij].element[0].a = neut.a
+              cp.profiles_1d[i].neutral[ij].element[0].z_n = neut.z_n
+              cp.profiles_1d[i].neutral[ij].element[0].atoms_n = neut.atoms_n
+              self.im.fill_data(cp.profiles_1d[i].neutral[ij].density, neut.dens, None, i, 'dens')
 
+          #
+          self.im.fill_data(cp.profiles_1d[i].q, qprof, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].zeff, zeff, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].n_i_total_over_n_e, n_i_total_over_n_e, ind=i)
+
+          self.im.fill_data(cp.profiles_1d[i].j_bootstrap, curbs, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].j_ohmic, j_ohmic, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].j_total, cur_tot, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].j_non_inductive, j_nonind, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].j_tor, j_tor, ind=i)
 
         self.im.putdb_imas(cp)
+        self.logger.info('Done core_profiles')
 
 if __name__ == '__main__':
     a = get_args(sys.argv)
