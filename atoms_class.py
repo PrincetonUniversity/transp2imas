@@ -8,7 +8,7 @@ class atom_base():
     def __init__(self, label):
         self.a = 0.0
         self.z_n = 0.0
-        self.atoms_n = 0
+        self.atoms_n = 1
         self.neutral_index = 0
         self.z_ion = 0.0
         self.label = label
@@ -43,4 +43,6 @@ class atom_base():
             self.a = 12.011 #TODO
             self.z_ion = 6.0
             self.z_n = 6.0
+        #elif label=='impurity':
+
 

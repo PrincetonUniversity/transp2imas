@@ -113,10 +113,11 @@ class nc2imas(imas_connection, netcdf_connection):
             if mult is not None:
                 dat = mult*dat
             ids[:] = dat
-          else:
+          elif ind<1:
             self.logger.info(f'{name} is invalid')
         except:
-            self.logger.info(f'{name} is invalid')
+            if ind<1:
+                self.logger.info(f'{name} is invalid')
 
     #returns n species. fills volume average if plasma and grid volumes are passed in
     def fill_ion_densities(self, ids, ind1:int=-1, ind2:int=-1, pv=None, gv=None):

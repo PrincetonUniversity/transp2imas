@@ -14,6 +14,7 @@ class ion_data(atom_base):
         self.vel_pol = []
         self.vel_par = []
         self.z_ion_1d = []
+        self.rotation_frequency_tor = []
 
 class neutrals_data(atom_base):
      def __init__(self, label):
@@ -38,14 +39,15 @@ class imas_core_profiles:
         ionDict = {'hydrogen':'H', 'deuterium':'D', 'tritium':'T', 'helium3':'HE3',
                   'helium4':'HE4', 'lithium':'LITH', 'carbon':'C'}
         ions = []
+        rmaj = np.average(self.im.get_ncvar('RMJSYM'))  # RMJSYM RMJM
+
         for label, symb in ionDict.items():
-            self.logger.info(f'ion: {label} {symb}')
-            dens = self.im.get_ncvar(f'N{symb}', 1.0e-6)
+            dens = self.im.get_ncvar(f'N{symb}', 1.0e6)
             if len(dens) == 0:
                 continue
+            self.logger.info(f'ion: {label} {symb}')
             ion = ion_data(label)
             ion.dens = dens
-            #IMPURITY DENSITY'%XDENS TODO
             #FUSN HE4 ION DENSITY'%'N/CM**3'%FDENS_4
             #EFUSN_4  average fusion helium 4
             self.logger.info(f'{symb}, dens {len(ion.dens)}')
@@ -59,7 +61,43 @@ class imas_core_profiles:
             self.logger.info(f'{symb} vel_tor {len(ion.vel_tor)}')
             ion.vel_par = []
             ion.z_ion_1d = []
+            ang_vel = self.im.get_ncvar(f'OMG_{symb}') #CMG_H CMG_D
+            if self.valid(ang_vel, rmaj):
+                ion.rotation_frequency_tor = ang_vel / rmaj
             ions.append(ion)
+
+        #impurity
+        label = 'impurity'
+        symb = 'X'
+        dens = self.im.get_ncvar('NIMP', 1.0e6) #XDENS.  NIMP or NIMP_NC
+        if len(dens) == 0:
+           return ions
+        self.logger.info(f'ion: {label} {symb}')
+        ion = ion_data(label)
+        ion.dens = dens
+        ion.temp = self.im.get_ncvar(f'TXNC')                   # TX  TXNC
+        self.logger.info(f'{symb} temp {len(ion.temp)}')
+        ion.vel_rad = self.im.get_ncvar('VELIM', 0.01)          # VELIM
+        self.logger.info(f'{symb} vel_rad {len(ion.vel_rad)}')
+        ion.vel_pol = self.im.get_ncvar('VPOLX_NC', 0.01)        # VPOLX_NC
+        self.logger.info(f'{symb} vel_pol {len(ion.vel_pol)}')
+        ion.vel_tor = self.im.get_ncvar(f'VTORX_NC', 0.01)       # VTORX  VTORX_NC
+        self.logger.info(f'{symb} vel_tor {len(ion.vel_tor)}')
+        ion.vel_par = []
+        ion.z_ion_1d = []
+        ang_vel = self.im.get_ncvar('OMGX') # OMGX CMGX
+        if self.valid(ang_vel, rmaj):
+            ion.rotation_frequency_tor = ang_vel/rmaj
+        #AZIMP
+        zn = 1.0 #TODO
+        aa = np.average(self.im.get_ncvar('AIMP'))
+        zion = np.average(self.im.get_ncvar('XZIMP'))   #XSIMP XZIMPD
+        if self.valid(aa, zion, zn):
+            ion.z_n = zn #zn.astype(float)
+            ion.a = aa.astype(float)
+            ion.z_ion = zion.astype(float)
+
+        ions.append(ion)
         return ions
 
     #volume/wall neutral density
@@ -69,10 +107,10 @@ class imas_core_profiles:
                      'helium4':'HE4', 'lithium':'LITH'}
         neuts = []
         for label, symb in neutDict.items():
-            self.logger.info(f'neutral: {label} {symb}')
             dens = self.im.get_ncvar(f'{dst}{symb}', 1.0e6)
             if len(dens)==0:
                 continue
+            self.logger.info(f'neutral: {label} {symb}')
             neut = neutrals_data(label)
             neut.dens = dens
             self.logger.info(f'{symb}, dens {len(neut.dens)}')
@@ -308,11 +346,11 @@ class imas_core_profiles:
           #ions
           cp.profiles_1d[i].ion.resize(len(ions))
           if i==0:
-              self.logger.info(f'number of ions {len(ions)}')
+              self.logger.info(f'\n number of ions {len(ions)}')
           for ij in range(len(ions)):
               ion = ions[ij]
               if i==0:
-                  self.logger.info(f'filling ion {ion.label}')
+                  self.logger.info(f'* filling ion {ion.label}')
               cp.profiles_1d[i].ion[ij].label = ion.label
               cp.profiles_1d[i].ion[ij].element.resize(1)
               cp.profiles_1d[i].ion[ij].element[0].a = ion.a
@@ -330,11 +368,11 @@ class imas_core_profiles:
           n_neutrals = len(neutrals)
           cp.profiles_1d[i].neutral.resize(n_neutrals)
           if i==0:
-              self.logger.info(f'number of neutrals {n_neutrals}')
+              self.logger.info(f'\nnumber of neutrals {n_neutrals}')
           for ij in range(n_neutrals):
               neut = neutrals[ij]
               if i==0:
-                  self.logger.info(f'filling ion {neut.label}')
+                  self.logger.info(f'* filling neutral {neut.label}')
               cp.profiles_1d[i].neutral[ij].label = neut.label
               cp.profiles_1d[i].neutral[ij].element.resize(1)
               cp.profiles_1d[i].neutral[ij].element[0].a = neut.a
@@ -364,6 +402,6 @@ if __name__ == '__main__':
 
     ncf = str(sh)+rn+'.CDF'
     nml = str(sh)+rn+'TR.DAT'
-    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=1, occur=0, user=os.getenv('USER'),
+    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=2, occur=0, user=os.getenv('USER'),
           new_db=True, ncfile=ncf, nml_file=nml, log='debug')
     imas_core_profiles(nci)
