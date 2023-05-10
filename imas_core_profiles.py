@@ -321,7 +321,7 @@ class imas_core_profiles:
         j_nonind = cur_tot - j_ohmic
 
         self.logger.info(f'\nFilling profile1d time slices: {ntimep}')
-        cp.profiles_1d.resize(nrho)
+        cp.profiles_1d.resize(ntimep)
         for i in range(ntimep):
           # grid
           #Normalised tor flux coord
