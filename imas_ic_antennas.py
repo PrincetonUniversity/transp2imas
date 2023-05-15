@@ -1,15 +1,12 @@
 
 from nc2imas import *
 
-class imas_nbi:
+class imas_ic_antennas:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
         self.im.print_debug()
         self.create_ids()
-
-    def valid(self, *vars_) -> bool:
-        return self.im.checkValid(vars_)
 
     def create_ids(self):
         ica = self.im.ids.ic_antennas
@@ -30,8 +27,11 @@ class imas_nbi:
         ica.time = timesc
 
         #ref point to define the poloidal angle, e.g. geometrical centre of vacuum vessel
-        self.im.fill_data_nc(ica.reference_point.r, 'RAXIS', c2m)
-        self.im.fill_data_nc(ica.reference_point.z, 'YAXIS', c2m)
+        raxis = self.im.get_ncvar('RAXIS', cm2m)
+        zaxis = self.im.get_ncvar('YAXIS', cm2m)
+        if self.im.checkValid(raxis, zaxis):
+            ica.reference_point.r = raxis[0].astype(float)
+            ica.reference_point.z = zaxis[0].astype(float)
 
         nant = self.im.get_nvar_names('PICHA?')
         power = []
@@ -57,11 +57,11 @@ class imas_nbi:
 
             #power_reflected = launched - absorbed
             plaunch = self.im.get_ncvar(f'PICHA{sta}')
-            pabs = self.im.get_ncvar(f'RFPWRAB1{sta}')
-            if self.valid(plaunch, pabs):
+            pabs = self.im.get_ncvar(f'RFPWRAB{sta}')
+            if self.im.checkValid(plaunch, pabs):
                 prefl = plaunch - pabs
                 self.im.fill_data(ica.antenna[i].power_reflected.data, prefl)
-                self.im.fill_data(ica.antenna[i].power_reflected.time, times)
+                self.im.fill_data(ica.antenna[i].power_reflected.time, timesc)
 
 
             #surface_current on the antenna straps and on passive components, for every time slice

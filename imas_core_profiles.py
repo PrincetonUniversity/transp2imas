@@ -31,9 +31,6 @@ class imas_core_profiles:
         self.im.print_debug()
         self.create_ids()
 
-    def valid(self, *vars_) -> bool:
-        return self.im.checkValid(vars_)
-
     #ions data
     def get_ion_data(self) -> list:
         ionDict = atom_base('').ions
@@ -61,7 +58,7 @@ class imas_core_profiles:
             ion.vel_par = []
             ion.z_ion_1d = []
             ang_vel = self.im.get_ncvar(f'OMG_{symb}') #CMG_H CMG_D
-            if self.valid(ang_vel, rmaj):
+            if self.im.checkValid(ang_vel, rmaj):
                 ion.rotation_frequency_tor = ang_vel / rmaj
             ions.append(ion)
 
@@ -85,13 +82,13 @@ class imas_core_profiles:
         ion.vel_par = []
         ion.z_ion_1d = []
         ang_vel = self.im.get_ncvar('OMGX') # OMGX CMGX
-        if self.valid(ang_vel, rmaj):
+        if self.im.checkValid(ang_vel, rmaj):
             ion.rotation_frequency_tor = ang_vel/rmaj
         #AZIMP
         zn = 1.0 #TODO
         aa = np.average(self.im.get_ncvar('AIMP'))
         zion = np.average(self.im.get_ncvar('XZIMP'))   #XSIMP XZIMPD
-        if self.valid(aa, zion, zn):
+        if self.im.checkValid(aa, zion, zn):
             ion.z_n = zn #zn.astype(float)
             ion.a = aa.astype(float)
             ion.z_ion = zion.astype(float)
@@ -161,7 +158,7 @@ class imas_core_profiles:
         # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
         cur_tot = self.im.get_ncvar('CUR', aconv)
         j_ohmic = self.im.get_ncvar('CUROH', aconv)
-        if self.valid(cur_tot, j_ohmic, grid_area):
+        if self.im.checkValid(cur_tot, j_ohmic, grid_area):
             j_nonind =  np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
             self.im.fill_data(cp.global_quantities.current_non_inductive, j_nonind, mult=sgn)
 
@@ -187,7 +184,7 @@ class imas_core_profiles:
         btor = self.im.get_ncvar('BTEQ') #toroidal beta
         # PAREA(TIME) - plasma CS area[cm^2]
         parea = self.im.get_ncvar('PAREA', aconv)
-        if self.valid(parea, bz, btor, currents):
+        if self.im.checkValid(parea, bz, btor, currents):
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
             a = np.sqrt(parea/pi)
             beta_tor_norm = 100.*btor*a*bz/currents
@@ -214,7 +211,7 @@ class imas_core_profiles:
         tev = []
         #volume PVOL(TIME) CM^3 : PLASMA VOLUME
         pvol = self.im.get_ncvar('PVOL', vconv)
-        if self.valid(te0, tel, pvol):
+        if self.im.checkValid(te0, tel, pvol):
             tev = np.sum(np.multiply(tel, gvol), axis=1) / pvol
             self.im.fill_data(cp.global_quantities.t_e_peaking, te0/tev)
 
@@ -222,7 +219,7 @@ class imas_core_profiles:
         ti0 = self.im.get_ncvar('TI0') #magnetic axis
         tion = self.im.get_ncvar('TI')  #TE(TIME3,X)EV
         tiv = []
-        if self.valid(ti0, tion, pvol):
+        if self.im.checkValid(ti0, tion, pvol):
             ti_ = np.sum(np.multiply(tion, gvol), axis=1) / pvol
             self.im.fill_data(cp.global_quantities.t_i_average_peaking, ti0/ti_)
 
@@ -261,7 +258,7 @@ class imas_core_profiles:
         #TRFLX(TIME3, XB)
         bflux_tor = self.im.get_ncvar('TRFLX')
         rho_tor = []
-        if self.valid(bz, bflux_tor):
+        if self.im.checkValid(bz, bflux_tor):
             rho_tor = np.sqrt(bflux_tor/(pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
 
         psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
@@ -286,7 +283,7 @@ class imas_core_profiles:
         ions = self.get_ion_data()
 
         n_i_total_over_n_e = []
-        if self.valid(nion, nel):
+        if self.im.checkValid(nion, nel):
           n_i_total_over_n_e = nion/nel
 
         neutrals = self.get_neutral_data()
@@ -302,7 +299,7 @@ class imas_core_profiles:
         jpfc = self.im.get_ncvar('CURSUM_PFC_MHD')
         jpassive = self.im.get_ncvar('CURSUM_PASS_MHD')
         j_tor = []
-        if self.valid(pcureq, jpfc, jpassive):
+        if self.im.checkValid(pcureq, jpfc, jpassive):
           try :
             j_tor = pcureq + jpfc + jpassive
             #TODO convert to density

@@ -37,6 +37,7 @@ class nc2imas(imas_connection, netcdf_connection):
         self.load_namelist()
 
     #scalar 0 is invalid. Don't check if it can be valid
+    #Don't call this using varargs forwarded by another function
     def checkValid(self, *variables):
         for var in variables:
           if var is None:
@@ -230,7 +231,7 @@ class nc2imas(imas_connection, netcdf_connection):
             return val
 
     #returns single value
-    def get_namelist_var(self, name:str, tp=None, scale=0):
+    def get_namelist_var(self, name:str, tp=None, scale=0, ind:int=-1):
         try:
             val = self.nmlist[name]
         except:
@@ -239,6 +240,7 @@ class nc2imas(imas_connection, netcdf_connection):
                 print(f'** {self.nmlist} is not set')
             return None
         else:
+            #if len(val)
             if tp in [int, float]:
                 val = tp(val)
             if scale > 0:

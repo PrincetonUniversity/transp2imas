@@ -35,7 +35,7 @@ class imas_connection:
         hom = os.path.expanduser('~')
         dbpath = f'{hom}/public/imasdb/{self.imas_dbname}'
         version = str(os.getenv('IMAS_VERSION')[0])
-        outdir = f"{dbpath}/{version}/{str(self.run)}"
+        outdir = f"{dbpath}/{version}/0"
         if not os.path.exists(outdir):
             os.makedirs(outdir)
 
@@ -69,11 +69,13 @@ class imas_connection:
             status, idx = self.ids.create_env_backend(self.user,self.imas_dbname,
                                             os.environ['IMAS_VERSION'], self.backend)
             if status != 0:
+                self.print_debug('create_new:')
                 raise Exception('Error creating database')
         else:
             status, idx = self.ids.open_env_backend(self.user,self.imas_dbname,
                                        os.environ['IMAS_VERSION'], self.backend)
             if status != 0:
+                self.print_debug('open:')
                 raise Exception('Error openning database')
 
 
