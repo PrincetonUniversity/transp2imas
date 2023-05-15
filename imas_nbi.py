@@ -8,9 +8,6 @@ class imas_nbi:
         self.im.print_debug()
         self.create_ids()
 
-    def valid(self, *vars_) -> bool:
-        return self.im.checkValid(vars_)
-
     def create_ids(self):
         nbi = self.im.ids.nbi
         #scalar time
@@ -52,22 +49,22 @@ class imas_nbi:
             sp_zn = self.im.get_namelist_var(f'XZBEAMA({ib})', float)
             self.logger.info(f' species: a {sp_a} zn {sp_zn} # {ib}' )
             sp_label = atomsDef.find_species_label(sp_a, sp_zn, beams)
-            if self.valid(sp_a, sp_zn, sp_label):
+            if self.im.checkValid(sp_a, sp_zn, sp_label):
                 nbu.species.a = sp_a
                 nbu.species.z_n = sp_zn
                 nbu.species.label = sp_label
 
             #energy EINJ02_E1
             self.im.fill_data_nc(nbu.energy.data, f'EINJ{stn}_E1')
-            self.im.fill_data(nbu.energy.time, times)
+            self.im.fill_data(nbu.energy.time, timesc)
 
             #injected power PINJ02
             self.im.fill_data_nc(nbu.power_launched.data, f'PINJ{stn}')
-            self.im.fill_data(nbu.power_launched.time, times)
+            self.im.fill_data(nbu.power_launched.time, timesc)
 
             #beam_power_fraction
             nbu.beam_power_fraction.data.resize((3, ntimes))
-            self.im.fill_data(nbu.beam_power_fraction.time, times)
+            self.im.fill_data(nbu.beam_power_fraction.time, timesc)
             self.im.fill_data_nc(nbu.beam_power_fraction.data[0], f'PINJ{stn}', resize=False)
 
             #energy/duration.  nml(TBOFFA - TBONA) ?
@@ -76,7 +73,7 @@ class imas_nbi:
 
             #beam_current_fraction
             nbu.beam_current_fraction.data.resize((3, ntimes))
-            self.im.fill_data(nbu.beam_current_fraction.time, times)
+            self.im.fill_data(nbu.beam_current_fraction.time, timesc)
             #for j in range(3):
                 #self.im.fill_data_nc(nbu.beam_current_fraction.data[j],
 
@@ -84,7 +81,7 @@ class imas_nbi:
             nbu.aperture.resize(1)
             #beam aperture shape
             geom_type = self.im.get_namelist_var(f'NBSHAPA({ib})', int)
-            if geom_type not None:
+            if geom_type is not None:
                 nbu.aperture[0].geometry_type = geom_type
 
             #see: sharepoint.iter.org ... nbi.html
@@ -94,31 +91,31 @@ class imas_nbi:
             #XRAPOFFA : horizontal offset of beam ctr rel. to ctr of aperture
             #dist of ctr of beam 1st aperture from midplane. Add  XRAPOFFA, XZAPOFFA ?
             center_r = self.im.get_namelist_var(f'XYBAPA({ib})', float, cm2m)
-            if center_r not None:
-                nbu.aperture[0].centre.r = centre_r
+            if center_r is not None:
+                nbu.aperture[0].centre.r = center_r
             #dist of ctr of beam SCE above/below midplane.
             center_z = self.im.get_namelist_var(f'XYBSCA({ib})', float, cm2m)
-            if center_z not None:
+            if center_z is not None:
                 nbu.aperture[0].centre.z = center_z
             #toroidal angle of beam source
             center_phi = self.im.get_namelist_var(f'XBZETA({ib})', float, d2rad)
-            if center_phi not None:
+            if center_phi is not None:
                 nbu.aperture[0].centre.phi = center_phi
 
-            nbu.aperture[0].x1_unit_vector.x
-            nbu.aperture[0].x1_unit_vector.y
-            nbu.aperture[0].x1_unit_vector.z
-            nbu.aperture[0].x2_unit_vector.x
-            nbu.aperture[0].x2_unit_vector.y
-            nbu.aperture[0].x2_unit_vector.z
-            nbu.aperture[0].x3_unit_vector.x
-            nbu.aperture[0].x3_unit_vector.y
-            nbu.aperture[0].x3_unit_vector.z
+            #nbu.aperture[0].x1_unit_vector.x
+            #nbu.aperture[0].x1_unit_vector.y
+            #nbu.aperture[0].x1_unit_vector.z
+            #nbu.aperture[0].x2_unit_vector.x
+            #nbu.aperture[0].x2_unit_vector.y
+            #nbu.aperture[0].x2_unit_vector.z
+            #nbu.aperture[0].x3_unit_vector.x
+            #nbu.aperture[0].x3_unit_vector.y
+            #nbu.aperture[0].x3_unit_vector.z
             x1_width = self.im.get_namelist_var(f'RAPEDGA({ib})', float, cm2m)
-            if x1_width not None:
+            if x1_width is not None:
                 nbu.aperture[0].x1_width = x1_width
             x2_width = self.im.get_namelist_var(f'XZPEDGA({ib})', float, cm2m)
-            if x2_width not None:
+            if x2_width is not None:
                 nbu.aperture[0].x2_width = x2_width
 
         self.im.putdb_imas(nbi)
@@ -128,7 +125,7 @@ if __name__ == '__main__':
     a = get_args(sys.argv)
 
     #sh, rn, mach = 142202, 'U01', 'NSTX' #  142202U01.CDF
-    sh, rn, mach = 147634, 'G14', 'D3D' # 147634G14.CDF
+    #sh, rn, mach = 147634, 'G14', 'D3D' # 147634G14.CDF
     sh, rn, mach = 175286, 'T57', 'D3D' # 175286T57.CDF
 
     ncf = str(sh)+rn+'.CDF'
