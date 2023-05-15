@@ -83,7 +83,9 @@ class imas_nbi:
             #APERTURE
             nbu.aperture.resize(1)
             #beam aperture shape
-            nbu.aperture[0].geometry_type = self.im.get_namelist_var(f'NBSHAPA({ib})', int)
+            geom_type = self.im.get_namelist_var(f'NBSHAPA({ib})', int)
+            if geom_type not None:
+                nbu.aperture[0].geometry_type = geom_type
 
             #see: sharepoint.iter.org ... nbi.html
             # (x1,x2,x3)=(e1,e2,e3); e1(X,Y,Z) https://.. utilities/detector_aperture_coordinates.svg
@@ -91,11 +93,17 @@ class imas_nbi:
             #CENTER of 1st aperture ?
             #XRAPOFFA : horizontal offset of beam ctr rel. to ctr of aperture
             #dist of ctr of beam 1st aperture from midplane. Add  XRAPOFFA, XZAPOFFA ?
-            nbu.aperture[0].centre.r = self.im.get_namelist_var(f'XYBAPA({ib})', float, cm2m)
+            center_r = self.im.get_namelist_var(f'XYBAPA({ib})', float, cm2m)
+            if center_r not None:
+                nbu.aperture[0].centre.r = centre_r
             #dist of ctr of beam SCE above/below midplane.
-            nbu.aperture[0].centre.z = self.im.get_namelist_var(f'XYBSCA({ib})', float, cm2m)
+            center_z = self.im.get_namelist_var(f'XYBSCA({ib})', float, cm2m)
+            if center_z not None:
+                nbu.aperture[0].centre.z = center_z
             #toroidal angle of beam source
-            nbu.aperture[0].centre.phi = self.im.get_namelist_var(f'XBZETA({ib})', float, d2rad)
+            center_phi = self.im.get_namelist_var(f'XBZETA({ib})', float, d2rad)
+            if center_phi not None:
+                nbu.aperture[0].centre.phi = center_phi
 
             nbu.aperture[0].x1_unit_vector.x
             nbu.aperture[0].x1_unit_vector.y
@@ -106,8 +114,12 @@ class imas_nbi:
             nbu.aperture[0].x3_unit_vector.x
             nbu.aperture[0].x3_unit_vector.y
             nbu.aperture[0].x3_unit_vector.z
-            nbu.aperture[0].x1_width = self.im.get_namelist_var(f'RAPEDGA({ib})', float, cm2m)
-            nbu.aperture[0].x2_width = self.im.get_namelist_var(f'XZPEDGA({ib})', float, cm2m)
+            x1_width = self.im.get_namelist_var(f'RAPEDGA({ib})', float, cm2m)
+            if x1_width not None:
+                nbu.aperture[0].x1_width = x1_width
+            x2_width = self.im.get_namelist_var(f'XZPEDGA({ib})', float, cm2m)
+            if x2_width not None:
+                nbu.aperture[0].x2_width = x2_width
 
         self.im.putdb_imas(nbi)
         self.logger.info('Done NBI')

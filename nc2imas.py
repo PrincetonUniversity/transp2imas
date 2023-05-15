@@ -237,6 +237,7 @@ class nc2imas(imas_connection, netcdf_connection):
             print(f'** Failed to get {name} from name list')
             if self.nmlist is None:
                 print(f'** {self.nmlist} is not set')
+            return None
         else:
             if tp in [int, float]:
                 val = tp(val)
