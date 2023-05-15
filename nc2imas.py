@@ -36,10 +36,9 @@ class nc2imas(imas_connection, netcdf_connection):
         self.logger.info('creating nc2imas')
         self.load_namelist()
 
-    #scalar 0 is invalid. Don't check for
+    #scalar 0 is invalid. Don't check if it can be valid
     def checkValid(self, *variables):
         for var in variables:
-          name = getVarName(var)
           if var is None:
               return False
           elif isinstance(var, np.ndarray):
@@ -47,12 +46,13 @@ class nc2imas(imas_connection, netcdf_connection):
               if sh[0]==0 or (len(sh)>1 and sh[1]==0):
                   return False
           elif isinstance(var, (list, tuple, set)):
-              if len(var) == 0:
+              if len(var)==0:
                   return False
           else:
               if var == 0:
                   return False
-          return True
+
+        return True
 
     def checkErrExit(self, *variables):
         for var in variables:
@@ -94,21 +94,22 @@ class nc2imas(imas_connection, netcdf_connection):
         else:
             self.fill_value(ids, dat, rsz=rsz, mult=mult, name=var)
 
-    def fill_data_nc(self, ids, var:str, mult:float=None):
+    def fill_data_nc(self, ids, var:str, mult:float=None, resize:bool=True):
         dat = self.get_ncvar(var)
-        if dat is None:
+        if dat is None or len(dat)==0:
             self.logger.info(f'{var} not found')
         else:
-            ids.resize(len(dat), refcheck=False)
+            if resize:
+                ids.resize(len(dat), refcheck=False)
             if mult is not None:
                 dat = mult*dat
             ids[:] = dat
 
-    def fill_data(self, ids, dat, mult:float=None, ind:int=-1, name:str=None):
+    def fill_data(self, ids, dat, mult:float=None, ind:int=-1, name:str=None, resize:bool=True):
         try:
           if self.checkValid(dat):
             dat = dat[ind] if ind>= 0 else dat
-            if not np.isscalar(dat):
+            if (not np.isscalar(dat)) and resize:
                 ids.resize(len(dat), refcheck=False)
             if mult is not None:
                 dat = mult*dat
@@ -204,10 +205,10 @@ class nc2imas(imas_connection, netcdf_connection):
         pattern = fr'\b{name}(\d{1,2})\b'
         try:
             matches = [self.nmlist[k] for k in self.nmlist.keys() if re.search(pattern, k)]
+            len(matches)
         except:
             print(f'**Error: {name}: namelist not found')
-            return 0
-        return len(matches)
+        return 0
 
 
     #return list. name's last character is discarded. Eg. XECECH?
@@ -229,7 +230,7 @@ class nc2imas(imas_connection, netcdf_connection):
             return val
 
     #returns single value
-    def get_namelist_var(self, name:str, tp=None):
+    def get_namelist_var(self, name:str, tp=None, scale=0):
         try:
             val = self.nmlist[name]
         except:
@@ -239,6 +240,8 @@ class nc2imas(imas_connection, netcdf_connection):
         else:
             if tp in [int, float]:
                 val = tp(val)
+            if scale > 0:
+                val = scale*val
             return val
 
     def fluxBdryToCenter(self, data, dat0=None):
