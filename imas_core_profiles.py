@@ -36,16 +36,15 @@ class imas_core_profiles:
 
     #ions data
     def get_ion_data(self) -> list:
-        ionDict = {'hydrogen':'H', 'deuterium':'D', 'tritium':'T', 'helium3':'HE3',
-                  'helium4':'HE4', 'lithium':'LITH', 'carbon':'C'}
+        ionDict = atom_base('').ions
         ions = []
         rmaj = np.average(self.im.get_ncvar('RMJSYM'))  # RMJSYM RMJM
 
-        for label, symb in ionDict.items():
+        for symb, label in ionDict.items():
             dens = self.im.get_ncvar(f'N{symb}', 1.0e6)
             if len(dens) == 0:
                 continue
-            self.logger.info(f'ion: {label} {symb}')
+            self.logger.info(f'ion: {symb} => {label}')
             ion = ion_data(label)
             ion.dens = dens
             #FUSN HE4 ION DENSITY'%'N/CM**3'%FDENS_4
@@ -67,7 +66,7 @@ class imas_core_profiles:
             ions.append(ion)
 
         #impurity
-        label = 'impurity'
+        label = 'X' #TODO identify and label it
         symb = 'X'
         dens = self.im.get_ncvar('NIMP', 1.0e6) #XDENS.  NIMP or NIMP_NC
         if len(dens) == 0:
@@ -103,14 +102,13 @@ class imas_core_profiles:
     #volume/wall neutral density
     def get_neutral_data(self, wall:str=None):
         dst = "DN0W" if wall else "DN0V" #volume neutral
-        neutDict = {'hydrogen':'H', 'deuterium':'D', 'tritium':'T', 'helium3':'HE3',
-                     'helium4':'HE4', 'lithium':'LITH'}
+        neutDict = atom_base('').neutrals
         neuts = []
-        for label, symb in neutDict.items():
+        for symb, label in neutDict.items():
             dens = self.im.get_ncvar(f'{dst}{symb}', 1.0e6)
             if len(dens)==0:
                 continue
-            self.logger.info(f'neutral: {label} {symb}')
+            self.logger.info(f'neutral: {symb} => {label}')
             neut = neutrals_data(label)
             neut.dens = dens
             self.logger.info(f'{symb}, dens {len(neut.dens)}')
