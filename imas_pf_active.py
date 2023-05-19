@@ -28,7 +28,12 @@ class imas_pf_active:
         pfc.time = timesc
 
         #coil names from VV_PF1AU(PF_ + PF1AU)
-        coils = self.im.get_var_names_re('VV_PF?', cut='VV_', nd=1, nch1=1, nch2=2)
+        coils_pf = self.im.get_var_names_re('VV_PF?', cut='VV_', nd=1, nch1=1, nch2=2)
+
+        #coil names from VV_OH
+        coils_oh = self.im.get_var_names_re('VV_OH?', cut='VV_', nd=0, nch=0)
+
+        coils = coils_pf + coils_oh
         ncoils = len(coils)
         pfc.coil.resize(ncoils)
 
@@ -36,7 +41,7 @@ class imas_pf_active:
         for i in range(ncoils):
             coil = coils[i]
             pfc.coil[i].name = coil
-            self.logger.info(f'PF coil: {coil}')
+            self.logger.info(f'PF/OH coil: {coil}')
 
             #Current fed in the coil (for 1 turn)
             #KK_PF1AU(TIME) Current in PF1AU circuit; CC_PF.. from equil ; PF_PF1AU zeros
@@ -54,7 +59,7 @@ class imas_pf_active:
         for i in range(ncoils):
             coil = coils[i]
             pfc.supply[i].name = coil
-            self.logger.info(f'PF supply: {coil}')
+            self.logger.info(f'PF/OH supply: {coil}')
 
             #Current at the supply output
             #KT_PF2U(TIME) Target current in pf2u circuit. VS_PF2U is desired current
