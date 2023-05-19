@@ -62,8 +62,8 @@ class imas_core_profiles:
                 ion.rotation_frequency_tor = ang_vel / rmaj
             ions.append(ion)
 
-        #impurity
-        label = 'X' #TODO identify and label it
+        #impurity = average in TRANSP, not only an element.
+        label = 'X'
         symb = 'X'
         dens = self.im.get_ncvar('NIMP', 1.0e6) #XDENS.  NIMP or NIMP_NC
         if len(dens) == 0:
@@ -85,7 +85,7 @@ class imas_core_profiles:
         if self.im.checkValid(ang_vel, rmaj):
             ion.rotation_frequency_tor = ang_vel/rmaj
         #AZIMP
-        zn = 1.0 #TODO
+        zn = -1.0 #not filled in IDS #TODO
         aa = np.average(self.im.get_ncvar('AIMP'))
         zion = np.average(self.im.get_ncvar('XZIMP'))   #XSIMP XZIMPD
         if self.im.checkValid(aa, zion, zn):
@@ -318,8 +318,6 @@ class imas_core_profiles:
         self.logger.info(f'\nFilling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(ntimep)
         for i in range(ntimep):
-          # grid
-          #Normalised tor flux coord
 
           #grid
           self.im.fill_data(cp.profiles_1d[i].grid.rho_tor_norm, rho_tor_norm, ind=i)
@@ -347,10 +345,11 @@ class imas_core_profiles:
               if i==0:
                   self.logger.info(f'* filling ion {ion.label}')
               cp.profiles_1d[i].ion[ij].label = ion.label
-              cp.profiles_1d[i].ion[ij].element.resize(1)
-              cp.profiles_1d[i].ion[ij].element[0].a = ion.a
-              cp.profiles_1d[i].ion[ij].element[0].z_n = ion.z_n
-              cp.profiles_1d[i].ion[ij].element[0].atoms_n = ion.atoms_n
+              if neut.a > 0. and neut.z_n > 0. and neut.atoms_n > 0:
+                  cp.profiles_1d[i].ion[ij].element.resize(1)
+                  cp.profiles_1d[i].ion[ij].element[0].a = ion.a
+                  cp.profiles_1d[i].ion[ij].element[0].z_n = ion.z_n
+                  cp.profiles_1d[i].ion[ij].element[0].atoms_n = ion.atoms_n
               self.im.fill_data(cp.profiles_1d[i].ion[ij].z_ion_1d, ion.z_ion_1d, None , i, 'z_ion_1d')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].temperature, ion.temp, None, i, 'temp')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].density, ion.dens, None, i, 'dens')
@@ -369,10 +368,11 @@ class imas_core_profiles:
               if i==0:
                   self.logger.info(f'* filling neutral {neut.label}')
               cp.profiles_1d[i].neutral[ij].label = neut.label
-              cp.profiles_1d[i].neutral[ij].element.resize(1)
-              cp.profiles_1d[i].neutral[ij].element[0].a = neut.a
-              cp.profiles_1d[i].neutral[ij].element[0].z_n = neut.z_n
-              cp.profiles_1d[i].neutral[ij].element[0].atoms_n = neut.atoms_n
+              if neut.a > 0. and neut.z_n > 0. and neut.atoms_n > 0:
+                  cp.profiles_1d[i].neutral[ij].element.resize(1)
+                  cp.profiles_1d[i].neutral[ij].element[0].a = neut.a
+                  cp.profiles_1d[i].neutral[ij].element[0].z_n = neut.z_n
+                  cp.profiles_1d[i].neutral[ij].element[0].atoms_n = neut.atoms_n
               self.im.fill_data(cp.profiles_1d[i].neutral[ij].density, neut.dens, None, i, 'dens')
 
           #

@@ -95,11 +95,14 @@ class nc2imas(imas_connection, netcdf_connection):
         else:
             self.fill_value(ids, dat, rsz=rsz, mult=mult, name=var)
 
-    def fill_data_nc(self, ids, var:str, mult:float=None, resize:bool=True):
+    def fill_data_nc(self, ids, var:str, mult:float=None, ind:int=-1, resize:bool=True):
+        if not isinstance(var, str):
+            raise ValueError(f'variable {var} is not string')
         dat = self.get_ncvar(var)
         if dat is None or len(dat)==0:
-            self.logger.info(f'{var} not found')
+            self.logger.info(f'{var} not-found')
         else:
+            dat = dat if ind<0 else dat[ind]
             if resize:
                 ids.resize(len(dat), refcheck=False)
             if mult is not None:
@@ -185,7 +188,8 @@ class nc2imas(imas_connection, netcdf_connection):
                             val = int(val)
                         except ValueError:
                             try:
-                                val = float(val)
+                                vv = val.upper().replace('D0','')
+                                val = float(vv)
                             except ValueError:
                                 pass
                         self.nmlist[kv[0].strip()] = val
@@ -208,7 +212,7 @@ class nc2imas(imas_connection, netcdf_connection):
             matches = [self.nmlist[k] for k in self.nmlist.keys() if re.search(pattern, k)]
             len(matches)
         except:
-            print(f'**Error: {name}: namelist not found')
+            self.logger.info(f'**Error: {name}: namelist not found')
         return 0
 
 
@@ -219,9 +223,9 @@ class nc2imas(imas_connection, netcdf_connection):
         try:
             val = [self.nmlist[f'{name0}({i})'] for i in range(1,n+1)]
         except:
-            print(f'** Failed to get {name} from name list')
+            self.logger.info(f'** Failed to get {name} from name list')
             if self.nmlist is None:
-                print(f'** {self.nmlist} is not set')
+                self.logger.info(f'** {self.nmlist} is not set')
             return []
         else:
             if tp in [int, float]:
@@ -230,22 +234,33 @@ class nc2imas(imas_connection, netcdf_connection):
                 val = scale*val
             return val
 
-    #returns single value
-    def get_namelist_var(self, name:str, tp=None, scale=0, ind:int=-1):
+    #returns scalar
+    def get_namelist_var_(self, name:str, tp=None, scale=0, ind:int=-1):
         try:
             val = self.nmlist[name]
+            if ind>=0 and isinstance(val, str):
+                val = re.split(r'[\s,;]+', val)[ind]
+
         except:
-            print(f'** Failed to get {name} from name list')
+            self.logger.info(f'** {name} NOT found in name list')
             if self.nmlist is None:
-                print(f'** {self.nmlist} is not set')
+                self.logger.info(f'** {self.nmlist} is not set')
             return None
-        else:
-            #if len(val)
-            if tp in [int, float]:
-                val = tp(val)
+
+        if tp in [int, float]:
+            val = tp(val)
             if scale > 0:
                 val = scale*val
-            return val
+        return val
+
+
+    def get_namelist_var(self, name:str, tp=None, scale=0, ind:int=-1):
+        res = self.get_namelist_var_(name, tp, scale, ind)
+        if res is None:
+            name = f'{name}({ind+1})'
+            res = self.get_namelist_var_(name, tp, scale, ind)
+        return res
+
 
     def fluxBdryToCenter(self, data, dat0=None):
         dat = []

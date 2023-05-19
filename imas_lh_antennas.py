@@ -33,8 +33,8 @@ class imas_lh_antennas:
             lha.reference_point.r = raxis[0].astype(float)
             lha.reference_point.z = zaxis[0].astype(float)
 
-        nant = self.im.get_nvar_names('PICHA?')
-        power = []
+        nant = self.im.get_nvar_names('PLHANT?')
+        self.logger.info(f'n LH Antenna {nant}')
 
         lha.antenna.resize(nant)
         for i in range(nant):
@@ -45,15 +45,16 @@ class imas_lh_antennas:
             lha.antenna[i].identifier = f'LH Antenna{sta}'
 
             #frequency
-            freq = self.im.get_namelist_var('FREQLH', ia)
+            freq = self.im.get_namelist_var('FREQLH', float, ind=ia-1)
             if self.im.checkValid(freq):
                 lha.antenna[i].frequency = freq
 
             #position
-            pos = self.imget_namelist_var('RHOPSI0LH', ia)
+            pos = self.im.get_namelist_var('RHOPSI0LH', float, ind=ia-1)
 
             #power launced
-            self.im.fill_data_nc(lha.antenna[i].power_launched.time, timesc)
+            self.logger.info(f'Ant: {ia} PLHANT{ia}')
+            self.im.fill_data(lha.antenna[i].power_launched.time, timesc)
             self.im.fill_data_nc(lha.antenna[i].power_launched.data, f'PLHANT{sta}')
 
             #power_forward. Forward power arriving to the back of the antenna
@@ -61,13 +62,14 @@ class imas_lh_antennas:
 
             #power_reflected = launched - absorbed
             plaunch = self.im.get_ncvar(f'PLHANT{sta}')
+            self.logger.info(f'Ant: {ia} PLHABS{sta}')
             pabs = self.im.get_ncvar(f'PLHABS{sta}')
             if self.im.checkValid(plaunch, pabs):
                 prefl = plaunch - pabs
                 self.im.fill_data(lha.antenna[i].power_reflected.data, prefl)
-                self.im.fill_data(lha.antenna[i].power_reflected.time, times)
+                self.im.fill_data(lha.antenna[i].power_reflected.time, timesc)
             else:
-                self.logger.info(f'Error: power_reflected. invalid: plaunch or pabs')
+                self.logger.info(f'Ant: {ia} Error: power_reflected. invalid: plaunch or pabs')
 
             #surface_current on the antenna straps and on passive components, for every time slice
 

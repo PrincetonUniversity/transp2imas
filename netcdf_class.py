@@ -47,19 +47,40 @@ class netcdf_connection:
             pass
         self.open_ncfile()
 
-
     #name's last character is discarded. Eg. PECIN?
     def get_nvar_names(self, name:str) -> int:
         if name[-1] != '?':
             raise Exception(f'Error in search of array variables {name}')
         name = name[:-1]
-        pattern = r'\b' + name + r'\d{1,2}\b'
-        matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.search(pattern, s)]
+        pat = r'\b' + name + r'\d{1,2}\b'
+        matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.search(pat, s)]
         return len(matches)
 
-    def get_ncvar(self, var:str, scale:float=0.) -> np.array:
+    #
+    def get_var_names_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
+          nch2:int=0, nd:int=0, nch:int=0) -> int:
+
+        if name[-1] != '?':
+            raise Exception(f'Error in search of array variables {name}')
+        name = name[:-1]
+
+        nd1 = nd if nd>0 else nd1
+        nd2 = nd if nd>0 else nd2
+        nch1 = nch if nch>0 else nch1
+        nch2 = nch if nch>0 else nch2
+        pat = f'^{name}' + r'\d{' + f'{str(nd1)},{str(nd2)}' + r'}' + \
+              r'[A-z]{' + f'{str(nch1)},{str(nch2)}' + r'}$'
+
+        matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.search(pat, s)]
+        if cut:
+            matches = [s.split(cut,1)[1] for s in matches if len(s.split(cut,1))>1]
+        return matches
+
+    def get_ncvar(self, var:str, scale:float=0., ind:int=-1) -> np.array:
         try:
             res = np.array(self.nc.variables[var][:])
+            if ind>=0:
+                res = res[ind]
             if scale > 0:
                 return scale*res
             else:
