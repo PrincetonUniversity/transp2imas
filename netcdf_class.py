@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import scipy
 import re
+from atoms_class import atom_base
 
 from scipy.interpolate import interp1d
 
@@ -47,6 +48,7 @@ class netcdf_connection:
             pass
         self.open_ncfile()
 
+    #default pattern has 1 or 2 digits \d{1,2}
     #name's last character is discarded. Eg. PECIN?
     def get_nvar_names(self, name:str) -> int:
         if name[-1] != '?':
@@ -56,10 +58,15 @@ class netcdf_connection:
         matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.search(pat, s)]
         return len(matches)
 
-    #
-    def get_var_names_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
-          nch2:int=0, nd:int=0, nch:int=0) -> int:
 
+    def get_var_names_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
+          nch2:int=0, nd:int=0, nch:int=0) -> list:
+        '''
+          nd1=digit_begin nd2=digit_end. same for char:nch1,nch2.
+          nd, nch for fixed number; override nd1,nd2,nch1,nch2
+          Used for specified ranges of # of digits and chars
+          eg: get_var_names_re('VV_PF?', cut='VV_', nd=1, nch1=1, nch2=2)
+        '''
         if name[-1] != '?':
             raise Exception(f'Error in search of array variables {name}')
         name = name[:-1]
@@ -75,6 +82,24 @@ class netcdf_connection:
         if cut:
             matches = [s.split(cut,1)[1] for s in matches if len(s.split(cut,1))>1]
         return matches
+
+
+
+    def get_var_names_lst(self, name:str, lst:list, crop=True, cut:str='') -> list:
+        '''
+          select existing variables matching pattern + passed in lst
+          eg: get_var_names_lst('BSTH_?', sp_look); sp_look=['H', 'D', 'T',..]
+        '''
+        if name[-1] != '?':
+            raise Exception(f'Error in search of array variables {name}')
+        name = name[:-1]
+        look = [name+ str(s) for s in lst]
+        matches = [self.vars_[i] for i,s in enumerate(self.vars_) if s in look]
+        st = cut if cut else name
+        if cut or crop:
+            matches = [str(s.split(st,1)[1]) for s in matches if len(s.split(st,1))>1]
+        return matches
+
 
     def get_ncvar(self, var:str, scale:float=0., ind:int=-1) -> np.array:
         try:

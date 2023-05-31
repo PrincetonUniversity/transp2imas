@@ -163,7 +163,7 @@ class imas_core_profiles:
             self.im.fill_data(cp.global_quantities.current_non_inductive, j_nonind, mult=sgn)
 
         #Bootstrap current (toroidal component). CURBS(TIME3, X) AMPS/CM2
-        # check surface itnegration
+        # check surface integration
         curbs = self.im.get_ncvar('CURBS', aconv)
         if len(curbs) > 0:
             curbsxa = sgn * np.sum(np.multiply(curbs, grid_area), axis=1)
@@ -317,6 +317,10 @@ class imas_core_profiles:
 
         self.logger.info(f'\nFilling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(ntimep)
+
+        #fill profiles_1d[*].grid
+        #self.im.fill_profiles1d_grid(cp) #TODO use this
+
         for i in range(ntimep):
 
           #grid

@@ -35,6 +35,11 @@ class nc2imas(imas_connection, netcdf_connection):
         self.set_logger(log)
         self.logger.info('creating nc2imas')
         self.load_namelist()
+        self.cm2m = 0.01
+        self.vconv = 1.e-6
+        self.vol_inv = 1.e6
+        self.sgn = -1 if self.iter_ else 1
+        self.pi = constants.pi  #scipy
 
     #scalar 0 is invalid. Don't check if it can be valid
     #Don't call this using varargs forwarded by another function
@@ -109,10 +114,15 @@ class nc2imas(imas_connection, netcdf_connection):
                 dat = mult*dat
             ids[:] = dat
 
-    def fill_data(self, ids, dat, mult:float=None, ind:int=-1, name:str=None, resize:bool=True):
+    def fill_data(self, ids, dat, mult:float=None, ind:int=-1, name:str=None,
+          resize:bool=True, chk:int=-1):
         try:
           if self.checkValid(dat):
             dat = dat[ind] if ind>= 0 else dat
+            if chk>0 and not np.isscalar(dat) and len(dat)!=chk:
+                self.logger.info(f'Error: size mismatch {len(dat)} != {chk}')
+                return
+
             if (not np.isscalar(dat)) and resize:
                 ids.resize(len(dat), refcheck=False)
             if mult is not None:
@@ -123,51 +133,6 @@ class nc2imas(imas_connection, netcdf_connection):
         except:
             if ind<1:
                 self.logger.info(f'{name} is invalid')
-
-    #returns n species. fills volume average if plasma and grid volumes are passed in
-    def fill_ion_densities(self, ids, ind1:int=-1, ind2:int=-1, pv=None, gv=None):
-        #N/CM**3
-        mult = 1.0e6
-        #ions
-        #calculate total ion densities
-        nsp = 0
-        idss = {'NH':ids.hydrogen, 'ND':ids.deuterium, 'NT':ids.tritium, 'NHe3':ids.helium_3,
-               'NHe4':ids.helium_4, 'NBe':ids.beryllium, 'NLith':ids.lithium, 'NC':ids.carbon,
-               'NNi':ids.nitrogen, 'NNe':ids.neon, 'NAr':ids.argon, 'NXe':ids.xenon,
-               'NO2':ids.oxygen, 'NW':ids.tungsten, 'NFe':ids.iron, 'NKr':ids.krypton}
-
-        for name, ids in idss.items():
-            dat = self.get_ncvar(name)
-            if dat is None:
-                self.logger.info(f'{name} not found')
-                continue
-            if ind1 >= 0:
-                dat = dat[ind1,:]
-            elif ind2 >= 0:
-                dat = dat[:, ind2]
-            elif pv is not None:
-                 #volume average if plasma volume is passed in, and NO index passed
-                 dat = np.divide(np.sum(np.multiply(dat, gv), axis=1), 1.0e-6*pv)
-
-            ids.value.resize(len(dat), refcheck=False)
-            ids.value[:] = mult*dat
-            nsp += 1
-        return nsp
-
-
-    def fill_properties(self, ids):
-        ids.ids_properties.comment = 'TRANSP output to IMAS IDS'
-        ids.ids_properties.creation_date = str(datetime.now())
-        #ids.ids_properties.version_put = str(os.getenv('IMAS_VERSION'))
-        ids.ids_properties.data_dictionary = str(os.getenv('IMAS_VERSION'))
-        ids.ids_properties.access_layer = str(os.getenv('IMAS_VERSION'))
-        #ids_properties/provenance.node.resize()
-        return ids
-
-    def fill_code_properties(self, ids):
-        ids.code.name = 'transp2imas'
-        ids.code.repository = 'https://github.com/PrincetonUniversity/transp2imas'
-        return ids
 
     def load_namelist(self):
         if self.nml_name is None:
@@ -284,6 +249,101 @@ class nc2imas(imas_connection, netcdf_connection):
         level = levels.get(log.lower())
         self.logger.setLevel(level=level)
         self.logger.addHandler(logging.FileHandler('log.out', mode='w'))
+
+
+    #fill ids.profiles_1d[*].grid. Resize if not laready done
+    def fill_profiles1d_grid(self, ids):
+        #scalar time
+        timesc = self.im.get_ncvar('TIME')
+        ntimes = len(timesc)
+        coord_x = self.im.get_ncvar('X')
+        #profiles_1d
+        # X(TIME3,X) is sqrt(norm. toroidal flux)
+        rho_tor_norm = np.multiply(coord_x, coord_x)
+        #beta_tor_norm
+        bz = self.im.get_ncvar('BZ') #(TIME) T. BZ outside plasma
+        #TRFLX(TIME3, XB)
+        bflux_tor = self.im.get_ncvar('TRFLX')
+        rho_tor = []
+        if self.im.checkValid(bz, bflux_tor):
+            rho_tor = np.sqrt(bflux_tor/(pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
+
+        psi = self.im.get_ncvar('PLFLX', 2.*self.im.pi) #(TIME3, XB)
+        rho_pol_norm = np.sqrt((psi - psi[0])/(psi[-1]-psi[0]))
+
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        gvol = self.im.get_ncvar('DVOL', self.im.vconv)
+        # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
+        grid_area = self.im.get_ncvar('DAREA', self.im.aconv)
+        #Surface area of the toroidal flux surface
+        #FLUX SURFACE AREA (TIME3,X) cm^2
+        surface = self.im.get_ncvar('SURF', 1.0e-4)
+
+        psi_axis = self.im.get_ncvar('PSI0_TR') # Wb/rad
+
+        if len(profiles_1d)==0:
+            ids.profiles_1d.resize(ntimes)
+
+        for i in range(ntimes):
+            #grid
+            gd = sci.profiles_1d[i].grid
+            self.im.fill_data(gd.rho_tor_norm, rho_tor_norm, ind=i)
+            self.im.fill_data(gd.rho_tor, rho_tor, ind=i)
+            self.im.fill_data(gd.rho_pol_norm, rho_pol_norm, ind=i)
+            self.im.fill_data(gd.psi, psi, ind=i)
+            self.im.fill_data(gd.volume, gvol, ind=i)
+            self.im.fill_data(gd.area, grid_area, ind=i)
+            self.im.fill_data(gd.surface, surface, ind=i)
+            if len(psi_axis) > i:
+                gd.psi_magnetic_axis = psi_axis[i].astype(float)
+            if len(psi) > i:
+                gd.psi_boundary = psi[i,-1].astype(float)
+
+
+    #returns n species. fills volume average if plasma and grid volumes are passed in
+    def fill_ion_densities(self, ids, ind1:int=-1, ind2:int=-1, pv=None, gv=None):
+        #N/CM**3
+        mult = 1.0e6
+        #ions
+        #calculate total ion densities
+        nsp = 0
+        idss = {'NH':ids.hydrogen, 'ND':ids.deuterium, 'NT':ids.tritium, 'NHe3':ids.helium_3,
+               'NHe4':ids.helium_4, 'NBe':ids.beryllium, 'NLith':ids.lithium, 'NC':ids.carbon,
+               'NNi':ids.nitrogen, 'NNe':ids.neon, 'NAr':ids.argon, 'NXe':ids.xenon,
+               'NO2':ids.oxygen, 'NW':ids.tungsten, 'NFe':ids.iron, 'NKr':ids.krypton}
+
+        for name, ids in idss.items():
+            dat = self.get_ncvar(name)
+            if dat is None:
+                self.logger.info(f'{name} not found')
+                continue
+            if ind1 >= 0:
+                dat = dat[ind1,:]
+            elif ind2 >= 0:
+                dat = dat[:, ind2]
+            elif pv is not None:
+                 #volume average if plasma volume is passed in, and NO index passed
+                 dat = np.divide(np.sum(np.multiply(dat, gv), axis=1), 1.0e-6*pv)
+
+            ids.value.resize(len(dat), refcheck=False)
+            ids.value[:] = mult*dat
+            nsp += 1
+        return nsp
+
+
+    def fill_properties(self, ids):
+        ids.ids_properties.comment = 'TRANSP output to IMAS IDS'
+        ids.ids_properties.creation_date = str(datetime.now())
+        #ids.ids_properties.version_put = str(os.getenv('IMAS_VERSION'))
+        ids.ids_properties.data_dictionary = str(os.getenv('IMAS_VERSION'))
+        ids.ids_properties.access_layer = str(os.getenv('IMAS_VERSION'))
+        #ids_properties/provenance.node.resize()
+        return ids
+
+    def fill_code_properties(self, ids):
+        ids.code.name = 'transp2imas'
+        ids.code.repository = 'https://github.com/PrincetonUniversity/transp2imas'
+        return ids
 
 
 def get_args(argv=None):
