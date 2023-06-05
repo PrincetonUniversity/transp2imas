@@ -44,17 +44,16 @@ class imas_core_sources:
         sci.species.type.description = tdesc
 
 
-    #sci source_ids, sp: single_species_name, ntimes:n_time_frames
-    #This is one neutral. This can be called for each of species
-    def fill_nbi_sources(self, sci, ntimes:int, sp:str):
-        self.im.logger.info(f'core source: NBI {sp}')
+    #sci source_ids, ntimes:n_time_frames
+    def fill_nbi_sources(self, sci, ntimes:int, sp:str, sp:str):
+        self.im.logger.info(f'core source: NBI')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
         #NBI global_quantities
         #global_quantities.power  coupled to plasma
         #BPTI (TIME) [WATTS] BEAM POWER TO IONS. =SUMINT(PBI)
-        bpti_glob = self.im.get_ncvar('BPTI')
+
         #BPTE (TIME) [WATTS] BEAM POWER TO ELECTRONS, =SUMINT(PBE)
         bpte_glob = self.im.get_ncvar('BPTE')
         #BPTH(TIME) WATTS; FAST ION POWER THERMALIZED ; BPTH_D
@@ -63,38 +62,53 @@ class imas_core_sources:
         global_power_tot = bpti_glob + bpte_glob + bpth_glob
         #BPTH=intgeral(BPTH_D +...)  (BHEAT_D..)
 
+        #BPOH(TIME); WATTS ; POWER: OH CIRCUIT TO FAST IONS
+
+
         #particles
         #BSTH (TIME) N/SEC FAST ION THERMALIZATIONS
         # = BSTH_D + ....
+        #WNMCTOT_D
         total_ion_particles = self.im.get_ncvar('BSTH')
+
+        gptcls, ptcls_prof, pbth_sp = 0., 0., 0.
+
+        bpti_glob += self.im.get_ncvar('BPST_D')
         #BSTH_D (TIME) N/SEC D BEAM THERMALIZATIONS
-        particles_sp = self.im.get_ncvar(f'BSTH_{sp}')
+        gptcls += self.im.get_ncvar(f'BSTH_{sp}').astype(float)
 
         #SBTH_D(TIME3, X) N/CM3/SEC; D BEAM THERMALIZATION SOURCE; SBTH
-        particles_prof = self.im.get_ncvar(f'SBTH_{sp}')
+        ptcls_prof += self.im.get_ncvar(f'SBTH_{sp}')
         #same for e_ and ions ?????????
 
-        #profile
-        #PBI +PBTH_ to thermal ions. PBTH_D(TIME3, X) W/CM3.
-        pbi = self.im.get_ncvar('PBI', self.vol_inv)
         # PBTH_D (TIME3, X) WATTS/CM3 "D BEAM THERMALIZATION POWER
-        pbth_sp = self.im.get_ncvar('PBTH_'+sp, self.vol_inv)
+        pbth_sp += self.im.get_ncvar('PBTH_'+sp, self.vol_inv)
+
+
+        #profile
+        #PBI(TIME3, X) W/CM3; BEAM HEATING OF IONS
+        ion_energy = self.im.get_ncvar('PBI', self.vol_inv)
+
         #PBTH(TIME3, X) WATTS/CM3 "FAST ION THERMALIZATION POWER
         total_ion_energy = self.im.get_ncvar('PBTH', self.vol_inv)
 
 
         #PBE(TIME3, X) WATTS/CM3  BEAM HEATING OF ELECTRONS. PBE_D  PBE01_TOT ??
-        pbe = self.im.get_ncvar('PBE', self.vol_inv)
+        el_energy = self.im.get_ncvar('PBE', self.vol_inv)
 
         #SINJ_D PINJ_D
 
         #torque TQTHNB BTQJXBS TQB01
         #TQBTH(TIME3, X)Nt-M/CM3 ; BEAM THERMALIZATION TORQUE ; TQTH{02..14} (TIME3, X)
+        #or TQBCO : BEAM COLLISIONAL TORQUE   ?
         torque = self.im.get_ncvar('TQBTH', self.vol_inv)
+
+        #CURB(TIME3, X) ; AMPS/CM2; BEAM DRIVEN CURRENT
+        j_parallel = self.im.get_ncvar('CURB', self.area_inv)
 
         self.fill_src_properties(sci, iname='nbi', iind=2, idesc="Source from Neutral Beam Injection",
                     tname='neutral', tind=4, tdesc='Neutral species in a single/average state')
-        #
+
         self.fill_element_data(sci.species.neutral, sp)
 
         sci.profiles_1d.resize(ntimes)
@@ -109,24 +123,34 @@ class imas_core_sources:
                 glob.power[i] = global_power_tot[i].astype(float)
                 glob.total_ion_power[i] = bpti_glob[i].astype(float)
                 glob.total_ion_particles[i] = total_ion_particles[i].astype(float)
-                glob.electrons.particles[i] = particles_sp[i].astype(float)
+                glob.electrons.particles[i] = gptcls[i]
                 glob.electrons.power[i] = bpte_glob[i].astype(float)
 
-            self.im.fill_data(profi.electrons.energy, pbe, ind=i, chk=nprof, name='prof_el_energy')
-            self.im.fill_data(profi.electrons.particles, particles_prof, ind=i, chk=nprof, name='prof_el_ptcls')
+            self.im.fill_data(profi.electrons.energy, el_energy, ind=i, chk=nprof, name='prof_el_energy')
+            self.im.fill_data(profi.electrons.particles, ptcls_prof, ind=i, chk=nprof, name='prof_el_ptcls')
 
             #inside ???
             self.im.fill_data(profi.torque_tor_inside, torque, ind=i, chk=nprof, name='torque')
-            self.im.fill_data(profi.total_ion_energy, total_ion_energy, ind=i, chk=nprof, name='tot_ion_en')
+            self.im.fill_data(profi.total_ion_energy, ion_energy, ind=i, chk=nprof, name='tot_ion_en')
 
-            profi.ion.resize(1)
-            self.im.fill_data(profi.ion[0].energy, pbi, ind=i, chk=nprof, name='pbi')
-            self.im.fill_data(profi.ion[0].particles, particles_prof, ind=i, chk=nprof, name='ion_ptcls')
+            self.im.fill_data(profi.j_parallel, j_parallel, ind=i, chk=nprof, name='j_parallel')
+
+            profi.ion.resize(len(src_names))
 
 
-    #sci source_ids, sp: single_species_name, ntimes:n_time_frames
-    def fill_ic_sources(self, sci, ntimes:int, sp:str=''):
-        self.im.logger.info(f'core source: IC {sp}')
+            self.fill_fusion_element_info(profi, name)
+            profi.ion[j].label = beams_dict[name]
+
+            #PBI_D (TIME3, X) WATTS/CM3 "D BEAM THERMALIZATION POWER : PBTH_D ?
+            self.im.fill_data_nc(profi.ion[j].energy, f'PBI_{sp}', self.im.vol_inv, i)
+            #BSTH_D (TIME) N/SEC D BEAM THERMALIZATIONS
+            self.im.fill_data_nc(profi.ion[j].particles, f'BSTH_{sp}', self.im.vol_inv, i)
+            #neutral_index
+
+
+    #sci source_ids, globntimes:n_time_frames
+    def fill_ic_sources(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'core source: IC')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
         #species
@@ -137,25 +161,34 @@ class imas_core_sources:
         if sp:
             self.fill_element_data(sci.species.ion, sp)
 
+        #PICHTOT(TIME) ; WATTS; TOTAL ICRF ANTENNA POWER
+        #ant_power = self.im.get_ncvar('PICHTOT').astype(float)
 
-        #PIC_F1(TIME3, X); WATTS/CM3; RF PWR Absorbed, Freq.1
-        #PIC_F2
+        power_coupled = []
+        #RFPWRAB1(TIME) ;WATTS; Power ABSORBED, Antenna #1
+        ants =  self.im.get_var_names_re('RFPWRAB?', nd1=1, nd2=2)
+        for i in range(len(ants)):
+            name = ants[i]
+            power_coupled += self.im.get_ncvar(name).astype(float)
 
         #PRFB_D(TIME) WATTS; RF POWER -> D BEAM IONS
 
         #PRFFI POWER TO FAST IONS
         #PICF01N01
 
-        #QRFBAL
-        #PIICH(TIME3, X) WATTS/CM3 ICRF ION HEATING
-        #PEICH(TIME3, X) WATTS/CM3 ICRF E- HEATING
 
         #QICHA(TIME3, X) WATTS/CM3; TOTAL ICH HEATING
-        tot_heat_prof = self.im.get_ncvar('QICHA', self.im.vol_inv)
         #QICHE(TIME3, X) WATTS/CM3; ICH DIRECT ELECTRON HEATING
-        el_heat_prof = self.im.get_ncvar('QICHE', self.im.vol_inv)
         #QICHI(TIME3, X) WATTS/CM3; ICH DIRECT TH.ION HEATING
-        ion_heat_prof = self.im.get_ncvar('QICHI', self.im.vol_inv)
+        #QRFBAL
+
+        #PIICH(TIME3, X) WATTS/CM3 ICRF ION HEATING
+        el_heat_prof = self.im.get_ncvar('PEICH', self.im.vol_inv) #QICHE
+        #PEICH(TIME3, X) WATTS/CM3 ICRF E- HEATING
+        ion_heat_prof = self.im.get_ncvar('PIICH', self.im.vol_inv) #QICHI
+        #tot_heat_prof = self.im.get_ncvar('QICHA', self.im.vol_inv)
+        tot_heat_prof = ion_heat_prof + el_heat_prof
+
 
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
@@ -165,10 +198,7 @@ class imas_core_sources:
 
         el_power_glob = np.sum(np.multiply(el_heat_prof, gvol), axis=1)
 
-        #PICHANT
 
-
-        #
         self.fill_species_neutral(sci, sp)
 
         sci.profiles_1d.resize(ntimes)
@@ -179,29 +209,27 @@ class imas_core_sources:
         for i in range(ntimes):
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
-            if len(global_power_tot)>i:
-                glob.power[i] = global_power_tot[i].astype(float)
+            if len(power_coupled)>i:
+                glob.power[i] = power_coupled[i]
                 glob.total_ion_power[i] = ion_power_glob[i].astype(float)
-                glob.total_ion_particles[i] = total_ion_particles[i].astype(float)
-                glob.electrons.particles[i] = el_particles[i].astype(float)
                 glob.electrons.power[i] = el_power_glob[i].astype(float)
 
             self.im.fill_data(profi.electrons.energy, el_heat_prof, ind=i, chk=nprof, name='prof_el_energy')
-            self.im.fill_data(profi.electrons.particles, el_particles_prof, ind=i, chk=nprof, name='prof_el_ptcls')
+            #self.im.fill_data(profi.electrons.particles, el_particles_prof, ind=i, chk=nprof, name='prof_el_ptcls')
 
             #inside ???
             self.im.fill_data(profi.torque_tor_inside, torque, ind=i, chk=nprof, name='torque')
-            self.im.fill_data(profi.total_ion_energy, total_ion_energy, ind=i, chk=nprof, name='tot_ion_en')
+            #self.im.fill_data(profi.total_ion_energy, total_ion_energy, ind=i, chk=nprof, name='tot_ion_en')
 
             profi.ion.resize(1)
             self.im.fill_data(profi.ion[0].energy, tot_heat_prof, ind=i, chk=nprof, name='pbi')
-            self.im.fill_data(profi.ion[0].particles, ion_particles_prof, ind=i, chk=nprof, name='ion_ptcls')
+            #self.im.fill_data(profi.ion[0].particles, ion_particles_prof, ind=i, chk=nprof, name='ion_ptcls')
 
 
 
-    #sci source_ids, sp: single_species_name, ntimes:n_time_frames
-    def fill_ec_sources(self, sci, ntimes:int, sp:str=''):
-        self.im.logger.info(f'core source: EC {sp}')
+    #sci source_ids, globntimes:n_time_frames
+    def fill_ec_sources(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'core source: EC')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
@@ -213,15 +241,17 @@ class imas_core_sources:
         if sp:
             self.fill_element_data(sci.species.ion, sp)
 
+        #PECHT(TIME) ; WATTS; ECRF ELECTRON HEATING
+        power_glob = self.im.get_ncvar('PECHT').astype(float)
 
         #PEECH(TIME3, X) WATTS/CM3; ECRH ELECTRON HEATING
         el_heat_prof = self.im.get_ncvar('PEECH', self.im.vol_inv)
 
-        #DVOL(TIME3, X) CM**3  ZONE VOLUME
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
-
         el_power_glob = np.sum(np.multiply(el_heat_prof, gvol), axis=1)
 
+        #ECCUR(TIME3, X) ; AMPS/CM2; ECRH CURRENT
+        curr = self.im.get_ncvar('ECCUR', self.im.area_inv)
 
         #
         self.fill_element_data(sci.species.neutral, sp)
@@ -234,19 +264,17 @@ class imas_core_sources:
         for i in range(ntimes):
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
-            if len(el_power_glob)>i:
-                glob.power[i] = el_power_glob[i].astype(float)
-                glob.total_ion_power[i] = 0.
-                glob.total_ion_particles[i] = 0.
-                glob.electrons.particles[i] = 0.
+            if len(power_glob)>i:
+                glob.power[i] = power_glob[i]
                 glob.electrons.power[i] = el_power_glob[i].astype(float)
 
-            self.im.fill_data(profi.electrons.energy, el_heat_prof, ind=i, chk=nprof, name='prof_el_energy')
+            self.im.fill_data(profi.electrons.energy, el_heat_prof, ind=i, chk=nprof, name='el_energy')
+            self.im.fill_data(profi.j_parallel, curr, ind=i, chk=nprof, name='curr')
 
 
-    #sci source_ids, sp: single_species_name, ntimes:n_time_frames
-    def fill_lh_sources(self, sci, ntimes:int, sp:str=''):
-        self.im.logger.info(f'core source: LH {sp}')
+    #sci source_ids, globntimes:n_time_frames
+    def fill_lh_sources(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'core source: LH')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
@@ -271,7 +299,6 @@ class imas_core_sources:
 
         global_power_tot = ion_power_glob + el_power_glob
 
-
         #
         self.fill_element_data(sci.species.neutral, sp)
 
@@ -295,9 +322,9 @@ class imas_core_sources:
 
 
 
-    #sci source_ids, sp: single_species_name, ntimes:n_time_frames
-    def fill_fusion_sources(self, sci, ntimes:int, sp:str=''):
-        self.im.logger.info(f'core source: Fusion {sp}')
+    #sci source_ids, globntimes:n_time_frames
+    def fill_fusion_sources(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'core source: Fusion')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
@@ -319,7 +346,9 @@ class imas_core_sources:
         fions_dict = atom_base().fusion_ions
         src_names = self.im.get_var_names_lst('BFTH_?', fions_dict.keys())
 
-        gpower, gtorq, prof_pow, gptcls, prof_powe, prof_powi = 0., 0., 0., 0., 0., 0.
+        gpower, gtorq, prof_pow, gptcls, prof_powe, prof_powi = [], [], [], [], [], []
+        fusion_power = []
+
         for i in range(len(src_names)):
             #selected from fions[..]
             name = src_names[i]
@@ -355,7 +384,7 @@ class imas_core_sources:
             if len(gptcls)>i:
                 glob.total_ion_particles[i] = gptcls[i]
 
-            glob.electrons.particles[i] = 0
+            #glob.electrons.particles[i] = 0
             if len(gpow_e)>i:
                 glob.electrons.power[i] = gpow_i[i]
 
@@ -386,9 +415,9 @@ class imas_core_sources:
 
 
 
-    #sci source_ids, sp: single_species_name, ntimes:n_time_frames
-    def fill_ohmic_sources(self, sci, ntimes:int, sp:str=''):
-        self.im.logger.info(f'Core source: ohmic {sp}')
+    #sci source_ids, globntimes:n_time_frames
+    def fill_ohmic_sources(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'Core source: Ohmic')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
@@ -398,30 +427,76 @@ class imas_core_sources:
         if sp:
             self.fill_element_data(sci.species.ion, sp)
 
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        gvol = self.im.get_ncvar('DVOL', self.im.vconv)
+        #BZ(TIME) ; Tesla; BZ @R=RMAJOR OUTSIDE PLASMA
+        bz = self.im.get_ncvar('BZ')
 
+        #PLJBXTR ! <J.B>ext from solution of Ohms law equation
+        #PLJBXTR(TIME3, X) ; AMP*TESLA/CM2; <J.B> DRIVEN, FROM RESISTIVITY
 
-        #parallel current
+        #parallel current. average(J.B)/B0 ; B0=vacuum_toroidal_field/b0
         #PLJBOH(TIME3, X) ;AMP*TESLA/CM2 ; <J.B> OHMIC
-        #divide by B
-        current_parallel
-        j_parallel
+        jdotb = self.im.get_ncvar('PLJBOH', self.im.area_inv)
+
+        #zeros in BZ ?
+        j_parallel = np.divide(jdotb, np.tile(bz[None,:].T, nprof))
+
+        beams_dict = atom_base().beams
+        beams = self.im.get_var_names_re('BPOH_?', beams_dict.keys())
+
+        #BPOH(TIME); WATTS ; POWER: OH CIRCUIT TO FAST IONS
+        power_fi_glob = self.im.get_ncvar('BPOH')
+
+        #POHB(TIME3, X) W/CM3; POWER: OH CIRCUIT TO FAST IONS
+        power_fi = self.im.get_ncvar('POHB', self.im.vol_inv)
+        fusion_power, beam_power = [], []
+        for i in range(len(beams)):
+            #BFOH_3(TIME) ; WATTS ; POWER: OH CIRCUIT TO FUSN HE3
+            fusion_power += self.im.get_ncvar(f'BFOH_{name}').astype(float)
+            #BPOH_D(TIME) ; POWER: OH CIRCUIT TO D BEAM
+            beam_power += self.im.get_ncvar(f'BPOH_{name}').astype(float)
+
+        power_ions = fusion_power + beam_power + power_fi
+
+        power_ions_glob = np.sum(np.multiply(power_ions, gvol), axis=1)
+
+        #POH(TIME3, X) WATTS/CM3; OHMIC HEATING POWER
+        power_prof = self.im.get_ncvar('POH', self.im.vol_inv).astype(float)
+        power_glob = np.sum(np.multiply(power_prof, gvol), axis=1)
 
         #conductivity from resistivity ?
 
+        #TQOHB(TIME3, X) ;Nt-M/CM3; TORQUE OH CIRCUIT --> BEAM
 
 
-        #POH(TIME3, X) WATTS/CM3; OHMIC HEATING POWER
-        gpower = self.im.get_ncvar('POH', self.im.vol_inv)
+        self.fill_element_data(sci.species.neutral, sp)
+
+        sci.profiles_1d.resize(ntimes)
+        #fill profiles_1d[*].grid
+        self.im.fill_profiles1d_grid(sci)
+        sci.global_quantities.resize(ntimes)
+
+        for i in range(ntimes):
+            glob = sci.global_quantities[i]
+            profi = sci.profiles_1d[i]
+            if len(power_glob)>i:
+                glob.power[i] = power_glob[i]
+                glob.total_ion_power[i] = power_ions_glob[i]
+                #glob.electrons.power[i] = el_power_glob[i].astype(float)
+
+            #self.im.fill_data(profi.electrons.energy, el_heat_prof, ind=i, chk=nprof, name='prof_el_energy')
+
+            profi.ion.resize(1)
+            self.im.fill_data(profi.ion[0].j_parallel, j_parallel, ind=i, chk=nprof, name='j_par')
+            self.im.fill_data(profi.ion[0].energy, power_ions, ind=i, chk=nprof, name='power_ions')
 
 
 
 
-
-
-
-    #sci source_ids, sp: single_species_name, ntimes:n_time_frames
+    #sci source_ids, globntimes:n_time_frames
     def fill_ic_nbi_sources(self, sci, ntimes:int, sp:str):
-        self.im.logger.info(f'core source: IC+NBI {sp}')
+        self.im.logger.info(f'core source: IC+NBI')
 
         #QICHFAST(TIME3, X). WATTS/CM3. ICH Heating of Beam & Fusn Ions
         heat_prof = self.im.get_ncvar('QICHFAST', self.im.vol_inv)
@@ -429,9 +504,11 @@ class imas_core_sources:
 
 
 
-    def get_sources_info(self, src_search:list)->dict:
+    def get_sources_info(self, sources:list)->dict:
+        '''
+        Return: dict  {str : [name, species]}
+        '''
         srcs = {}
-
         #NBI
         #H,D,T,3,4,N,A,K,X,Z ; Z=Hi_Z(heavy), 3=He4, 4=He4, N=neon, A=argon, K=krypton, X=xenon
         #'3','4' is replaced by 'HE3', 'HE4' in the next line
@@ -442,18 +519,19 @@ class imas_core_sources:
         name = 'nbi'
         #srcs dictionary of key, value=[name, sp]
         srcs = { name+str(i+1):[name, species[i]] for i in range(len(species))}
-
-
         return srcs
 
+
+    #edge_sources
+        #DN0OUT  Hydrogenic neutral density in scrape off region
 
     def create_ids(self):
         csc = self.im.ids.core_sources
 
-        src_search = ['nbi', 'ic',   'ic_nbi']
-        #{'nbi1':['nbi', 'D'], ..}
-        src_dict = self.get_sources_info(src_search)
-        csc.sources.resize(len(src_dict))
+        src_lst = ['total', 'nbi', 'ec', 'lh', 'ic', 'fusion', 'ohmic', 'ic_nbi']
+        #src_dict{name_id : [name, species]}
+        src_dict = get_sources_info(src_lst)
+        csc.source.resize(len(src_dict))
 
         #scalar time
         timesc = self.im.get_ncvar('TIME')
@@ -464,14 +542,22 @@ class imas_core_sources:
 
         #fill source specific
         for name_id, srcs in src_dict.items():
-          name, sp = srcs[0], srcs[1]
-          sci = csc.sources[i]
+          sci = csc.source[i]
+          name, sp= srcs[0], srcs[1]
           if name == 'nbi':
-              self.fill_nbi_sources(sci, ntimes, sp)
+              self.fill_nbi_sources(sci, ntimep, sp)
+          if name == 'ec':
+              self.fill_ec_sources(sci, ntimep, sp)
+          if name == 'lh':
+              self.fill_lh_sources(sci, ntimep, sp)
           if name == 'ic':
-              self.fill_ic_sources(sci, ntimes, sp)
+              self.fill_ic_sources(sci, ntimep, sp)
+          if name == 'fusion':
+              self.fill_fusion_sources(sci, ntimep, sp)
+          if name == 'ohmic':
+              self.fill_ohmic_sources(sci, ntimep, sp)
           if name == 'ic_nbi':
-              self.fill_ic_nbi_sources(sci, ntimes, sp)
+              self.fill_ic_nbi_sources(sci, ntimep, sp)
 
 
 
@@ -484,8 +570,8 @@ class imas_core_sources:
         csc = self.im.fill_properties(csc)
         self.im.fill_code_properties(csc)
         csc.ids_properties.homogeneous_time = 1
-        csc.time.resize(ntimes)
-        csc.time = timesc
+        csc.time.resize(ntimep)
+        csc.time = timep
 
         #vacuum toroidal field
         raxis = self.im.get_ncvar('RAXIS', self.im.cm2m) #RAXISEQ
