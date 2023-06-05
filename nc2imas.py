@@ -36,6 +36,7 @@ class nc2imas(imas_connection, netcdf_connection):
         self.logger.info('creating nc2imas')
         self.load_namelist()
         self.cm2m = 0.01
+        self.area_inv = 1.0e4
         self.vconv = 1.e-6
         self.vol_inv = 1.e6
         self.sgn = -1 if self.iter_ else 1

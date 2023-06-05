@@ -14,7 +14,7 @@ class atom_base():
         self.label = 'dummy'
 
         #Transp : IDS
-        self.atoms = {'H':'H', 'D':'D', 'T':'T', 'HE3':'He3', 'HE4':'He4'}
+        self.atoms = {'H':'H', 'D':'D', 'T':'T', '3':'He3', '4':'He4'}
         self.nb2 = {'N':'Ne', 'A':'Ar', 'K':'Kr', 'X':'Xe', 'Z':'HI_Z'} #'High_Z or heavy ??
         self.beams = {**self.atoms, **self.nb2} #self.atoms.copy()
         self.ions = {**self.atoms, 'LITH':'Li', 'C':'C'}
