@@ -495,6 +495,48 @@ class imas_core_sources:
 
 
     #sci source_ids, globntimes:n_time_frames
+    def fill_bremsstrahlung_sources(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'Core source: Bremsstrahlung')
+        coord_x = self.im.get_ncvar('X')
+        nprof = len(coord_x)
+
+        self.fill_src_properties(sci, iname='bremsstrahlung', iind=8,
+            idesc="Source from  bremsstrahlung; radiation losses are negative",
+                    tname='unspecified', tind=0, tdesc='charged particles')
+        #sp is TRANSP symbol defined in atoms_class.entries
+        if sp:
+            self.fill_element_data(sci.species.ion, sp)
+
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        gvol = self.im.get_ncvar('DVOL', self.im.vconv)
+
+
+        #PRAD_BR(TIME3, X) ; W/CM3; BREMSSTRAHLUNG RADIATION
+        rad_prof = self.im.get_ncvar('PLJBOH', self.im.vol_inv)
+        rad_glob = np.sum(np.multiply(rad_prof, gvol), axis=1)
+
+        self.fill_element_data(sci.species.neutral, sp)
+
+        sci.profiles_1d.resize(ntimes)
+        #fill profiles_1d[*].grid
+        self.im.fill_profiles1d_grid(sci)
+        sci.global_quantities.resize(ntimes)
+
+        for i in range(ntimes):
+            glob = sci.global_quantities[i]
+            profi = sci.profiles_1d[i]
+            if len(rad_glob)>i:
+                glob.power[i] = rad_glob[i]
+
+            profi.ion.resize(1)
+            self.im.fill_data(profi.total_ion_power_inside, rad_glob, ind=i, chk=nprof, name='power_ions')
+            #self.im.fill_data(profi.ion[0].energy, rad_glob, ind=i, chk=nprof, name='power_ions')
+
+
+
+
+
+    #sci source_ids, globntimes:n_time_frames
     def fill_ic_nbi_sources(self, sci, ntimes:int, sp:str):
         self.im.logger.info(f'core source: IC+NBI')
 
@@ -528,7 +570,7 @@ class imas_core_sources:
     def create_ids(self):
         csc = self.im.ids.core_sources
 
-        src_lst = ['total', 'nbi', 'ec', 'lh', 'ic', 'fusion', 'ohmic', 'ic_nbi']
+        src_lst = ['total', 'nbi', 'ec', 'lh', 'ic', 'fusion', 'ohmic', 'bremsstrahlung', 'ic_nbi']
         #src_dict{name_id : [name, species]}
         src_dict = get_sources_info(src_lst)
         csc.source.resize(len(src_dict))
@@ -556,6 +598,8 @@ class imas_core_sources:
               self.fill_fusion_sources(sci, ntimep, sp)
           if name == 'ohmic':
               self.fill_ohmic_sources(sci, ntimep, sp)
+          if name == 'bremsstrahlung':
+              self.fill_bremsstrahlung_sources(sci, ntimep, sp)
           if name == 'ic_nbi':
               self.fill_ic_nbi_sources(sci, ntimep, sp)
 
