@@ -5,21 +5,17 @@ class imas_nbi:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.im.print_debug()
         self.create_ids()
 
     def create_ids(self):
+        self.im.logger.info('\nnbi')
         nbi = self.im.ids.nbi
         #scalar time
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)
-        self.im.checkErrExit(timesc)
-
-        nbi = self.im.fill_properties(nbi)
-        self.im.fill_code_properties(nbi)
-        nbi.ids_properties.homogeneous_time = 1
-        nbi.time.resize(ntimes)
-        nbi.time = timesc
+        timesp = self.im.get_ncvar('TIME')
+        ntimep = len(timesc)
+        self.im.checkErrExit(timesc, timesp)
 
         nunits = self.im.get_nvar_names('PINJ?')
         nbeams = self.im.get_namelist_var('NBEAM')
@@ -49,7 +45,7 @@ class imas_nbi:
             sp_zn = self.im.get_namelist_var(f'XZBEAMA({ib})', float)
             self.logger.info(f' species: a {sp_a} zn {sp_zn} # {ib}' )
             sp_label = atomsDef.find_species_label(sp_a, sp_zn, beams)
-            if self.im.checkValid(sp_a, sp_zn, sp_label):
+            if self.im.is_valid(sp_a, sp_zn, sp_label):
                 nbu.species.a = sp_a
                 nbu.species.z_n = sp_zn
                 nbu.species.label = sp_label
@@ -118,8 +114,14 @@ class imas_nbi:
             if x2_width is not None:
                 nbu.aperture[0].x2_width = x2_width
 
-        self.im.putdb_imas(nbi)
-        self.logger.info('Done NBI')
+        if nunits > 0:
+            nbi = self.im.fill_properties(nbi)
+            self.im.fill_code_properties(nbi)
+            nbi.ids_properties.homogeneous_time = 1
+            nbi.time.resize(ntimep)
+            nbi.time = timesp
+            self.im.putdb_imas(nbi)
+            self.logger.info('Done NBI')
 
 if __name__ == '__main__':
     a = get_args(sys.argv)

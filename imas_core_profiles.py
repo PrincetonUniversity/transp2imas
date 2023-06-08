@@ -28,7 +28,7 @@ class imas_core_profiles:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.im.print_debug()
+
         self.create_ids()
 
     #ions data
@@ -58,7 +58,7 @@ class imas_core_profiles:
             ion.vel_par = []
             ion.z_ion_1d = []
             ang_vel = self.im.get_ncvar(f'OMG_{symb}') #CMG_H CMG_D
-            if self.im.checkValid(ang_vel, rmaj):
+            if self.im.is_valid(ang_vel, rmaj):
                 ion.rotation_frequency_tor = ang_vel / rmaj
             ions.append(ion)
 
@@ -82,13 +82,13 @@ class imas_core_profiles:
         ion.vel_par = []
         ion.z_ion_1d = []
         ang_vel = self.im.get_ncvar('OMGX') # OMGX CMGX
-        if self.im.checkValid(ang_vel, rmaj):
+        if self.im.is_valid(ang_vel, rmaj):
             ion.rotation_frequency_tor = ang_vel/rmaj
         #AZIMP
         zn = -1.0 #not filled in IDS #TODO
         aa = np.average(self.im.get_ncvar('AIMP'))
         zion = np.average(self.im.get_ncvar('XZIMP'))   #XSIMP XZIMPD
-        if self.im.checkValid(aa, zion, zn):
+        if self.im.is_valid(aa, zion, zn):
             ion.z_n = zn #zn.astype(float)
             ion.a = aa.astype(float)
             ion.z_ion = zion.astype(float)
@@ -116,6 +116,7 @@ class imas_core_profiles:
 
 
     def create_ids(self):
+        self.im.logger.info('\ncore_profiles')
         cp = self.im.ids.core_profiles
         cm2m = 0.01
         aconv = 1.0e-4
@@ -158,7 +159,7 @@ class imas_core_profiles:
         # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
         cur_tot = self.im.get_ncvar('CUR', aconv)
         j_ohmic = self.im.get_ncvar('CUROH', aconv)
-        if self.im.checkValid(cur_tot, j_ohmic, grid_area):
+        if self.im.is_valid(cur_tot, j_ohmic, grid_area):
             j_nonind =  np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
             self.im.fill_data(cp.global_quantities.current_non_inductive, j_nonind, mult=sgn)
 
@@ -184,7 +185,7 @@ class imas_core_profiles:
         btor = self.im.get_ncvar('BTEQ') #toroidal beta
         # PAREA(TIME) - plasma CS area[cm^2]
         parea = self.im.get_ncvar('PAREA', aconv)
-        if self.im.checkValid(parea, bz, btor, currents):
+        if self.im.is_valid(parea, bz, btor, currents):
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
             a = np.sqrt(parea/pi)
             beta_tor_norm = 100.*btor*a*bz/currents
@@ -211,7 +212,7 @@ class imas_core_profiles:
         tev = []
         #volume PVOL(TIME) CM^3 : PLASMA VOLUME
         pvol = self.im.get_ncvar('PVOL', vconv)
-        if self.im.checkValid(te0, tel, pvol):
+        if self.im.is_valid(te0, tel, pvol):
             tev = np.sum(np.multiply(tel, gvol), axis=1) / pvol
             self.im.fill_data(cp.global_quantities.t_e_peaking, te0/tev)
 
@@ -219,7 +220,7 @@ class imas_core_profiles:
         ti0 = self.im.get_ncvar('TI0') #magnetic axis
         tion = self.im.get_ncvar('TI')  #TE(TIME3,X)EV
         tiv = []
-        if self.im.checkValid(ti0, tion, pvol):
+        if self.im.is_valid(ti0, tion, pvol):
             ti_ = np.sum(np.multiply(tion, gvol), axis=1) / pvol
             self.im.fill_data(cp.global_quantities.t_i_average_peaking, ti0/ti_)
 
@@ -258,7 +259,7 @@ class imas_core_profiles:
         #TRFLX(TIME3, XB)
         bflux_tor = self.im.get_ncvar('TRFLX')
         rho_tor = []
-        if self.im.checkValid(bz, bflux_tor):
+        if self.im.is_valid(bz, bflux_tor):
             rho_tor = np.sqrt(bflux_tor/(pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
 
         psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
@@ -283,7 +284,7 @@ class imas_core_profiles:
         ions = self.get_ion_data()
 
         n_i_total_over_n_e = []
-        if self.im.checkValid(nion, nel):
+        if self.im.is_valid(nion, nel):
           n_i_total_over_n_e = nion/nel
 
         neutrals = self.get_neutral_data()
@@ -299,7 +300,7 @@ class imas_core_profiles:
         jpfc = self.im.get_ncvar('CURSUM_PFC_MHD')
         jpassive = self.im.get_ncvar('CURSUM_PASS_MHD')
         j_tor = []
-        if self.im.checkValid(pcureq, jpfc, jpassive):
+        if self.im.is_valid(pcureq, jpfc, jpassive):
           try :
             j_tor = pcureq + jpfc + jpassive
             #TODO convert to density
@@ -315,7 +316,7 @@ class imas_core_profiles:
         cur_tot = self.im.get_ncvar('CUR', 1.0e4)
         j_nonind = cur_tot - j_ohmic
 
-        self.logger.info(f'\nFilling profile1d time slices: {ntimep}')
+        self.logger.info(f'Filling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(ntimep)
 
         #fill profiles_1d[*].grid
@@ -343,13 +344,13 @@ class imas_core_profiles:
           #ions
           cp.profiles_1d[i].ion.resize(len(ions))
           if i==0:
-              self.logger.info(f'\n number of ions {len(ions)}')
+              self.logger.info(f' number of ions {len(ions)}')
           for ij in range(len(ions)):
               ion = ions[ij]
               if i==0:
                   self.logger.info(f'* filling ion {ion.label}')
               cp.profiles_1d[i].ion[ij].label = ion.label
-              if neut.a > 0. and neut.z_n > 0. and neut.atoms_n > 0:
+              if ion.a > 0. and ion.z_n > 0. and ion.atoms_n > 0:
                   cp.profiles_1d[i].ion[ij].element.resize(1)
                   cp.profiles_1d[i].ion[ij].element[0].a = ion.a
                   cp.profiles_1d[i].ion[ij].element[0].z_n = ion.z_n
@@ -366,7 +367,7 @@ class imas_core_profiles:
           n_neutrals = len(neutrals)
           cp.profiles_1d[i].neutral.resize(n_neutrals)
           if i==0:
-              self.logger.info(f'\nnumber of neutrals {n_neutrals}')
+              self.logger.info(f'number of neutrals {n_neutrals}')
           for ij in range(n_neutrals):
               neut = neutrals[ij]
               if i==0:

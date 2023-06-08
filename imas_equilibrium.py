@@ -5,11 +5,11 @@ class imas_equilibrium:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.im.print_debug()
         self.create_ids()
 
 
     def create_ids(self):
+        self.im.logger.info('\nequilibrium')
         eqm = self.im.ids.equilibrium
         cm2m = 0.01
         pi = constants.pi  #scipy
@@ -19,8 +19,8 @@ class imas_equilibrium:
         timep = self.im.get_ncvar('TIME3')
         ntimep = len(timep)
         coord_x = self.im.get_ncvar('X')
-        nrad = self.im.get_ncattr('X')
         self.im.checkErrExit(timesc, timep)
+        nprof = len(coord_x)
 
         eqm = self.im.fill_properties(eqm)
         self.im.fill_code_properties(eqm)
@@ -52,7 +52,7 @@ class imas_equilibrium:
         if len(pmhd)> 0 and len(gvol) > 0:
             emhd = 1.5 * np.sum(np.multiply(pmhd, gvol), axis=1)
 
-        self.logger.info(f'ntimesc {ntimes} nrad {nrad} raxis {raxis.shape}')
+        self.logger.info(f'ntimesc {ntimes} nprof {nprof} raxis {raxis.shape}')
         #
         #PBPMHD
 

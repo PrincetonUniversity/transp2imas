@@ -33,7 +33,7 @@ class nc2imas(imas_connection, netcdf_connection):
         #namelist contents dict
         self.nmlist = None
         self.set_logger(log)
-        self.logger.info('creating nc2imas')
+        self.logger.info(f'creating nc2imas using {ncfile}')
         self.load_namelist()
         self.cm2m = 0.01
         self.area_inv = 1.0e4
@@ -44,7 +44,7 @@ class nc2imas(imas_connection, netcdf_connection):
 
     #scalar 0 is invalid. Don't check if it can be valid
     #Don't call this using varargs forwarded by another function
-    def checkValid(self, *variables):
+    def is_valid(self, *variables):
         for var in variables:
           if var is None:
               return False
@@ -80,17 +80,20 @@ class nc2imas(imas_connection, netcdf_connection):
     #fill ids.value
     def fill_value(self, ids, dat, rsz:int=-1, mult:float=None, name:str=None):
         name_ = name if name else 'data'
-        if dat is None:
+        if not self.is_valid(dat):
             self.logger.info(f'{name} is None')
             return
 
-        nresize = len(dat) if rsz==-1 else rsz
+        nresize = len(dat) if (not np.isscalar(dat) and rsz==-1) else rsz
 
         if nresize > 0:
             ids.value.resize(nresize, refcheck=False)
         if mult is not None:
             dat = mult*dat
-        ids.value[:] = dat
+        if np.isscalar(dat):
+            ids.value = dat
+        else:
+            ids.value[:] = dat
         #if self.src:
         #    ids.source = self.src
 
@@ -99,13 +102,13 @@ class nc2imas(imas_connection, netcdf_connection):
         if dat is None:
             self.logger.info(f'{var} not found')
         else:
-            self.fill_value(ids, dat, rsz=rsz, mult=mult, name=var)
+            self.fill_value(ids, dat, rsz=rsz, mult=mult)
 
     def fill_data_nc(self, ids, var:str, mult:float=None, ind:int=-1, resize:bool=True):
         if not isinstance(var, str):
             raise ValueError(f'variable {var} is not string')
         dat = self.get_ncvar(var)
-        if dat is None or len(dat)==0:
+        if self.is_valid(dat):
             self.logger.info(f'{var} not-found')
         else:
             dat = dat if ind<0 else dat[ind]
@@ -118,7 +121,7 @@ class nc2imas(imas_connection, netcdf_connection):
     def fill_data(self, ids, dat, mult:float=None, ind:int=-1, name:str=None,
           resize:bool=True, chk:int=-1):
         try:
-          if self.checkValid(dat):
+          if self.is_valid(dat):
             dat = dat[ind] if ind>= 0 else dat
             if chk>0 and not np.isscalar(dat) and len(dat)!=chk:
                 self.logger.info(f'Error: size mismatch {len(dat)} != {chk}')
@@ -192,13 +195,14 @@ class nc2imas(imas_connection, netcdf_connection):
             self.logger.info(f'** Failed to get {name} from name list')
             if self.nmlist is None:
                 self.logger.info(f'** {self.nmlist} is not set')
-            return []
         else:
-            if tp in [int, float]:
-                val = [tp(x) for x in val]
-            if scale > 0:
-                val = scale*val
-            return val
+            if self.is_valid(val):
+                if tp in [int, float]:
+                    val = [tp(x) for x in val]
+                if scale > 0:
+                    val = scale*val
+                return val
+        return []
 
     #returns scalar
     def get_namelist_var_(self, name:str, tp=None, scale=0, ind:int=-1):
@@ -266,7 +270,7 @@ class nc2imas(imas_connection, netcdf_connection):
         #TRFLX(TIME3, XB)
         bflux_tor = self.im.get_ncvar('TRFLX')
         rho_tor = []
-        if self.im.checkValid(bz, bflux_tor):
+        if self.im.is_valid(bz, bflux_tor):
             rho_tor = np.sqrt(bflux_tor/(pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
 
         psi = self.im.get_ncvar('PLFLX', 2.*self.im.pi) #(TIME3, XB)
@@ -315,7 +319,7 @@ class nc2imas(imas_connection, netcdf_connection):
 
         for name, ids in idss.items():
             dat = self.get_ncvar(name)
-            if dat is None:
+            if not self.is_valid(dat):
                 self.logger.info(f'{name} not found')
                 continue
             if ind1 >= 0:

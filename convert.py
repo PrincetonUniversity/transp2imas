@@ -1,163 +1,90 @@
 
-import os
-import sys
-import numpy as np
-from subprocess import run
-
-from summary import Summary
-from imas_class import Convertor
 
 import os
 import sys
 import numpy as np
-from subprocess import run
 
-from utils import *
-from equilibrium import Equilibrium
-from limiters import Limiters
-from core_profiles import CoreProfiles
-from thomson_scattering import Thomson
-from coil_parameters import PFActive
-from charge_exchange import CHERS
-from nbi import NBI
-from convert import Convertor
+from nc2imas import nc2imas, get_args
+from summary import imas_summary
+from imas_equilibrium import imas_equilibrium
+from imas_wall import imas_wall
+from imas_core_profiles import imas_core_profiles
+from imas_ec_launchers import imas_ec_launchers
+from imas_lh_antennas import imas_lh_antennas
+from imas_ic_antennas import imas_ic_antennas
+from imas_nbi import imas_nbi
+from imas_pf_active import imas_pf_active
 
-mds_shot = 141711
-nstx = True
-nstxu = False
-deb = False
-incr = 0
-plot = True
 
-thoms = False
-wall = False
-cprof = False
-equil = False
-pf_active = False
-chers = False
-nbi = False
+#example use: python convert.py D3D 147634G14
+
+machine, shot, rid = 'D3D', 147634, 'G14' #147634G14
+
+#use machine, runid from command arguments
+arg = get_args(sys.argv)
+
+if len(sys.argv)>2:
+    machine = sys.argv[1]
+    runid = sys.argv[2]
+    ii = 0
+    for i in range(len(runid)):
+      if runid[i].isdigit():
+        ii = i+1
+      else:
+        break
+    shot, rid = int(runid[:ii]), runid[ii:]
+
+run = 111
+backend='MDS'
+newdb=True
+
+ncfile = str(shot)+rid+'.CDF'
+nml = str(shot)+rid+'TR.DAT'
+occur=0
+user=os.getenv('USER')
+log='debug'  #for logger
 
 all_ = True
-if len(sys.argv) > 1:
-    all_ = False
-    var = sys.argv[1]
-    if var == 'all':
-        all_ = True
-    elif var == 'pf':
-        pf_active = True
-    elif var == 'ts':
-        thoms = True
-    elif var == 'lim':
-        wall = True
-    elif var == 'cp':
-        cprof = True
-    elif var == 'eq':
-        equil = True
-    elif var == 'cx':
-        chers = True
-    elif var == 'nb':
-        nbi = True
-    else:
-        print('option not defined')
-        sys.exit()
 
-
-if len(sys.argv) > 2:
-    var = sys.argv[2]
-    if var.upper() == 'Q':
-        deb = False
-    elif var == 'NSTX':
-        nstx = True
-        nstxu = False
-    elif var == 'NSTXU' or var == 'NSTX-U':
-        nstxu = True
-        nstx = False
-
-if len(sys.argv) > 3:
-    var = sys.argv[3]
-    if var == 'i' or var == 'incr':
-        incr = 1
-
-mds_run = 2502 #Y02
-run = 1
-occur = 0
-new_db = True if occur == 0 else False
-if nstx:
-    db = 'NSTX'
-    shot = 100001
-elif nstxu:
-    db = 'NSTX-U' #NSTX
-    shot = 200001  #100001
+#new_db = True if occur == 0 else False
 
 user = os.path.expanduser('~') +'/public/imasdb'
-backend=imas.imasdef.HDF5_BACKEND
-#create convertor
-conv = Convertor(db, shot, run, occur, mds_shot, new_db, _deb=deb,
-   user=user, backend=backend, plot=plot)
 
-#occur passed in Limiters(..) etc. override the occur in convertor.
-if wall or all_:
-    print('\nLimiters...')
-    Limiters(conv, occur+0, mds_shot=mds_shot)
+#common
+nci = nc2imas(db=machine, shot=shot, backend=backend, run=run, occur=occur, user=user,
+          new_db=newdb, ncfile=ncfile, nml_file=nml, log=log)
+nci.logger.info(f'\n{ncfile}, {nml}')
 
-if cprof or all_:
-    print('\nCore Profiles....')
-    CoreProfiles(conv, occur+incr, mds_shot=mds_shot)
+if all_:
+    print('summary')
+    imas_summary(nci)
 
-if equil or all_:
-    print('\nEequilibrium...')
-    Equilibrium(conv, occur+incr, mds_shot=mds_shot)
+    print('equilibrium')
+    imas_equilibrium(nci)
 
-if thoms or all_:
-    print('\nThomson scattering (MPTS)...')
-    Thomson(conv, occur+incr, mds_shot=mds_shot)
+    print('core_profiles')
+    imas_core_profiles(nci)
 
-if pf_active or all_:
-    #valid shot 205430
-    mds_shot = 205430
-    print('\nCoil PFActive...', mds_shot)
-    #override mds_shot set in Convertor
-    PFActive(conv, occur+incr, mds_shot=mds_shot)
+    print('ec_launchers')
+    imas_ec_launchers(nci)
 
-if chers or all_:
-    mds_shot = 141711
-    print('\n CHERS...', mds_shot)
-    CHERS(conv, occur+incr, mds_shot=mds_shot)
+    print('ic_antenna')
+    imas_ic_antennas(nci)
 
-if nbi or all_:
-    mds_shot = 205430
-    print('\n NBI...', mds_shot)
-    NBI(conv, occur+incr, mds_shot=mds_shot)
+    print('lh_antenna')
+    imas_lh_antennas(nci)
 
-# close datafile
-conv.close_imas_database()
+    print('nbi')
+    imas_nbi(nci)
 
+    print('pf_active')
+    imas_pf_active(nci)
 
-
-
-
-
-
-
-run = 1
-occur = 0
-new_db = True if occur == 0 else False
-shot = 100001
-
-db = 'D3D'
-ncfile = '163303W02.CDF' #in pwd
-
-user = os.path.expanduser('~') +'/public/imasdb'
-backend=imas.imasdef.HDF5_BACKEND
-
-#create convertor. Use this for all IDS
-conv = Convertor(db, shot, run, occur, new_db, user=user, backend=backend,
-       _deb=True, plot=False)
-
-#make summary IDS
-Summary(conv, ncfile)
-
+    print('wall')
+    imas_wall(nci)
 
 
 # close datafile
-conv.close_imas_database()
+nci.close_imas_database()
+
+

@@ -5,7 +5,6 @@ class imas_core_sources:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.im.print_debug()
         self.create_ids()
 
     def fill_element_data(self, ids, sp:str):
@@ -46,7 +45,7 @@ class imas_core_sources:
 
     #sci source_ids, ntimes:n_time_frames
     def fill_nbi_sources(self, sci, ntimes:int, sp:str, sp:str):
-        self.im.logger.info(f'core source: NBI')
+        self.im.logger.info(f'core source: nbi')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
@@ -148,7 +147,7 @@ class imas_core_sources:
             #neutral_index
 
 
-    #sci source_ids, globntimes:n_time_frames
+    #sci source_ids, ntimes:n_time_frames
     def fill_ic_sources(self, sci, ntimes:int, sp:str):
         self.im.logger.info(f'core source: IC')
         coord_x = self.im.get_ncvar('X')
@@ -227,9 +226,9 @@ class imas_core_sources:
 
 
 
-    #sci source_ids, globntimes:n_time_frames
+    #sci source_ids, ntimes:n_time_frames
     def fill_ec_sources(self, sci, ntimes:int, sp:str):
-        self.im.logger.info(f'core source: EC')
+        self.im.logger.info(f'core source: ec')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
@@ -272,9 +271,9 @@ class imas_core_sources:
             self.im.fill_data(profi.j_parallel, curr, ind=i, chk=nprof, name='curr')
 
 
-    #sci source_ids, globntimes:n_time_frames
+    #sci source_ids, ntimes:n_time_frames
     def fill_lh_sources(self, sci, ntimes:int, sp:str):
-        self.im.logger.info(f'core source: LH')
+        self.im.logger.info(f'core source: lh')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
@@ -322,9 +321,9 @@ class imas_core_sources:
 
 
 
-    #sci source_ids, globntimes:n_time_frames
+    #sci source_ids, ntimes:n_time_frames
     def fill_fusion_sources(self, sci, ntimes:int, sp:str):
-        self.im.logger.info(f'core source: Fusion')
+        self.im.logger.info(f'core source: fusion')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
@@ -415,9 +414,9 @@ class imas_core_sources:
 
 
 
-    #sci source_ids, globntimes:n_time_frames
+    #sci source_ids, ntimes:n_time_frames
     def fill_ohmic_sources(self, sci, ntimes:int, sp:str):
-        self.im.logger.info(f'Core source: Ohmic')
+        self.im.logger.info(f'Core source: ohmic')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
@@ -494,15 +493,15 @@ class imas_core_sources:
 
 
 
-    #sci source_ids, globntimes:n_time_frames
-    def fill_bremsstrahlung_sources(self, sci, ntimes:int, sp:str):
-        self.im.logger.info(f'Core source: Bremsstrahlung')
+    #sci source_ids, ntimes:n_time_frames
+    def fill_bremsstrahlung(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'Core source: bremsstrahlung')
         coord_x = self.im.get_ncvar('X')
         nprof = len(coord_x)
 
         self.fill_src_properties(sci, iname='bremsstrahlung', iind=8,
             idesc="Source from  bremsstrahlung; radiation losses are negative",
-                    tname='unspecified', tind=0, tdesc='charged particles')
+                    tname='electron', tind=1, tdesc='Electron')
         #sp is TRANSP symbol defined in atoms_class.entries
         if sp:
             self.fill_element_data(sci.species.ion, sp)
@@ -510,9 +509,47 @@ class imas_core_sources:
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
 
-
         #PRAD_BR(TIME3, X) ; W/CM3; BREMSSTRAHLUNG RADIATION
-        rad_prof = self.im.get_ncvar('PLJBOH', self.im.vol_inv)
+        #negative for radiation power loss
+        rad_prof = -1.0*self.im.get_ncvar('PLJBOH', self.im.vol_inv)
+        rad_glob = np.sum(np.multiply(rad_prof, gvol), axis=1).astype(float)
+
+        self.fill_element_data(sci.species.neutral, sp)
+
+        sci.profiles_1d.resize(ntimes)
+        #fill profiles_1d[*].grid
+        self.im.fill_profiles1d_grid(sci)
+        sci.global_quantities.resize(ntimes)
+
+        for i in range(ntimes):
+            glob = sci.global_quantities[i]
+            profi = sci.profiles_1d[i]
+            if len(rad_glob)>i:
+                glob.power[i] = rad_glob[i]
+                glob.electrons.power[i] = rad_glob[i]
+
+            self.im.fill_data(profi.electrons.energy, rad_prof, ind=i, chk=nprof, name='el_energy')
+
+
+    #sci source_ids, ntimes:n_time_frames
+    def fill_line_radiation(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'Core source: line_radiation')
+        coord_x = self.im.get_ncvar('X')
+        nprof = len(coord_x)
+
+        self.fill_src_properties(sci, iname='line_radiation', iind=10,
+            idesc="Source from  line_radiation; radiation losses are negative sources",
+                    tname='unspecified', tind=0, tdesc='unspecified')
+        #sp is TRANSP symbol defined in atoms_class.entries
+        if sp:
+            self.fill_element_data(sci.species.ion, sp)
+
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        gvol = self.im.get_ncvar('DVOL', self.im.vconv)
+
+        #PRAD_LI(TIME3, X) ; WATTS/CM3; LINE RADIATION
+        #power loss due to line radiation is negative source.
+        rad_prof = -1.0 * self.im.get_ncvar('PRAD_LI', self.im.vol_inv)
         rad_glob = np.sum(np.multiply(rad_prof, gvol), axis=1)
 
         self.fill_element_data(sci.species.neutral, sp)
@@ -528,15 +565,143 @@ class imas_core_sources:
             if len(rad_glob)>i:
                 glob.power[i] = rad_glob[i]
 
-            profi.ion.resize(1)
-            self.im.fill_data(profi.total_ion_power_inside, rad_glob, ind=i, chk=nprof, name='power_ions')
+            #profi.ion.resize(1)
+            #self.im.fill_data(profi.total_ion_power_inside, rad_glob, ind=i, chk=nprof, name='power_ions')
             #self.im.fill_data(profi.ion[0].energy, rad_glob, ind=i, chk=nprof, name='power_ions')
 
+    def fill_collisional_equipartition(self, sci, ntimes:int, sp:str):
+
+        #NUSTI/E(TIME3, X) ; ION/e- COLLISIONALITY
+        #dimensionless. No place to fill this?
+        return
+
+
+    #sci source_ids, ntimes:n_time_frames
+    def fill_runaways(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'Core source: runaways')
+        coord_x = self.im.get_ncvar('X')
+        nprof = len(coord_x)
+
+        if sp != 'electron':
+            self.im.logger.info(f'Core source: runaways for {sp} not available')
+            return
+
+        ind = 1 if sp=='electron' else 2 if sp=='ion' else -1
+        self.fill_src_properties(sci, iname='runaways', iind=501,
+            idesc="Source from run-away processes; includes both electron and ion run-away",
+                    tname=sp, tind=ind, tdesc=sp)
+        #sp is TRANSP symbol defined in atoms_class.entries
+        if sp:
+            self.fill_element_data(sci.species.ion, sp)
+
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        gvol = self.im.get_ncvar('DVOL', self.im.vconv)
+
+        #SERUN(TIME3, X) ; N/CM3/SEC; RUNAWAY ELEC SOURCE RATE
+        ptcl_prof = -1.0*self.im.get_ncvar('SERUN', self.im.vol_inv)
+        ptcl_glob = np.sum(np.multiply(run_ptcl_prof, gvol), axis=1).astype(float)
+
+        self.fill_element_data(sci.species.neutral, sp)
+
+        sci.profiles_1d.resize(ntimes)
+        #fill profiles_1d[*].grid
+        self.im.fill_profiles1d_grid(sci)
+        sci.global_quantities.resize(ntimes)
+
+        for i in range(ntimes):
+            glob = sci.global_quantities[i]
+            profi = sci.profiles_1d[i]
+            if len(ptcl_glob)>i:
+                glob.electrons.particles[i] = ptcl_glob[i]
+
+            self.im.fill_data(profi.electrons.particles, ptcl_glob, ind=i, chk=nprof, name='ep_run')
+
+
+    #sci source_ids, ntimes:n_time_frames
+    def fill_pellet(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'Core source: pellet')
+        coord_x = self.im.get_ncvar('X')
+        nprof = len(coord_x)
+
+        self.fill_src_properties(sci, iname='pellet', iind=14, idesc="Sources from injection",
+                    tname='electron', tind=1, tdesc='electron')
+        #sp is TRANSP symbol defined in atoms_class.entries
+        if sp:
+            self.fill_element_data(sci.species.ion, sp)
+
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        gvol = self.im.get_ncvar('DVOL', self.im.vconv)
+
+        #PLABD(TIME3, X) ; N/CM**3; PELLET ABLATION (DATA), MEASURED DELTA(NE) BEFORE/AFTER PELLET
+
+        #Error: particles flux needed. PLABD is density difference
+        self.im.logger.info(f'Error: Core source-pellet : density filled instead of particle flux')
+        ptcl_prof = -1.0*self.im.get_ncvar('PLABD', self.im.vol_inv)
+        ptcl_glob = np.sum(np.multiply(ptcl_prof, gvol), axis=1).astype(float)
+
+        self.fill_element_data(sci.species.neutral, sp)
+
+        sci.profiles_1d.resize(ntimes)
+        #fill profiles_1d[*].grid
+        self.im.fill_profiles1d_grid(sci)
+        sci.global_quantities.resize(ntimes)
+
+        for i in range(ntimes):
+            glob = sci.global_quantities[i]
+            profi = sci.profiles_1d[i]
+            if len(ptcl_glob)>i:
+                glob.electrons.particles[i] = ptcl_glob[i]
+
+            self.im.fill_data(profi.electrons.particles, ptcl_prof, ind=i, chk=nprof, name='pell_ptcl')
+
+    #sci source_ids, ntimes:n_time_frames
+    def fill_gas_puff(self, sci, ntimes:int, sp:str):
+        self.im.logger.info(f'Core source: gas_puff')
+        coord_x = self.im.get_ncvar('X')
+        nprof = len(coord_x)
+
+        self.fill_src_properties(sci, iname='gas_puff', iind=108, idesc="Gas puff",
+                    tname='neutral', tind=4, tdesc=r'Neutral species in a single/average state')
+        #sp is TRANSP symbol defined in atoms_class.entries
+        if sp:
+            self.fill_element_data(sci.species.ion, sp)
+
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        gvol = self.im.get_ncvar('DVOL', self.im.vconv)
+        #DN0OUT: NEUT. DENSITY OUTSIDE THE PLASMA
+        #GASIN (TIME); ATOMS/SEC ; H+D+T GAS SOURCE AT BDY. RECYCD+GASFLD (Recycl+GASFLOW RATE DATA)
 
 
 
 
-    #sci source_ids, globntimes:n_time_frames
+
+
+        #PLABD(TIME3, X) ; N/CM**3; PELLET ABLATION (DATA), MEASURED DELTA(NE) BEFORE/AFTER PELLET
+
+        #Error: particles flux needed. PLABD is density difference
+        self.im.logger.info(f'Error: Core source-pellet : density filled instead of particle flux')
+        ptcl_prof = -1.0*self.im.get_ncvar('PLABD', self.im.vol_inv)
+        ptcl_glob = np.sum(np.multiply(ptcl_prof, gvol), axis=1).astype(float)
+
+        self.fill_element_data(sci.species.neutral, sp)
+
+        sci.profiles_1d.resize(ntimes)
+        #fill profiles_1d[*].grid
+        self.im.fill_profiles1d_grid(sci)
+        sci.global_quantities.resize(ntimes)
+
+        for i in range(ntimes):
+            glob = sci.global_quantities[i]
+            profi = sci.profiles_1d[i]
+            if len(ptcl_glob)>i:
+                glob.electrons.particles[i] = ptcl_glob[i]
+
+            self.im.fill_data(profi.electrons.particles, ptcl_prof, ind=i, chk=nprof, name='pell_ptcl')
+
+
+
+
+    #sci source_ids, ntimes:n_time_frames
     def fill_ic_nbi_sources(self, sci, ntimes:int, sp:str):
         self.im.logger.info(f'core source: IC+NBI')
 
@@ -568,6 +733,8 @@ class imas_core_sources:
         #DN0OUT  Hydrogenic neutral density in scrape off region
 
     def create_ids(self):
+        self.im.logger.info('\ncore_sources')
+
         csc = self.im.ids.core_sources
 
         src_lst = ['total', 'nbi', 'ec', 'lh', 'ic', 'fusion', 'ohmic', 'bremsstrahlung', 'ic_nbi']
@@ -599,7 +766,9 @@ class imas_core_sources:
           if name == 'ohmic':
               self.fill_ohmic_sources(sci, ntimep, sp)
           if name == 'bremsstrahlung':
-              self.fill_bremsstrahlung_sources(sci, ntimep, sp)
+              self.fill_bremsstrahlung(sci, ntimep, sp)
+          if name == 'line_radiation':
+              self.fill_line_radiation(sci, ntimep, sp)
           if name == 'ic_nbi':
               self.fill_ic_nbi_sources(sci, ntimep, sp)
 
@@ -677,7 +846,7 @@ class imas_core_sources:
 
             #Electron source inside flux surface, cumulative integral of source term
             ptcls = self.im.get_ncvar('DNEDT', self.im.vol_inv, ind=i)       #???
-            if self.im.checkValid(ptcls, gvol):
+            if self.im.is_valid(ptcls, gvol):
                 einside = np.cumsum(np.multiply(ptcls, gvol[i]))
             self.im.fill_data(profi.electrons.particles_inside, einside)
 
@@ -688,7 +857,7 @@ class imas_core_sources:
             #power_inside. Power coupled to e- inside flux surface.
             #Cumulative volume integral of source term for electron energy equation
             energy = self.im.get_ncvar('EETR_OBS', self.im.vol_inv, ind=i)    #???
-            if self.im.checkValid(energy, gvol):
+            if self.im.is_valid(energy, gvol):
                 pinside = np.cumsum(np.multiply(energy, gvol[i]))
             self.im.fill_data(profi.electrons.power_inside, pinside)
 
@@ -711,7 +880,7 @@ class imas_core_sources:
 
             #power_inside
             energy = self.im.get_ncvar('IETR_OBS', self.im.vol_inv, ind=i)
-            if self.im.checkValid(energy, gvol):
+            if self.im.is_valid(energy, gvol):
                 pinside = np.cumsum(np.multiply(energy, gvol[i]))
             self.im.fill_data(profi.ions[0].power_inside, pinside)
 

@@ -1,6 +1,8 @@
 
 import numpy as np
 from scipy import constants
+from scipy.constants import physical_constants as scipy_phyc
+
 
 import imas
 
