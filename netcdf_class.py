@@ -12,7 +12,7 @@ from pathlib import Path
 from netCDF4 import Dataset
 
 class netcdf_connection:
-    def __init__(self, ncfile:str=None):
+    def __init__(self, ncfile:str):
         self.nc = None
         self.vars_ = []
         self.ncfile = ncfile
@@ -23,8 +23,9 @@ class netcdf_connection:
         self.ncfile = ncfile
 
     def open_ncfile(self):
-        self.nc = Dataset(self.ncfile,'r')
         print(f'netcdf file {self.ncfile}')
+        path_ = os.readlink(self.ncfile)
+        self.nc = Dataset(path_, 'r')
         self.expand_vars(self.nc)
 
     def close_ncfile(self):

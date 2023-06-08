@@ -5,10 +5,11 @@ class imas_ic_antennas:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.im.print_debug()
+
         self.create_ids()
 
     def create_ids(self):
+        self.im.logger.info('\nic_antennas')
         ica = self.im.ids.ic_antennas
         cm2m = 0.01
         sgn = -1 if self.im.iter_ else 1
@@ -29,11 +30,12 @@ class imas_ic_antennas:
         #ref point to define the poloidal angle, e.g. geometrical centre of vacuum vessel
         raxis = self.im.get_ncvar('RAXIS', cm2m)
         zaxis = self.im.get_ncvar('YAXIS', cm2m)
-        if self.im.checkValid(raxis, zaxis):
+        if self.im.is_valid(raxis, zaxis):
             ica.reference_point.r = raxis[0].astype(float)
             ica.reference_point.z = zaxis[0].astype(float)
 
         nant = self.im.get_nvar_names('PICHA?')
+        self.logger.info(f'ic_antenna {nant}')
         power = []
 
         ica.antenna.resize(nant)
@@ -58,7 +60,7 @@ class imas_ic_antennas:
             #power_reflected = launched - absorbed
             plaunch = self.im.get_ncvar(f'PICHA{sta}')
             pabs = self.im.get_ncvar(f'RFPWRAB{sta}')
-            if self.im.checkValid(plaunch, pabs):
+            if self.im.is_valid(plaunch, pabs):
                 prefl = plaunch - pabs
                 self.im.fill_data(ica.antenna[i].power_reflected.data, prefl)
                 self.im.fill_data(ica.antenna[i].power_reflected.time, timesc)
@@ -69,13 +71,13 @@ class imas_ic_antennas:
             #module.  Set of antenna modules (each module is fed by a single transmission line)
 
 
+        if nant > 0:
+            #power launched
+            self.im.fill_data(ica.power_launched.time, timesc)
+            self.im.fill_data_nc(ica.power_launched.data, 'PICHTOT')
 
-        #power launched
-        self.im.fill_data(ica.power_launched.time, timesc)
-        self.im.fill_data_nc(ica.power_launched.data, 'PICHTOT')
-
-        self.im.putdb_imas(ica)
-        self.logger.info('Done')
+            self.im.putdb_imas(ica)
+            self.logger.info('Done')
 
 
 if __name__ == '__main__':

@@ -6,10 +6,12 @@ class imas_edge_sources:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.im.print_debug()
+
         self.create_ids()
 
     def create_ids(self):
+        self.im.logger.info('\nedge_sources')
+
         ids = self.im.ids.edge_sources
         cm2m = 0.01
 
@@ -30,6 +32,9 @@ class imas_edge_sources:
         #GASIZ(TIME)ATOMS/SEC; H+D+T EDGE NTRL SCE IONIZATIONS (heatlib/source)
 
         #E0INR(TIME) EV ; T0 (RECYCLING) @EDGE
+
+        #DN0OUT: NEUT. DENSITY OUTSIDE THE PLASMA
+        #GASIN ; ATOMS/SEC ; H+D+T GAS SOURCE AT BDY. RECYCD+GASFLD (Recycl+GASFLOW RATE DATA)
 
         #T0EDGE
         #T0RECYC(TIME) EV; RECYCLING GAS TEMPERATURE (AVG)

@@ -5,10 +5,11 @@ class imas_lh_antennas:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.im.print_debug()
+
         self.create_ids()
 
     def create_ids(self):
+        self.im.logger.info('\nlh_antennas')
         lha = self.im.ids.lh_antennas
         cm2m = 0.01
         sgn = -1 if self.im.iter_ else 1
@@ -29,12 +30,12 @@ class imas_lh_antennas:
         #ref point to define the poloidal angle, e.g. geometrical centre of vacuum vessel
         raxis = self.im.get_ncvar('RAXIS', cm2m)
         zaxis = self.im.get_ncvar('YAXIS', cm2m)
-        if self.im.checkValid(raxis, zaxis):
+        if self.im.is_valid(raxis, zaxis):
             lha.reference_point.r = raxis[0].astype(float)
             lha.reference_point.z = zaxis[0].astype(float)
 
         nant = self.im.get_nvar_names('PLHANT?')
-        self.logger.info(f'n LH Antenna {nant}')
+        self.logger.info(f'lh antenna {nant}')
 
         lha.antenna.resize(nant)
         for i in range(nant):
@@ -46,7 +47,7 @@ class imas_lh_antennas:
 
             #frequency
             freq = self.im.get_namelist_var('FREQLH', float, ind=ia-1)
-            if self.im.checkValid(freq):
+            if self.im.is_valid(freq):
                 lha.antenna[i].frequency = freq
 
             #position
@@ -64,7 +65,7 @@ class imas_lh_antennas:
             plaunch = self.im.get_ncvar(f'PLHANT{sta}')
             self.logger.info(f'Ant: {ia} PLHABS{sta}')
             pabs = self.im.get_ncvar(f'PLHABS{sta}')
-            if self.im.checkValid(plaunch, pabs):
+            if self.im.is_valid(plaunch, pabs):
                 prefl = plaunch - pabs
                 self.im.fill_data(lha.antenna[i].power_reflected.data, prefl)
                 self.im.fill_data(lha.antenna[i].power_reflected.time, timesc)
@@ -76,13 +77,13 @@ class imas_lh_antennas:
             #module.  Set of antenna modules (each module is fed by a single transmission line)
 
 
+        if nant > 0:
+            #power launched
+            self.im.fill_data(lha.power_launched.time, timesc)
+            self.im.fill_data_nc(lha.power_launched.data, 'PLH')
 
-        #power launched
-        self.im.fill_data(lha.power_launched.time, timesc)
-        self.im.fill_data_nc(lha.power_launched.data, 'PLH')
-
-        self.im.putdb_imas(lha)
-        self.logger.info('Done')
+            self.im.putdb_imas(lha)
+            self.logger.info('Done')
 
 
 if __name__ == '__main__':

@@ -6,11 +6,10 @@ class imas_wall:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.im.print_debug()
         self.create_ids()
 
     def valid(self, *vars_) -> bool:
-        return self.im.checkValid(vars_)
+        return self.im.is_valid(vars_)
 
 
     def split_limiters(self, limitr, limitz):
@@ -61,6 +60,7 @@ class imas_wall:
         return lim_ur, lim_uz, lim_lr, lim_lz
 
     def create_ids(self):
+        self.im.logger.info('\nwall')
         wall = self.im.ids.wall
         cm2m = 0.01
 
@@ -68,7 +68,7 @@ class imas_wall:
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)
 
-        self.valid(timesc)
+        self.im.checkErrExit(timesc)
 
         wall = self.im.fill_properties(wall)
         self.im.fill_code_properties(wall)
@@ -81,10 +81,11 @@ class imas_wall:
         ilim = self.im.get_ncvar('ILIM')
 
         self.logger.info(f'limitr {len(limitr)} limitz {len(limitz)} ilim {len(ilim)}')
-        self.logger.debug(f'limitr {limitr}')
-        self.logger.debug(f'limitz {limitz}')
-        self.logger.debug(f'ilim {ilim}')
-        self.valid(limitr, limitz, ilim)
+        if self.im.is_valid(limitr, limitz, ilim):
+            self.logger.debug(f'limitr {limitr[0]}')
+            self.logger.debug(f'limitz {limitz[0]}')
+        else:
+            return
 
         tselect = 0 #first time frame
         limitr = limitr[tselect]

@@ -5,10 +5,11 @@ class imas_pf_active:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.im.print_debug()
+
         self.create_ids()
 
     def create_ids(self):
+        self.im.logger.info('\npf_active')
         pfc = self.im.ids.pf_active
         cm2m = 0.01
         vol_inv = 1.e6
@@ -35,6 +36,8 @@ class imas_pf_active:
 
         coils = coils_pf + coils_oh
         ncoils = len(coils)
+        self.logger.info(f'ncoils {ncoils}')
+
         pfc.coil.resize(ncoils)
 
         #coils
@@ -72,8 +75,9 @@ class imas_pf_active:
             self.im.fill_data(pfc.supply[i].voltage.time, timesc)
 
 
-        self.im.putdb_imas(pfc)
-        self.logger.info('Done')
+        if ncoils > 0:
+            self.im.putdb_imas(pfc)
+            self.logger.info('Done')
 
 
 if __name__ == '__main__':

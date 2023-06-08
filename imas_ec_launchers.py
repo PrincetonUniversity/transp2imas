@@ -6,10 +6,11 @@ class imas_ec_launchers:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.im.print_debug()
         self.create_ids()
 
     def create_ids(self):
+        self.im.logger.info('\nec_launchers')
+
         ec = self.im.ids.ec_launchers
         cm2m = 0.01
 
@@ -19,7 +20,7 @@ class imas_ec_launchers:
         # height above midplane of source
         src_z = self.im.get_namelist_vars('ZECECH?', float, cm2m)
         #Phi location of source (degrees)
-        src_phi = self.im.get_namelist_vars('PHECECH?', float, scipy.constants.pi/180.0)
+        src_phi = self.im.get_namelist_vars('PHECECH?', float, constants.pi/180.0)
 
         freq = self.im.get_namelist_vars('FREQECH?', float)
 
@@ -41,7 +42,7 @@ class imas_ec_launchers:
         for i in range(nbeams):
             ib = i+1
             #frequency
-            if len(freq)>i:
+            if self.im.is_valid(freq):
                 self.im.fill_data(ec.beam[i].frequency.data, freq[i])
                 #self.im.fill_data(ec.beam[i].frequency.time, freq_time[i])
 
@@ -51,7 +52,7 @@ class imas_ec_launchers:
             ec.beam[i].mode = 1
 
             #launching_position of source
-            if (len(src_r)>i and len(src_z)>i and len(src_phi)>i):
+            if self.im.is_valid(src_r, src_z, src_phi):
                 #r. major radius of source. XECECH in namelist
                 self.im.fill_data(ec.beam[i].launching_position.r, src_r[i])
                 # height above midplane of source. ZECECH
