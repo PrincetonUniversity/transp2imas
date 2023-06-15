@@ -22,7 +22,7 @@ class imas_connection:
         self.init_imas_database()
         self.get_imas_database()
 
-    def print_debug(self, msg:str=''):
+    def print_debug(self, msg:str='', force=False):
         print(msg)
         print(' backend:', self.backend, 'run:', self.run)
         print(' create_new:', self.create_new, 'user:', self.user)

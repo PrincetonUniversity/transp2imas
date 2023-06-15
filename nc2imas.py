@@ -102,7 +102,7 @@ class nc2imas(imas_connection, netcdf_connection):
         if not isinstance(var, str):
             raise ValueError(f'variable {var} is not string')
         dat = self.get_ncvar(var)
-        if self.is_valid(dat):
+        if not self.is_valid(dat):
             self.logger.info(f'{var} not-found')
         else:
             dat = dat if ind<0 else dat[ind]
@@ -252,9 +252,9 @@ class nc2imas(imas_connection, netcdf_connection):
 
     #for all times
     def fill_vac_tor_field(self, ids):
-        raxis = self.im.get_ncvar('RAXIS', self.cm2m)
+        raxis = self.get_ncvar('RAXIS', self.cm2m)
         #(TIME) TESLA*CM. vac field
-        bzxR = self.im.get_ncvar('BZXR', self.cm2m)
+        bzxR = self.get_ncvar('BZXR', self.cm2m)
         if self.is_valid(raxis, bzxR):
             b_field_tor = bzxR / raxis
             rave = (raxis[0] + raxis[-1])/2.0
@@ -265,32 +265,32 @@ class nc2imas(imas_connection, netcdf_connection):
     #fill ids.profiles_1d[*].grid. Resize if not laready done
     def fill_profiles1d_grid(self, ids):
         #scalar time
-        timesc = self.im.get_ncvar('TIME')
+        timesc = self.get_ncvar('TIME')
         ntimes = len(timesc)
-        coord_x = self.im.get_ncvar('X')
+        coord_x = self.get_ncvar('X')
         #profiles_1d
         # X(TIME3,X) is sqrt(norm. toroidal flux)
         rho_tor_norm = np.multiply(coord_x, coord_x)
         #beta_tor_norm
-        bz = self.im.get_ncvar('BZ') #(TIME) T. BZ outside plasma
+        bz = self.get_ncvar('BZ') #(TIME) T. BZ outside plasma
         #TRFLX(TIME3, XB)
-        bflux_tor = self.im.get_ncvar('TRFLX')
+        bflux_tor = self.get_ncvar('TRFLX')
         rho_tor = []
-        if self.im.is_valid(bz, bflux_tor):
+        if self.is_valid(bz, bflux_tor):
             rho_tor = np.sqrt(bflux_tor/(pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
 
-        psi = self.im.get_ncvar('PLFLX', 2.*self.im.pi) #(TIME3, XB)
+        psi = self.get_ncvar('PLFLX', 2.*self.pi) #(TIME3, XB)
         rho_pol_norm = np.sqrt((psi - psi[0])/(psi[-1]-psi[0]))
 
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
-        gvol = self.im.get_ncvar('DVOL', self.im.vconv)
+        gvol = self.get_ncvar('DVOL', self.vconv)
         # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
-        grid_area = self.im.get_ncvar('DAREA', self.im.aconv)
+        grid_area = self.get_ncvar('DAREA', self.aconv)
         #Surface area of the toroidal flux surface
         #FLUX SURFACE AREA (TIME3,X) cm^2
-        surface = self.im.get_ncvar('SURF', 1.0e-4)
+        surface = self.get_ncvar('SURF', 1.0e-4)
 
-        psi_axis = self.im.get_ncvar('PSI0_TR') # Wb/rad
+        psi_axis = self.get_ncvar('PSI0_TR') # Wb/rad
 
         if len(profiles_1d)==0:
             ids.profiles_1d.resize(ntimes)
@@ -298,13 +298,13 @@ class nc2imas(imas_connection, netcdf_connection):
         for i in range(ntimes):
             #grid
             gd = sci.profiles_1d[i].grid
-            self.im.fill_data(gd.rho_tor_norm, rho_tor_norm, ind=i)
-            self.im.fill_data(gd.rho_tor, rho_tor, ind=i)
-            self.im.fill_data(gd.rho_pol_norm, rho_pol_norm, ind=i)
-            self.im.fill_data(gd.psi, psi, ind=i)
-            self.im.fill_data(gd.volume, gvol, ind=i)
-            self.im.fill_data(gd.area, grid_area, ind=i)
-            self.im.fill_data(gd.surface, surface, ind=i)
+            self.fill_data(gd.rho_tor_norm, rho_tor_norm, ind=i)
+            self.fill_data(gd.rho_tor, rho_tor, ind=i)
+            self.fill_data(gd.rho_pol_norm, rho_pol_norm, ind=i)
+            self.fill_data(gd.psi, psi, ind=i)
+            self.fill_data(gd.volume, gvol, ind=i)
+            self.fill_data(gd.area, grid_area, ind=i)
+            self.fill_data(gd.surface, surface, ind=i)
             if len(psi_axis) > i:
                 gd.psi_magnetic_axis = psi_axis[i].astype(float)
             if len(psi) > i:
@@ -399,13 +399,13 @@ def get_args(argv=None):
     log='debug'  #for logger
 
     if args.run:
-        run = args.run
+        run = int(args.run)
     if args.backend:
         backend = args.backend
     if args.new_db:
         new_db = args.new_db
     if args.occur:
-        occur = args.occur
+        occur = int(args.occur)
     if args.log:
         log = args.log
 
