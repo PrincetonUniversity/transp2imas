@@ -43,7 +43,7 @@ if all_:
     print('summary')
     imas_summary(nci)
 
-    print('equilibrium')
+    print('equilibrium') #142202U01.CDF
     imas_equilibrium(nci)
 
     print('core_profiles')
@@ -52,21 +52,29 @@ if all_:
     print('ec_launchers')
     imas_ec_launchers(nci)
 
-    print('ic_antenna')
+    print('ic_antenna') #89846.CDF
     imas_ic_antennas(nci)
 
-    print('lh_antenna')
+    print('lh_antenna') #33618Y19.CDF
     imas_lh_antennas(nci)
 
-    print('nbi')
+    print('nbi') # 175286T57.CDF
     imas_nbi(nci)
 
-    print('pf_active')
+    print('pf_active') # 142202U01 NSTX
     imas_pf_active(nci)
 
     print('wall')
     imas_wall(nci)
 
+    print('core transport') #89846.CDF
+    imas_core_transport(nci)
+
+    print('edge sources') #112989Z09
+    #imas_edge_sources(nci)
+
+    print('imas_core_sources') # 112989Z09(NSTX), 175286T57
+    #imas_core_sources(nci)
 
 # close datafile
 nci.close_imas_database()

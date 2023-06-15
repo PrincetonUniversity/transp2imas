@@ -94,8 +94,6 @@ class imas_ec_launchers:
 
 
 if __name__ == '__main__':
-    ##a = get_args(sys.argv)
-    nci = nc2imas(db='D3D', shot=147634, backend='MDS', run=1, occur=0, user=os.getenv('USER'),
-          new_db=True, ncfile='147634G14.CDF', nml_file='147634G14TR.DAT', log='debug')
-    imas_ec_launchers(nci)
+    print("Please use: python convert.py ")
+
 

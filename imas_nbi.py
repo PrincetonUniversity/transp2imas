@@ -124,14 +124,4 @@ class imas_nbi:
             self.logger.info('Done NBI')
 
 if __name__ == '__main__':
-    #a = get_args(sys.argv)
-
-    #sh, rn, mach = 142202, 'U01', 'NSTX' #  142202U01.CDF
-    #sh, rn, mach = 147634, 'G14', 'D3D' # 147634G14.CDF
-    sh, rn, mach = 175286, 'T57', 'D3D' # 175286T57.CDF
-
-    ncf = str(sh)+rn+'.CDF'
-    nml = str(sh)+rn+'TR.DAT'
-    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=4, occur=0, user=os.getenv('USER'),
-          new_db=True, ncfile=ncf, nml_file=nml, log='debug')
-    imas_nbi(nci)
+    print("Please use: python convert.py ")

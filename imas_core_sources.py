@@ -895,13 +895,4 @@ class imas_core_sources:
 
 
 if __name__ == '__main__':
-    #a = get_args(sys.argv)
-
-    # fusion: 175286T57
-    sh, rn, mach = 112989, 'Z09', 'NSTX'
-
-    ncf = str(sh)+rn+'.CDF'
-    nml = str(sh)+rn+'TR.DAT'
-    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=6, occur=0, user=os.getenv('USER'),
-          new_db=True, ncfile=ncf, nml_file=nml, log='debug')
-    imas_core_sources(nci)
+    print("Please use: python convert.py ")

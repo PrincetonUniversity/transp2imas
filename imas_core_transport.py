@@ -124,12 +124,4 @@ class imas_core_transport:
 
 
 if __name__ == '__main__':
-    #a = get_args(sys.argv)
-
-    sh, rn, mach = 89846, '', 'CMOD' # 89846.CDF
-
-    ncf = str(sh)+rn+'.CDF'
-    nml = str(sh)+rn+'TR.DAT'
-    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=5, occur=0, user=os.getenv('USER'),
-          new_db=True, ncfile=ncf, nml_file=nml, log='debug')
-    imas_core_transport(nci)
+    print("Please use: python convert.py ")

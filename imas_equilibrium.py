@@ -295,14 +295,5 @@ class imas_equilibrium:
         self.im.putdb_imas(eqm)
 
 if __name__ == '__main__':
-    #a = get_args(sys.argv)
-
-    sh, rn, mach = 142202, 'U01', 'NSTX' #  142202U01.CDF
-    #sh, rn, mach = 147634, 'G14', 'D3D' # 147634G14.CDF
-
-    ncf = str(sh)+rn+'.CDF'
-    nml = str(sh)+rn+'TR.DAT'
-    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=1, occur=0, user=os.getenv('USER'),
-          new_db=True, ncfile=ncf, nml_file=nml, log='debug')
-    imas_equilibrium(nci)
+    print("Please use: python convert.py ")
 
