@@ -390,13 +390,4 @@ class imas_core_profiles:
         self.logger.info('Done core_profiles')
 
 if __name__ == '__main__':
-    #a = get_args(sys.argv)
-
-    #sh, rn, mach = 142202, 'U01', 'NSTX' #  142202U01.CDF
-    sh, rn, mach = 147634, 'G14', 'D3D' # 147634G14.CDF
-
-    ncf = str(sh)+rn+'.CDF'
-    nml = str(sh)+rn+'TR.DAT'
-    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=2, occur=0, user=os.getenv('USER'),
-          new_db=True, ncfile=ncf, nml_file=nml, log='debug')
-    imas_core_profiles(nci)
+    print("Please use: python convert.py ")

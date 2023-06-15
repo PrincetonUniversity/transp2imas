@@ -87,12 +87,4 @@ class imas_lh_antennas:
 
 
 if __name__ == '__main__':
-    #a = get_args(sys.argv)
-
-    sh, rn, mach = 33618, 'Y19', 'ITER' # 33618Y19.CDF
-
-    ncf = str(sh)+rn+'.CDF'
-    nml = str(sh)+rn+'TR.DAT'
-    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=6, occur=0, user=os.getenv('USER'),
-          new_db=True, ncfile=ncf, nml_file=nml, log='debug')
-    imas_lh_antennas(nci)
+    print("Please use: python convert.py ")
