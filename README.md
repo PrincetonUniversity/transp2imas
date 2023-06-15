@@ -37,7 +37,11 @@ module load imas/3.37.1-4.11.0
 #### Convert CDF to IDS
 TRANSP run output CDF file or its symlink is required to be present in the current directory. Only one CDF file is converted at a time. the input \<runid\>.CDF file and corresponding namelist \<runid\>TR.DAT (if available) are used. An IDS is written out only if relevant input is present in the CDF file, otherwise a message is added in log.out file.
 
+
+Python virtual environment with numpy, scipy, netcdf_class, imass_class or system installations of these is required. Here the \<python_venv\> is the name of the virtual environment directory.
+
 ```
+
 source <python_venv>/bin/activate
 .   env_gcc.txt  (or . env_intel.txt)
 python convert.py -m <machine> -i <runid> [ -b MDS/HDF -r <ids_run_num> -new ]
