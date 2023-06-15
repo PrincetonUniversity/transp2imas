@@ -1,7 +1,7 @@
 
 from nc2imas import *
 
-class imas_pf_active:
+class imas_pf_passive:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
@@ -26,8 +26,8 @@ class imas_pf_active:
         pfc.time.resize(ntimes)
         pfc.time = timesc
 
-        #coil names from PS_1(TIME)
-        coils = self.im.get_var_names_re('PS_?', cut='PS_', nd1=1, nd2=2)
+        #coil names from PS_1 .. PS_999
+        coils = self.im.get_var_names_re('PS_?', cut='PS_', nd1=1, nd2=3)
 
         ncoils = len(coils)
         self.logger.info(f'ncoils {ncoils}')
@@ -71,4 +71,4 @@ if __name__ == '__main__':
     nml = str(sh)+rn+'TR.DAT'
     nci = nc2imas(db=mach, shot=sh, backend='MDS', run=6, occur=0, user=os.getenv('USER'),
           new_db=True, ncfile=ncf, nml_file=nml, log='debug')
-    imas_pf_active(nci)
+    imas_pf_passive(nci)
