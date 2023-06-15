@@ -38,22 +38,24 @@ class nc2imas(imas_connection, netcdf_connection):
         self.cm2m = 0.01
         self.area_inv = 1.0e4
         self.vconv = 1.e-6
+        self.aconv = 1.0e-4
         self.vol_inv = 1.e6
         self.sgn = -1 if self.iter_ else 1
         self.pi = constants.pi  #scipy
 
     #scalar 0 is invalid. Don't check if it can be valid
     #Don't call this using varargs forwarded by another function
-    def is_valid(self, *variables):
+    def is_valid(self, *variables, ind:int=0):
+        ii = ind+1
         for var in variables:
           if var is None:
               return False
           elif isinstance(var, np.ndarray):
               sh = var.shape
-              if sh[0]==0 or (len(sh)>1 and sh[1]==0):
+              if sh[0]<ii or (len(sh)>1 and sh[1]==0):
                   return False
           elif isinstance(var, (list, tuple, set)):
-              if len(var)==0:
+              if len(var)<ii:
                   return False
           else:
               if var == 0:
@@ -64,18 +66,10 @@ class nc2imas(imas_connection, netcdf_connection):
     def checkErrExit(self, *variables):
         for var in variables:
             name = getVarName(var)
-            if var is None:
-                self.logger.Exception(f'{name} is None')
-            elif isinstance(var, np.ndarray):
-                sh = var.shape
-                if sh[0]==0 or (len(sh)>1 and sh[1]==0):
-                    self.logger.Exception(f'empty np.array {name}')
-            elif isinstance(var, (list, tuple, set)):
-                if len(var) == 0:
-                    self.logger.Exception(f'empty array {name}')
-            else:
-                if var == 0:
-                    self.logger.Exception(f'empty {name}')
+            stat = self.is_valid(var)
+            if stat:
+                self.logger.exception(f'{name} is empty')
+
 
     #fill ids.value
     def fill_value(self, ids, dat, rsz:int=-1, mult:float=None, name:str=None):
@@ -118,8 +112,10 @@ class nc2imas(imas_connection, netcdf_connection):
                 dat = mult*dat
             ids[:] = dat
 
+    #don't use this to fill scalar
     def fill_data(self, ids, dat, mult:float=None, ind:int=-1, name:str=None,
           resize:bool=True, chk:int=-1):
+        nm = name if name is not None else 'data'
         try:
           if self.is_valid(dat):
             dat = dat[ind] if ind>= 0 else dat
@@ -132,11 +128,10 @@ class nc2imas(imas_connection, netcdf_connection):
             if mult is not None:
                 dat = mult*dat
             ids[:] = dat
-          elif ind<1:
-            self.logger.info(f'{name} is invalid')
+          else:
+            self.logger.info(f'{nm} is invalid')
         except:
-            if ind<1:
-                self.logger.info(f'{name} is invalid')
+            self.logger.info(f'{nm} is invalid')
 
     def load_namelist(self):
         if self.nml_name is None:
@@ -255,6 +250,17 @@ class nc2imas(imas_connection, netcdf_connection):
         self.logger.setLevel(level=level)
         self.logger.addHandler(logging.FileHandler('log.out', mode='w'))
 
+    #for all times
+    def fill_vac_tor_field(self, ids):
+        raxis = self.im.get_ncvar('RAXIS', self.cm2m)
+        #(TIME) TESLA*CM. vac field
+        bzxR = self.im.get_ncvar('BZXR', self.cm2m)
+        if self.is_valid(raxis, bzxR):
+            b_field_tor = bzxR / raxis
+            rave = (raxis[0] + raxis[-1])/2.0
+            self.logger.info('Vac_tor_field')
+            ids.vacuum_toroidal_field.r0 = rave.astype(float)
+            self.fill_data(ids.vacuum_toroidal_field.b0, b_field_tor)
 
     #fill ids.profiles_1d[*].grid. Resize if not laready done
     def fill_profiles1d_grid(self, ids):
@@ -337,8 +343,10 @@ class nc2imas(imas_connection, netcdf_connection):
 
 
     def fill_properties(self, ids):
-        ids.ids_properties.comment = 'TRANSP output to IMAS IDS'
-        ids.ids_properties.creation_date = str(datetime.now())
+        runid, device, year, cdf_date, build_date, tglf, glf = self.get_nc_global_atts()
+        comment =  f'TRANSP results for run {runid} {device} year: {year} CDF date: {cdf_date}'
+        ids.ids_properties.comment = comment + f' build: {build_date} tglf: {tglf} glf23: {glf}'
+        ids.ids_properties.creation_date = f'{str(datetime.now())} CDF: {cdf_date}'
         #ids.ids_properties.version_put = str(os.getenv('IMAS_VERSION'))
         ids.ids_properties.data_dictionary = str(os.getenv('IMAS_VERSION'))
         ids.ids_properties.access_layer = str(os.getenv('IMAS_VERSION'))
@@ -353,28 +361,62 @@ class nc2imas(imas_connection, netcdf_connection):
 
 def get_args(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('-v', '--verbose', action='store_true')
-    parser.add_argument("-l", "--log", help="Provide logging level")
-    parser.add_argument('-s', '--shot', type=int, help='integer shot number')
-    parser.add_argument('-i', '--input-cdf', type=str, help='CDF TRANSP output file')
+    parser.add_argument('-i', '--input-cdf', type=str, help='CDF TRANSP output file, with or without .CDF')
     parser.add_argument('-b', '--backend', type=str, help='backend: MDS or HDF')
-    parser.add_argument('-d', '--db', type=str, help='tokamak or database')
-    parser.add_argument('-u', '--user', type=str, help='username or path of database')
-    parser.add_argument('-r', '--run', type=int, help='run number')
+    parser.add_argument('-m', '--machine', type=str, help='ITER, D3D ..')
+    parser.add_argument('-r', '--run', type=int, help='run number of o/p IDS')
+    parser.add_argument('-new', '--new_db', help='create new database', action="store_true")
     parser.add_argument('-o', '--occur', type=int, help='occurrence')
-    parser.add_argument('-n', '--new_db', help='new database', action="store_true")
-    parser.add_argument('-df', '--default-val', help='use default', action="store_true")
+    parser.add_argument('-u', '--user', type=str, help='username or path of database')
+
+    parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument("-l", "--log", help="Provide logging level=debug,info,warn,error,critical")
 
     args = parser.parse_args()
-    if not (args.db or args.shot or args.run or args.occur or args.input_cdf):
-        pass
-        #parser.print_help()
-        #exit(1)
-    return args
+
+    if not (args.machine and args.input_cdf):
+        parser.print_help()
+        sys.exit(1)
+
+    mach = args.machine
+    runid = args.input_cdf
+    runid = runid[:-4] if runid[-4:].upper()=='.CDF' else runid
+
+    ii = 0
+    for i in range(len(runid)):
+      if runid[i].isdigit():
+        ii = i+1
+      else:
+        break
+    shot, rid = int(runid[:ii]), runid[ii:]
+    ncfile = str(shot)+rid+'.CDF'
+    nml = str(shot)+rid+'TR.DAT'
+
+    run = 1
+    backend='MDS'
+    newdb=True
+    occur=0
+    log='debug'  #for logger
+
+    if args.run:
+        run = args.run
+    if args.backend:
+        backend = args.backend
+    if args.new_db:
+        new_db = args.new_db
+    if args.occur:
+        occur = args.occur
+    if args.log:
+        log = args.log
+
+    user = os.path.expanduser('~') +'/public/imasdb' if backend=='MDS' else os.getenv('USER')
+    #new_db = True if occur == 0 else False
+
+    return mach, shot, backend, run, occur, user, newdb, ncfile, nml, log
 
 
 if __name__ == '__main__':
-    a = get_args(sys.argv)
+    #a = get_args(sys.argv)
     nc = nc2imas(db='D3D', shot=147634, backend='MDS', run=1, occur=0, user=os.getenv('USER'),
            new_db=True, ncfile='147634G14.CDF', nml_file='147634G14TR.DAT', log='debug')
 

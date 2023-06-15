@@ -99,7 +99,7 @@ class imas_edge_sources:
 
 
 if __name__ == '__main__':
-    a = get_args(sys.argv)
+    #a = get_args(sys.argv)
 
     # fusion: 175286T57
     sh, rn, mach = 112989, 'Z09', 'NSTX'

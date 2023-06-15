@@ -115,6 +115,11 @@ class imas_core_sources:
         self.im.fill_profiles1d_grid(sci)
         sci.global_quantities.resize(ntimes)
 
+        #PBTH_D (TIME3, X) WATTS/CM3 "D BEAM THERMALIZATION POWER
+        pbth = self.im.get_ncvar(f'PBTH_{sp}', self.im.vol_inv)
+        pfth = self.im.get_ncvar(f'PFTH_{sp}', self.im.vol_inv)
+        ion_energy = pbth + pfth
+
         for i in range(ntimes):
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
@@ -140,8 +145,8 @@ class imas_core_sources:
             self.fill_fusion_element_info(profi, name)
             profi.ion[j].label = beams_dict[name]
 
-            #PBI_D (TIME3, X) WATTS/CM3 "D BEAM THERMALIZATION POWER : PBTH_D ?
-            self.im.fill_data_nc(profi.ion[j].energy, f'PBI_{sp}', self.im.vol_inv, i)
+            self.im.fill_data(profi.ion[j].energy, ion_energy, i, name='ion_energy')
+
             #BSTH_D (TIME) N/SEC D BEAM THERMALIZATIONS
             self.im.fill_data_nc(profi.ion[j].particles, f'BSTH_{sp}', self.im.vol_inv, i)
             #neutral_index
@@ -787,12 +792,7 @@ class imas_core_sources:
         csc.time = timep
 
         #vacuum toroidal field
-        raxis = self.im.get_ncvar('RAXIS', self.im.cm2m) #RAXISEQ
-        bzxR = self.im.get_ncvar('BZXR', self.im.cm2m) #(TIME) TESLA*CM. vac field
-        b_field_tor = bzxR / raxis
-        av_r0 = np.average(raxis)  #TODO
-        cp.vacuum_toroidal_field.r0 = av_r0.astype(float)
-        self.im.fill_data(cp.vacuum_toroidal_field.b0, b_field_tor)
+        self.im.fill_vac_tor_field(csc)
 
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
@@ -892,7 +892,7 @@ class imas_core_sources:
 
 
 if __name__ == '__main__':
-    a = get_args(sys.argv)
+    #a = get_args(sys.argv)
 
     # fusion: 175286T57
     sh, rn, mach = 112989, 'Z09', 'NSTX'

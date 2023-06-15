@@ -124,7 +124,7 @@ class imas_nbi:
             self.logger.info('Done NBI')
 
 if __name__ == '__main__':
-    a = get_args(sys.argv)
+    #a = get_args(sys.argv)
 
     #sh, rn, mach = 142202, 'U01', 'NSTX' #  142202U01.CDF
     #sh, rn, mach = 147634, 'G14', 'D3D' # 147634G14.CDF

@@ -47,7 +47,7 @@ python convert.py -m <machine> -i <runid> [ -b MDS/HDF -r <ids_run_num> -new ]
 
 
 All options:
-  python convert.py [-h] [-i INPUT_CDF] [-b BACKEND] [-m MACHINE] [-r RUN] [-new] [-o OCCUR] [-d] [-u USER] [-v] [-l LOG]
+  python convert.py [-h] [-i INPUT_CDF] [-b BACKEND] [-m MACHINE] [-r RUN] [-new] [-o OCCUR] [-u USER] [-v] [-l LOG]
 
 options:
   -h, --help            show this help message and exit
@@ -61,13 +61,20 @@ options:
   -new, --new_db        new database
   -o OCCUR, --occur OCCUR
                         occurrence
-  -d, --default-val     use default
   -u USER, --user USER  username or path of database
   -v, --verbose
   -l LOG, --log LOG     Provide logging level
 
 ```
 The above steps will create MDS+ backend if HDF is not passed. A log file log.out is written including which variables were not found in the input CDF file, for each IDS written out.
+
+
+Any python conversion routine, named imas_\<ids_name\>.py, can be run directly after editing the bottom lines, for example
+```
+(venv)$ python imas_equilibrium.py
+
+```
+
 
 ### IMAS VIZ for visualization
 
@@ -84,11 +91,20 @@ python  /usr/pppl/imas-viz/2.6.1/imasviz/VizGUI/QtVIZ_GUI.py
 After opening the VIZ GUI, the database selector shows the available IDS in ~/public/imasdb,
 for HDF and MDS+ separately. Opening IDS from other directories seem to be not possible.
 Selecting and double clicking the desired IDS will just populate the
-fields on the upper section. Click 'open' in order to open the IDS. After opening the filled IDS
-will be shown in different color. Double-click those in order to load. Upon double clicking the
-message window on the bottom part shows status, and errors if any in red color. This is one way for
-checking if IDS have valid entries.
+fields on the upper section. Then, click "open" in order to open the IDS. After opening, the filled IDS's will be shown in blue color. Double-click each of those in order to load, or right-click and select "get .. data for occurrence #". Upon double clicking the message window on the bottom part shows the status, and any errors in red color. This is one way for checking if IDS have valid entries.
 
+For HDF5 backend, the VIZ shows the shot number and occurrence, but not the separate .h5 files.
+
+To navigate, in general, right-click on headers to see options, and try if that works. Many of the options don't seem to work.
+
+By default, the "occurrence 0" shows that only time slice 0, as seen by , and right-click on that shows option to group time slices.
+
+Right-clicking on the equilibrium and core-pofiles filled-in IDS's will show a 'plugin' option to view "visualization of 1D nodes along coordinate axis". In that 1D view, select the "Refresh Plot" checkbox at the bottom, and change the time slice to view more times.
+
+On the "Array of time_slice" view also shows the same 1D profile 'plugin' option, as described above. The option "Equilibrium overview" also doesn't seem to work, due to interpolation error.
+
+
+The widget can be freely taken out from the main window by clicking undock (box) button.
 
 #### Use local VIZ
 Steps used to use local copy of imasviz.
@@ -113,3 +129,4 @@ make
 python $VIZ_HOME/imasviz/VizGUI/QtVIZ_GUI.py
 ```
 https://docs.psnc.pl/display/WFMS/IMASViz+v2?preview=/17146892/17147822/IMASViz.pdf
+https://wpcd-workflows.github.io/IMASviz/index.html

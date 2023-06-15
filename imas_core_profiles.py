@@ -140,12 +140,7 @@ class imas_core_profiles:
         cp.time = timesc
 
         #vacuum toroidal field
-        raxis = self.im.get_ncvar('RAXIS', cm2m) #RAXISEQ
-        bzxR = self.im.get_ncvar('BZXR', cm2m) #(TIME) TESLA*CM. vac field
-        b_field_tor = bzxR / raxis
-        av_r0 = np.average(raxis)  #TODO
-        cp.vacuum_toroidal_field.r0 = av_r0.astype(float)
-        self.im.fill_data(cp.vacuum_toroidal_field.b0, b_field_tor)
+        self.im.fill_vac_tor_field(cp)
 
         #global_quantities
         #------------------------------------------------------------------
@@ -395,7 +390,7 @@ class imas_core_profiles:
         self.logger.info('Done core_profiles')
 
 if __name__ == '__main__':
-    a = get_args(sys.argv)
+    #a = get_args(sys.argv)
 
     #sh, rn, mach = 142202, 'U01', 'NSTX' #  142202U01.CDF
     sh, rn, mach = 147634, 'G14', 'D3D' # 147634G14.CDF
