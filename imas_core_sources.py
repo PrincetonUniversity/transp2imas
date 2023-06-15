@@ -724,8 +724,11 @@ class imas_core_sources:
         #NBI
         #H,D,T,3,4,N,A,K,X,Z ; Z=Hi_Z(heavy), 3=He4, 4=He4, N=neon, A=argon, K=krypton, X=xenon
         #'3','4' is replaced by 'HE3', 'HE4' in the next line
-        sp_look = ['H', 'D', 'T', '3', '4', 'N', 'A', 'K', 'X', 'Z']
+        sp_look = ['H', 'D', 'T', '3', '4', 'N', 'A', 'K', 'X', 'Z', 'P', 'P14']
+        #selcts species from sp_look if exists in BSTH_ and FSTH_
         species = self.im.get_var_names_lst('BSTH_?', sp_look)
+        species2 = self.im.get_var_names_lst('FSTH_?', sp_look)
+        species = species + species2
         #add HE to beam if '3' or '4'
         species = ['HE' + s if (s=='3' or s=='4') else s for s in species]
         name = 'nbi'

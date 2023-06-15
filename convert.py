@@ -17,23 +17,23 @@ from imas_nbi import imas_nbi
 from imas_pf_active import imas_pf_active
 
 
-#example use: python convert.py -m D3D -i 147634G14
+#example use: python convert.py -m D3D -i 147634G14 -r 1 -b MDS -new -o 0 -l debug
 
-mach, shot, rid = 'D3D', 147634, 'G14' #147634G14
-ncfile = str(shot)+rid+'.CDF'
-nml = str(shot)+rid+'TR.DAT'
-run = 111
-backend='MDS'
-newdb=True
-occur=0
-user=os.getenv('USER')
-log='debug'  #for logger
+#example. These will be replaced below
+mach = 'D3D'
+nput_cdf = '147634G14.CDF'
+run = 1
+backend = 'MDS'
+newdb = True
+occur = 0
+user = os.getenv('USER')
+log = 'debug'  #for logger
+
 
 all_ = True
 
-#-df to use the above defaults. Else read arguments
-if not(len(sys.argv)>1 and (sys.argv[1] =='-df' or sys.argv[1] =='-default')):
-    mach, shot, backend, run, occur, user, newdb, ncfile, nml, log = get_args(sys.argv)
+#get arguments from command line
+mach, shot, backend, run, occur, user, newdb, ncfile, nml, log = get_args(sys.argv)
 
 nci = nc2imas(db=mach, shot=shot, backend=backend, run=run, occur=occur, user=user,
           new_db=newdb, ncfile=ncfile, nml_file=nml, log=log)
