@@ -35,7 +35,7 @@ module load imas/3.37.1-4.11.0
 ```
 
 #### Convert CDF to IDS
-Only one CDF file is converted at a time. Input CDF file and corresponding namelist (if available) are used.
+TRANSP run output CDF file or its symlink is required to be present in the current directory. Only one CDF file is converted at a time. the input \<runid\>.CDF file and corresponding namelist \<runid\>TR.DAT (if available) are used. An IDS is written out only if relevant input is present in the CDF file, otherwise a message is added in log.out file.
 
 ```
 source <python_venv>/bin/activate
@@ -128,5 +128,5 @@ make
 
 python $VIZ_HOME/imasviz/VizGUI/QtVIZ_GUI.py
 ```
-https://docs.psnc.pl/display/WFMS/IMASViz+v2?preview=/17146892/17147822/IMASViz.pdf
 https://wpcd-workflows.github.io/IMASviz/index.html
+https://docs.psnc.pl/display/WFMS/IMASViz+v2?preview=/17146892/17147822/IMASViz.pdf
