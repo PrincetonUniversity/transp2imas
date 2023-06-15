@@ -24,20 +24,21 @@ class atom_base():
         #  NEON, ARGON, KRYPTON, XENON
         self.fusion_ions = {'P':'H', 'P14':'H', 'T':'T', '3':'He3', '4':'He4'}
 
-        #Transp symbol : [IDS label, a, z_n]
-        self.entries = {'P'   : ['H',   1.00727647,     1.0], #proton
-                        'P14' : ['H',   1.00727647,     1.0], #proton
-                        'H'   : ['H',   1.00784,        1.0], #hydrogen
-                        'D'   : ['D',   2.013553212745, 1.0], #deuterium
-                        'T'   : ['T',   3.01604928,     1.0], #tritium
+        #Transp symbol : [IDS label, a, z_n] # from periodic_table_mod
+        self.entries = {'P'   : ['H',   1.007276466812, 1.0], #proton
+                        'P14' : ['H',   1.007276466812, 1.0], #proton
+                        'H'   : ['H',   1.00782503207,  1.0], #hydrogen
+                        'D'   : ['D',   2.0141017778,   1.0], #deuterium
+                        'T'   : ['T',   3.0160492777,   1.0], #tritium
                         'HE3' : ['He3', 3.016029,       2.0], #helium3
-                        'HE4' : ['He4', 4.002603254,    2.0], #helium4
-                        'LITH': ['Li',  6.941,          4.0], #lithium
-                        'C'   : ['C',   12.011,         6.0], #carbon
-                        'N'   : ['Ne',  20.1797,       10.0], #Neon
-                        'A'   : ['Ar',  39.948,        18.0], #Argon
-                        'K'   : ['Kr',  83.798,        36.0], #Krypton
-                        'X'   : ['Xe',  131.293,       54.0], #Xeon
+                        'HE4' : ['He4', 4.002602,       2.0], #helium4
+                        'LITH': ['Li',  6.015122,       4.0], #lithium #Li6
+                        'LI7':  ['Li',  7.016004,       4.0], #lithium #Li7
+                        'C'   : ['C',   12.011,         6.0], #carbon  #iostope average
+                        'N'   : ['Ne',  20.1790,       10.0], #Neon    #iostope average
+                        'A'   : ['Ar',  39.948,        18.0], #Argon   #iostope average
+                        'K'   : ['Kr',  83.800,        36.0], #Krypton #iostope average
+                        'X'   : ['Xe',  131.300,       54.0], #Xeon    #iostope average
                         'Z'   : ['Z',   -1.0,          -1.0] #Heavy. High Z
                        }
 

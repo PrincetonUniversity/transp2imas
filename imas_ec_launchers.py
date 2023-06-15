@@ -27,6 +27,7 @@ class imas_ec_launchers:
         #scalar time
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)
+        self.im.checkErrExit(timesc)
 
         ec = self.im.fill_properties(ec)
         ec = self.im.fill_code_properties(ec)
@@ -42,17 +43,19 @@ class imas_ec_launchers:
         for i in range(nbeams):
             ib = i+1
             #frequency
-            if self.im.is_valid(freq):
+            if self.im.is_valid(freq, ind=i):
                 self.im.fill_data(ec.beam[i].frequency.data, freq[i])
-                #self.im.fill_data(ec.beam[i].frequency.time, freq_time[i])
+                self.im.fill_data(ec.beam[i].frequency.time, timesc)
 
             #PECIN+1..n(TIME)
             self.im.fill_data_nc(ec.beam[i].power_launched.data, 'PECIN'+str(ib))
+            self.im.fill_data(ec.beam[i].power_launched.time, timesc)
+
             #O-mode ?
             ec.beam[i].mode = 1
 
             #launching_position of source
-            if self.im.is_valid(src_r, src_z, src_phi):
+            if self.im.is_valid(src_r, src_z, src_phi, ind=i):
                 #r. major radius of source. XECECH in namelist
                 self.im.fill_data(ec.beam[i].launching_position.r, src_r[i])
                 # height above midplane of source. ZECECH
@@ -65,17 +68,23 @@ class imas_ec_launchers:
 
             #steering_angle_tor [rad]. Azimuthal launch angle
             #PHAIECHn(TIME) DEGREES; Toroidal aiming, GYROTRON n
-            #TRANSP defines angles in the laboratory frame. IDS defines angles in the EC frame.
+            #TRANSP defines angles in the laboratory frame +R to -R. 90 deg along +Phi
+            #IDS defines angles in the EC frame ?? increasing towards the positive phi axis.
             angle = self.im.get_ncvar('PHAIECH'+str(i+1))
             if angle is not None:
-                angle = (angle-180.0)*constants.pi/180.
+                angle = angle*constants.pi/180.  # (angle-180.0)
                 self.im.fill_data(ec.beam[i].steering_angle_tor, angle)
+            #If angle-180.0 then inconsistency between tr_imas_mod.f90:468, 470
+            #deg2rad*phaiech_use(iant), deg2rad*thetech_use(iant)
 
             #steering_angle_pol [rad]
             #THETECHn(TIME) DEGREES Poloidal aiming, GYROTRON n
+            #TRANSP: calculated with respect to the positive Z axis. THETECH=90.0 points horizontally,
+            # THETECH=180.0 points downwards.
+            #IMAS: in the R,Z plane (from the -R axis towards the -Z axis). Not in detector_aperture_coordinates
             angle = self.im.get_ncvar('THETECH'+str(i+1))
             if angle is not None:
-                angle = (angle-90.0)*constants.pi/180.
+                angle = -(angle+90.0)*constants.pi/180. # (angle-90.0)
                 self.im.fill_data(ec.beam[i].steering_angle_pol, angle)
 
 
@@ -85,7 +94,7 @@ class imas_ec_launchers:
 
 
 if __name__ == '__main__':
-    a = get_args(sys.argv)
+    ##a = get_args(sys.argv)
     nci = nc2imas(db='D3D', shot=147634, backend='MDS', run=1, occur=0, user=os.getenv('USER'),
           new_db=True, ncfile='147634G14.CDF', nml_file='147634G14TR.DAT', log='debug')
     imas_ec_launchers(nci)

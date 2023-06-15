@@ -87,7 +87,7 @@ class imas_lh_antennas:
 
 
 if __name__ == '__main__':
-    a = get_args(sys.argv)
+    #a = get_args(sys.argv)
 
     sh, rn, mach = 33618, 'Y19', 'ITER' # 33618Y19.CDF
 

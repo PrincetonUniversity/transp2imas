@@ -4,6 +4,7 @@ import os
 import sys
 import numpy as np
 
+print('imas loading...')
 from nc2imas import nc2imas, get_args
 from summary import imas_summary
 from imas_equilibrium import imas_equilibrium
@@ -16,42 +17,25 @@ from imas_nbi import imas_nbi
 from imas_pf_active import imas_pf_active
 
 
-#example use: python convert.py D3D 147634G14
+#example use: python convert.py -m D3D -i 147634G14
 
-machine, shot, rid = 'D3D', 147634, 'G14' #147634G14
-
-#use machine, runid from command arguments
-arg = get_args(sys.argv)
-
-if len(sys.argv)>2:
-    machine = sys.argv[1]
-    runid = sys.argv[2]
-    ii = 0
-    for i in range(len(runid)):
-      if runid[i].isdigit():
-        ii = i+1
-      else:
-        break
-    shot, rid = int(runid[:ii]), runid[ii:]
-
+mach, shot, rid = 'D3D', 147634, 'G14' #147634G14
+ncfile = str(shot)+rid+'.CDF'
+nml = str(shot)+rid+'TR.DAT'
 run = 111
 backend='MDS'
 newdb=True
-
-ncfile = str(shot)+rid+'.CDF'
-nml = str(shot)+rid+'TR.DAT'
 occur=0
 user=os.getenv('USER')
 log='debug'  #for logger
 
 all_ = True
 
-#new_db = True if occur == 0 else False
+#-df to use the above defaults. Else read arguments
+if not(len(sys.argv)>1 and (sys.argv[1] =='-df' or sys.argv[1] =='-default')):
+    mach, shot, backend, run, occur, user, newdb, ncfile, nml, log = get_args(sys.argv)
 
-user = os.path.expanduser('~') +'/public/imasdb'
-
-#common
-nci = nc2imas(db=machine, shot=shot, backend=backend, run=run, occur=occur, user=user,
+nci = nc2imas(db=mach, shot=shot, backend=backend, run=run, occur=occur, user=user,
           new_db=newdb, ncfile=ncfile, nml_file=nml, log=log)
 nci.logger.info(f'\n{ncfile}, {nml}')
 

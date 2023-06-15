@@ -81,7 +81,7 @@ class imas_ic_antennas:
 
 
 if __name__ == '__main__':
-    a = get_args(sys.argv)
+    #a = get_args(sys.argv)
 
     sh, rn, mach = 89846, '', 'CMOD' # 89846.CDF
 

@@ -28,6 +28,16 @@ class netcdf_connection:
         self.nc = Dataset(path_, 'r')
         self.expand_vars(self.nc)
 
+    def get_nc_global_atts(self):
+        runid = self.nc.getncattr('Runid')
+        cdf_date = self.nc.getncattr('CDF_date')
+        build_date = self.nc.getncattr('BUILD_date')
+        device = self.nc.getncattr('device')
+        year = self.nc.getncattr('year')
+        tglf = self.nc.getncattr('TGLF_hash')
+        glf = self.nc.getncattr('GLF23_hash')
+        return runid, device, year, cdf_date, build_date, tglf, glf
+
     def close_ncfile(self):
         try:
             self.nc.close()

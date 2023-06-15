@@ -81,7 +81,7 @@ class imas_pf_active:
 
 
 if __name__ == '__main__':
-    a = get_args(sys.argv)
+    #a = get_args(sys.argv)
 
     sh, rn, mach = 142202, 'U01', 'NSTX'
 

@@ -338,14 +338,14 @@ class imas_summary:
             #TRANSP defines angles in the laboratory frame. IDS defines angles in the EC frame.
             angle = self.im.get_ncvar('PHAIECH'+str(i+1))
             if self.im.is_valid(angle):
-                angle = (angle-180.0)*self.im.pi/180.
+                angle = angle*self.im.pi/180.  # (angle-180.0) ec_launchers
                 self.im.fill_value(sid.heating_current_drive.ec[i].angle_tor, angle)
 
             #Poloidal angle of ECRH at resonance [rad]
             #THETECHn(TIME) DEGREES Poloidal aiming, GYROTRON n
             angle = self.im.get_ncvar('THETECH'+str(i+1))
             if self.im.is_valid(angle):
-                angle = (angle-90.0)*self.im.pi/180.
+                angle = -(angle+90.0)*self.im.pi/180. #(angle-90.0) #ec_launchers
                 self.im.fill_value(sid.heating_current_drive.ec[i].angle_pol, angle)
 
         # Total EC power, into vacuum vessel [W]. PECIN(TIME), ECRF INPUT POWER
@@ -515,7 +515,7 @@ class imas_summary:
 
 if __name__ == '__main__':
     import argparse
-    a = get_args(sys.argv)
+    #a = get_args(sys.argv)
     ncimas = nc2imas(db='D3D', shot=147634, backend=imas.imasdef.MDSPLUS_BACKEND,
           run=1, occur=0, user=os.getcwd(), ncfile='147634G14.CDF', new_db=True)
     imas_summary(ncimas)

@@ -49,7 +49,7 @@ class imas_equilibrium:
         #PMHD(TIME3, X). Pressure from equilibrium solver
         pmhd = self.im.get_ncvar('PMHD')
         emhd = []
-        if len(pmhd)> 0 and len(gvol) > 0:
+        if self.im.is_valid(pmhd, gvol, ind=nprof-1):
             emhd = 1.5 * np.sum(np.multiply(pmhd, gvol), axis=1)
 
         self.logger.info(f'ntimesc {ntimes} nprof {nprof} raxis {raxis.shape}')
@@ -62,11 +62,9 @@ class imas_equilibrium:
         #TOTAL BETA TOROIDAL.
         # 2 mu0 integral(p dV) / V / B0^2   ??
         bttot = self.im.get_ncvar('BTTOT') #(TIME3, X)
-        # BTPL: PLASMA BETA TOROIDAL  ??
-
         beta_normal = [] #replaced by beta_tor_norm
         try:
-          for i in range(nimep):
+          for i in range(ntimep):
               beta_normal.append( np.multiply(bttot, gvol) / pvol[:,None] )
         except:
           self.logger.info(f'Error- beta_normal: bttot {bttot.shape} gvol {gvol.shape}')
@@ -297,7 +295,7 @@ class imas_equilibrium:
         self.im.putdb_imas(eqm)
 
 if __name__ == '__main__':
-    a = get_args(sys.argv)
+    #a = get_args(sys.argv)
 
     sh, rn, mach = 142202, 'U01', 'NSTX' #  142202U01.CDF
     #sh, rn, mach = 147634, 'G14', 'D3D' # 147634G14.CDF
