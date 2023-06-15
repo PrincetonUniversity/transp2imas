@@ -375,7 +375,9 @@ def get_args(argv=None):
     args = parser.parse_args()
 
     if not (args.machine and args.input_cdf):
+        print("** Error: Failed to get command line arguments**\n")
         parser.print_help()
+        print("Example: \npython convert.py -m D3D -i 147634G14 -r 1 -b MDS -new -o 0 -l debug\n")
         sys.exit(1)
 
     mach = args.machine

@@ -9,7 +9,7 @@ class imas_core_transport:
         self.create_ids()
 
     def create_ids(self):
-        self.im.logger.info('\nic_antennas')
+        self.im.logger.info('\ncore transport')
         ct = self.im.ids.core_transport
         cm2m = 0.01
         sgn = -1 if self.im.iter_ else 1
