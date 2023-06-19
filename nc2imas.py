@@ -23,10 +23,10 @@ def getVarName(var):
 
 
 class nc2imas(imas_connection, netcdf_connection):
-    def __init__(self, db, shot, run, backend, occur, user, new_db, ncfile,
+    def __init__(self, run, backend, occur, user, new_db, ncfile,
          nml_file:str=None, log:str='error'):
-        imas_connection.__init__(self, db, shot, run, backend, occur, user, new_db)
         netcdf_connection.__init__(self, ncfile)
+        imas_connection.__init__(self, self.device, self.shot, run, backend, occur, user, new_db)
 
         self.nml_name = nml_file
         self.logger = None
@@ -363,7 +363,6 @@ def get_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input-cdf', type=str, help='CDF TRANSP output file, with or without .CDF')
     parser.add_argument('-b', '--backend', type=str, help='backend: MDS or HDF')
-    parser.add_argument('-m', '--machine', type=str, help='ITER, D3D ..')
     parser.add_argument('-r', '--run', type=int, help='run number of o/p IDS')
     parser.add_argument('-new', '--new_db', help='create new database', action="store_true")
     parser.add_argument('-o', '--occur', type=int, help='occurrence')
@@ -374,13 +373,12 @@ def get_args(argv=None):
 
     args = parser.parse_args()
 
-    if not (args.machine and args.input_cdf):
+    if not args.input_cdf:
         print("** Error: Failed to get command line arguments**\n")
         parser.print_help()
-        print("Example: \npython convert.py -m D3D -i 147634G14 -r 1 -b MDS -new -o 0 -l debug\n")
+        print("Example: \npython convert.py -i 147634G14 [ -r 1 -b MDS -new -o 0 -l debug]\n")
         sys.exit(1)
 
-    mach = args.machine
     runid = args.input_cdf
     runid = runid[:-4] if runid[-4:].upper()=='.CDF' else runid
 
@@ -414,11 +412,9 @@ def get_args(argv=None):
     user = os.path.expanduser('~') +'/public/imasdb' if backend=='MDS' else os.getenv('USER')
     #new_db = True if occur == 0 else False
 
-    return mach, shot, backend, run, occur, user, newdb, ncfile, nml, log
+    return backend, run, occur, user, newdb, ncfile, nml, log
 
 
 if __name__ == '__main__':
-    #a = get_args(sys.argv)
-    nc = nc2imas(db='D3D', shot=147634, backend='MDS', run=1, occur=0, user=os.getenv('USER'),
-           new_db=True, ncfile='147634G14.CDF', nml_file='147634G14TR.DAT', log='debug')
+    print("Please use: python convert.py")
 

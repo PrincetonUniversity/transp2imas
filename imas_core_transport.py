@@ -36,7 +36,7 @@ class imas_core_transport:
         ctm = ct.model[0]
         ctm.identifier.name = "combined"
         ctm.identifier.index = 1
-        ctm.identifier.description = "PT_SOLVER for transport equations in" +
+        ctm.identifier.description = "PT_SOLVER for transport equations in" \
                   " tokamaks with anomalous and neoclassical transport: Combined output"
 
 
@@ -124,4 +124,4 @@ class imas_core_transport:
 
 
 if __name__ == '__main__':
-    print("Please use: python convert.py ")
+    print("Please use: python convert.py")

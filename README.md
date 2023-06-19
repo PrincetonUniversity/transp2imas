@@ -1,7 +1,7 @@
 ## transp2imas
  
 The application transp2imas converts a TRANSP NetCDF output file (\<runid\>.CDF), aided
-by information and data from the namelist file, to data in an IMAS tree. 
+by information and data from the namelist file, to populate an IMAS tree.
 The namelist is used if available in the current directroy in the format  \<runid\>TR.DAT.
 
 There are two backends supported for IMAS IDS storage: MDSPLUS and HDF5.
@@ -11,21 +11,21 @@ The default location is ~/public/imasdb/\<machine\>/\<imas\_version\>/\<occur\>/
 For HDF5, the default location is the current directory, and each IDS is stored separately
 as an .h5 file within \<machine\>/\<version\>/\<shot\>/\<run\> directory.
 
-As of now there is also a fortran code in this repo. For compiling that, TRANSP libraries are required.
+As of now, there is also a fortran code in this repo. For compiling that, TRANSP libraries are required.
 
-The python scripts can be used as follows:
+The python tool can be used as follows.
 
-The environment modules are listed here.
+The environment modules valid on PPPL portal are listed here.
 
 ```
-#env_gcc.txt
+#gcc 9.3 (env_gcc.txt)
 module load gcc/9.3.0
 module load openmpi/4.0.3
 module load netcdf-c/4.7.3
 module load szip/2.1.1
 module load imas/3.37.1-4.11.0
 
-#env_intel.txt
+#intel ifort 2019  (env_inte.txt)
 module load flexlm
 module load intel/2019.u3
 module load openmpi
@@ -35,10 +35,10 @@ module load imas/3.37.1-4.11.0
 ```
 
 #### Convert CDF to IDS
-TRANSP run output CDF file or its symlink is required to be present in the current directory. Only one CDF file is converted at a time. the input \<runid\>.CDF file and corresponding namelist \<runid\>TR.DAT (if available) are used. An IDS is written out only if relevant input is present in the CDF file, otherwise a message is added in log.out file.
+TRANSP run output CDF file or its symlink is required to be present in the current directory. Only one CDF file is converted at a time. The input \<runid\>.CDF file and corresponding namelist \<runid\>TR.DAT (if available) are used in some data structures. An IDS is written out only if relevant input is present as valid CDF file; otherwise a message is added in a log.out file.
 
 
-Python virtual environment with numpy, scipy, netcdf_class, imass_class or system installations of these is required. Here the \<python_venv\> is the name of the virtual environment directory.
+Python virtual environment with numpy, scipy, netcdf_class, and imass_class or system installations of these are required. Here the \<python_venv\> is the name of the virtual environment directory.
 
 ```
 
@@ -70,14 +70,7 @@ options:
   -l LOG, --log LOG     Provide logging level
 
 ```
-The above steps will create MDS+ backend if HDF is not passed. A log file log.out is written including which variables were not found in the input CDF file, for each IDS written out.
-
-
-Any python conversion routine, named imas_\<ids_name\>.py, can be run directly after editing the bottom lines, for example
-```
-(venv)$ python imas_equilibrium.py
-
-```
+The above steps will create MDS+ backend if HDF is not opted for. A log file log.out is written including which variables were not found in the input CDF file, for each IDS written out.
 
 
 ### IMAS VIZ for visualization
