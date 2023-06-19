@@ -38,20 +38,22 @@ module load imas/3.37.1-4.11.0
 TRANSP run output CDF file or its symlink is required to be present in the current directory. Only one CDF file is converted at a time. The input \<runid\>.CDF file and corresponding namelist \<runid\>TR.DAT (if available) are used in some data structures. An IDS is written out only if relevant input is present as valid CDF file; otherwise a message is added in a log.out file.
 
 
-Python virtual environment with numpy, scipy, netcdf_class, and imass_class or system installations of these are required. Here the \<python_venv\> is the name of the virtual environment directory.
+Python virtual environment with numpy, scipy, netcdf_class, and imass_class or system installations of these are required. Here the \<python_venv\> is the name of the virtual environment directory. The machine name (eg. ITER, D3D) and shot number are retrieved from the input CDF file, in order to avoid errors of passing in mismatched arguments.
+
 
 ```
 
 source <python_venv>/bin/activate
 .   env_gcc.txt  (or . env_intel.txt)
-python convert.py -m <machine> -i <runid> [ -b MDS/HDF -r <ids_run_num> -new ]
-# machine : ITER/D3D etc; runid is TRANSP runid; MDS/HDF for backend
+python convert.py  -i <runid> [ -b MDS/HDF -r <ids_run_num> -new ]
+# runid is TRANSP runid; MDS/HDF for backend
 #  <runid>.CDF is the CDF file required.
 #  Also used if available <runid>TR.DAT
+# machine name (eg. ITER, D3D) is retrieved from CDF file.
 
 
 All options:
-  python convert.py [-h] [-i INPUT_CDF] [-b BACKEND] [-m MACHINE] [-r RUN] [-new] [-o OCCUR] [-u USER] [-v] [-l LOG]
+  python convert.py [-h] [-i INPUT_CDF] [-b BACKEND] [-r RUN] [-new] [-o OCCUR] [-u USER] [-v] [-l LOG]
 
 options:
   -h, --help            show this help message and exit
@@ -59,8 +61,6 @@ options:
                         CDF TRANSP output file, with or without .CDF
   -b BACKEND, --backend BACKEND
                         backend: MDS or HDF
-  -m MACHINE, --machine MACHINE
-                        machine
   -r RUN, --run RUN     run number
   -new, --new_db        new database
   -o OCCUR, --occur OCCUR
