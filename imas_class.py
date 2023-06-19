@@ -21,12 +21,13 @@ class imas_connection:
         self.iter_ = True if db[:4].upper()=='ITER' else False
         self.init_imas_database()
         self.get_imas_database()
+        self.print_debug()
 
     def print_debug(self, msg:str='', force=False):
         print(msg)
         print(' backend:', self.backend, 'run:', self.run)
         print(' create_new:', self.create_new, 'user:', self.user)
-        print(' imas_db:', self.imas_dbname, 'shot:', self.shot)
+        print(' machine/imas_db:', self.imas_dbname, 'shot:', self.shot)
 
     #for MDS+ backend the directory needs to exist in ~/public/imasdb
     def create_dir(self, public_db:bool=True):
@@ -94,7 +95,4 @@ class imas_connection:
             raise TypeError('ids not valid')
 
 if __name__ == '__main__':
-    con = imas_connection('TOK', 123456, 0, imas.imasdef.MDSPLUS_BACKEND,
-          0, os.getenv('USER'), True)
-    con.print_debug()
-    con.close_imas_database()
+    print("Please use: python convert.py")

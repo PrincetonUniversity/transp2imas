@@ -16,10 +16,16 @@ class netcdf_connection:
         self.nc = None
         self.vars_ = []
         self.ncfile = ncfile
+        self.device = None
+        self.shot = 0
         self.open_ncfile()
+        self.set_machine_runid()
+
+    def __del__(self):
+        self.close_ncfile()
 
     def set_ncfile(self, ncfile):
-        print('re-setting cdf file')
+        print(f're-setting cdf file to {ncfile}')
         self.ncfile = ncfile
 
     def open_ncfile(self):
@@ -28,21 +34,11 @@ class netcdf_connection:
         self.nc = Dataset(path_, 'r')
         self.expand_vars(self.nc)
 
-    def get_nc_global_atts(self):
-        runid = self.nc.getncattr('Runid')
-        cdf_date = self.nc.getncattr('CDF_date')
-        build_date = self.nc.getncattr('BUILD_date')
-        device = self.nc.getncattr('device')
-        year = self.nc.getncattr('year')
-        tglf = self.nc.getncattr('TGLF_hash')
-        glf = self.nc.getncattr('GLF23_hash')
-        return runid, device, year, cdf_date, build_date, tglf, glf
-
     def close_ncfile(self):
         try:
             self.nc.close()
         except:
-            print('Error in closing ncfile')
+            print(f'Error in closing ncfile {self.ncfile}')
 
     def expand_vars(self, gp):
         for key, _ in gp.variables.items():
@@ -94,8 +90,6 @@ class netcdf_connection:
             matches = [s.split(cut,1)[1] for s in matches if len(s.split(cut,1))>1]
         return matches
 
-
-
     def get_var_names_lst(self, name:str, lst:list, crop=True, cut:str='') -> list:
         '''
           select existing variables matching pattern + passed in lst
@@ -111,7 +105,6 @@ class netcdf_connection:
             matches = [str(s.split(st,1)[1]) for s in matches if len(s.split(st,1))>1]
         return matches
 
-
     def get_ncvar(self, var:str, scale:float=0., ind:int=-1) -> np.array:
         try:
             res = np.array(self.nc.variables[var][:])
@@ -124,12 +117,60 @@ class netcdf_connection:
         except:
             return np.array([])
 
-    def get_ncattr(self, name):
+    def get_nc_global_atts(self):
+        runid = self.nc.getncattr('Runid').strip()
+        cdf_date = self.nc.getncattr('CDF_date').strip()
+        build_date = self.nc.getncattr('BUILD_date').strip()
+        device = self.nc.getncattr('device').strip()
+        year = self.nc.getncattr('year').strip()
+        tglf = self.nc.getncattr('TGLF_hash').strip()
+        glf = self.nc.getncattr('GLF23_hash').strip()
+        return runid, device, year, cdf_date, build_date, tglf, glf
+
+
+    def print_ncattributes(self, key):
+        nc_attrs = self.nc.ncattrs()
+        if key in nc_attrs:
+            print(self.nc.getncattr(key))
+        else:
+            try:
+                print("\ttype:", repr(self.nc.variables[key].dtype) )
+                for ncattr in self.nc.variables[key].ncattrs():
+                    print(f'\t{ncattr} :  {repr(self.nc.variables[key].getncattr(ncattr))}' )
+            except KeyError:
+                print(f"\tWARNING: variable attribute not found: {key}")
+
+
+    def set_machine_runid(self):
+        self.device = self.get_ncattr('device').strip()
+        self.shot = int(self.get_ncattr('shot'))
+
         try:
-            return self.nc.getncattr(name)
+            runf = self.ncfile[:-4] #.CDF
+            runid = self.get_ncattr('Runid').strip()
+            if runf != runid:
+                print(f'Mismatch of Runid in nc file header {runid} with filename {self.ncfile}')
         except:
-            print(f'{name} not found in {self.ncfile}')
-            return None
+            print(f'Could not verify Runid with filename {self.ncfile}')
+
+
+    def get_ncattr(self, key):
+        name = key
+        keys = key.split(':',1)
+        if len(keys) > 1:
+            key, name = keys[0], keys[1]
+
+        #some global attributes are ints, others are strings
+        if key in self.nc.ncattrs():
+            return self.nc.getncattr(key)
+
+        try:
+            if name in self.nc.variables[key].ncattrs():
+                return repr(self.nc.variables[key].getncattr(name))
+        except KeyError:
+            print(f"\tWARNING: attribute not found: {key}")
+
+        return None
 
     def get_ncvarx(self, var:str, xvar:str=None, n:int=-1):
         yv = self.nc.variables[var][:]

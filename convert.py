@@ -6,21 +6,23 @@ import numpy as np
 
 print('imas loading...')
 from nc2imas import nc2imas, get_args
-from summary import imas_summary
-from imas_equilibrium import imas_equilibrium
-from imas_wall import imas_wall
-from imas_core_profiles import imas_core_profiles
-from imas_ec_launchers import imas_ec_launchers
-from imas_lh_antennas import imas_lh_antennas
-from imas_ic_antennas import imas_ic_antennas
-from imas_nbi import imas_nbi
-from imas_pf_active import imas_pf_active
+from summary import *
+from imas_equilibrium import *
+from imas_wall import *
+from imas_core_profiles import *
+from imas_ec_launchers import *
+from imas_lh_antennas import *
+from imas_ic_antennas import *
+from imas_nbi import *
+from imas_pf_active import *
+from imas_pf_passive import *
+from imas_edge_sources import *
+#from imas_core_sources import *
+#from imas_core_transport import *
 
-
-#example use: python convert.py -m D3D -i 147634G14 -r 1 -b MDS -new -o 0 -l debug
+#example use: python convert.py -i 147634G14 -r 1 -b MDS -new -o 0 -l debug
 
 #example. These will be replaced below
-mach = 'D3D'
 nput_cdf = '147634G14.CDF'
 run = 1
 backend = 'MDS'
@@ -33,11 +35,17 @@ log = 'debug'  #for logger
 all_ = True
 
 #get arguments from command line
-mach, shot, backend, run, occur, user, newdb, ncfile, nml, log = get_args(sys.argv)
+backend, run, occur, user, newdb, ncfile, nml, log = get_args(sys.argv)
 
-nci = nc2imas(db=mach, shot=shot, backend=backend, run=run, occur=occur, user=user,
+nci = nc2imas(backend=backend, run=run, occur=occur, user=user,
           new_db=newdb, ncfile=ncfile, nml_file=nml, log=log)
 nci.logger.info(f'\n{ncfile}, {nml}')
+
+
+imas_pf_passive(nci) # 142202U01 NSTX
+all_ = False
+
+
 
 if all_:
     print('summary')
@@ -64,11 +72,14 @@ if all_:
     print('pf_active') # 142202U01 NSTX
     imas_pf_active(nci)
 
+    print('pf_passive')
+    imas_pf_passive(nci)
+
     print('wall')
     imas_wall(nci)
 
     print('core transport') #89846.CDF
-    imas_core_transport(nci)
+    #imas_core_transport(nci)
 
     print('edge sources') #112989Z09
     #imas_edge_sources(nci)

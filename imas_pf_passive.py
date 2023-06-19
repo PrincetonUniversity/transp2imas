@@ -8,6 +8,18 @@ class imas_pf_passive:
 
         self.create_ids()
 
+    def get_coil_name(self, key:str):
+        # PS_1:long_name  'Current in passive structure n <bvfb>'
+        lname = self.im.get_ncattr(key).strip()
+        name = None
+        try:
+            li = lname.find("<")+1
+            ri = lname.find(">")
+            name = lname[li:ri] if ri>li+1 else None
+        except:
+            pass
+        return name
+
     def create_ids(self):
         self.im.logger.info('\npf_passive')
         pfc = self.im.ids.pf_passive
@@ -37,14 +49,15 @@ class imas_pf_passive:
         #coils
         for i in range(ncoils):
             nst = coils[i]
-            name = nst  #TODO get from description "..passive structure 1 <bvfb>"
+            name = self.get_coil_name(f'PS_{nst}:long_name')
+            name = nst if not name else name
 
             self.logger.info(f'passive coil loop: {nst}')
 
             pfc.loop[i].name = name
 
             #PS_1(TIME); A; Current in passive structure 1 <bvfb>
-            self.im.fill_data_nc(pfc.loop[i].current, 'PS_'+nst, mult=sgn)
+            self.im.fill_data_nc(pfc.loop[i].current, f'PS_{nst}', mult=sgn)
 
             #self.im.fill_data_nc(pfc.loop[i].resistance, '??_'+nst)
 
@@ -63,12 +76,4 @@ class imas_pf_passive:
 
 
 if __name__ == '__main__':
-    #a = get_args(sys.argv)
-
-    sh, rn, mach = 142202, 'U01', 'NSTX'
-
-    ncf = str(sh)+rn+'.CDF'
-    nml = str(sh)+rn+'TR.DAT'
-    nci = nc2imas(db=mach, shot=sh, backend='MDS', run=6, occur=0, user=os.getenv('USER'),
-          new_db=True, ncfile=ncf, nml_file=nml, log='debug')
-    imas_pf_passive(nci)
+    print("Please use: python convert.py")
