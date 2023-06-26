@@ -81,7 +81,7 @@ class imas_wall:
         ilim = self.im.get_ncvar('ILIM')
 
         self.logger.info(f'limitr {len(limitr)} limitz {len(limitz)} ilim {len(ilim)}')
-        if self.im.is_valid(limitr, limitz, ilim):
+        if not self.im.is_valid(limitr, limitz, ilim):
             self.logger.debug(f'limitr {limitr[0]}')
             self.logger.debug(f'limitz {limitz[0]}')
         else:

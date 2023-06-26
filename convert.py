@@ -6,7 +6,7 @@ import numpy as np
 
 print('imas loading...')
 from nc2imas import nc2imas, get_args
-from summary import *
+from imas_summary import *
 from imas_equilibrium import *
 from imas_wall import *
 from imas_core_profiles import *
@@ -17,6 +17,8 @@ from imas_nbi import *
 from imas_pf_active import *
 from imas_pf_passive import *
 from imas_edge_sources import *
+from imas_sawteeth import *
+from imas_radiation import *
 #from imas_core_sources import *
 #from imas_core_transport import *
 
@@ -41,13 +43,13 @@ nci = nc2imas(backend=backend, run=run, occur=occur, user=user,
           new_db=newdb, ncfile=ncfile, nml_file=nml, log=log)
 nci.logger.info(f'\n{ncfile}, {nml}')
 
-
-imas_pf_passive(nci) # 142202U01 NSTX
-all_ = False
-
-
+#test using 97781K31 different profile size
 
 if all_:
+
+    print('radiation') #33618Y19.CDF  38530P94
+    imas_radiation(nci)
+
     print('summary')
     imas_summary(nci)
 
@@ -60,7 +62,7 @@ if all_:
     print('ec_launchers')
     imas_ec_launchers(nci)
 
-    print('ic_antenna') #89846.CDF
+    print('ic_antenna') # 97781K31, 89846.CDF
     imas_ic_antennas(nci)
 
     print('lh_antenna') #33618Y19.CDF
@@ -86,6 +88,9 @@ if all_:
 
     print('imas_core_sources') # 112989Z09(NSTX), 175286T57
     #imas_core_sources(nci)
+
+    #print('sawteeth')
+    #imas_sawteeth()
 
 # close datafile
 nci.close_imas_database()

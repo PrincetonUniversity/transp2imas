@@ -14,8 +14,8 @@ import logging
 import argparse
 from netcdf_class import netcdf_connection
 from imas_class import imas_connection
-#import imas
-      
+from atoms_class import *
+
 
 def getVarName(var):
     localVars = inspect.currentframe().f_back.f_locals.items()
@@ -33,7 +33,7 @@ class nc2imas(imas_connection, netcdf_connection):
         #namelist contents dict
         self.nmlist = None
         self.set_logger(log)
-        self.logger.info(f'creating nc2imas using {ncfile}')
+        self.logger.info(f'creating nc2imas using {ncfile} for {self.device} {self.shot}')
         self.load_namelist()
         self.cm2m = 0.01
         self.area_inv = 1.0e4
@@ -45,23 +45,44 @@ class nc2imas(imas_connection, netcdf_connection):
 
     #scalar 0 is invalid. Don't check if it can be valid
     #Don't call this using varargs forwarded by another function
-    def is_valid(self, *variables, ind:int=0):
+    def is_valid(self, *variables, ind:int=0, name:str='var'):
         ii = ind+1
         for var in variables:
           if var is None:
+              self.logger.info(f'{name} is None')
               return False
           elif isinstance(var, np.ndarray):
               sh = var.shape
               if sh[0]<ii or (len(sh)>1 and sh[1]==0):
+                  self.logger.info(f'{name} shpe {sh}')
                   return False
           elif isinstance(var, (list, tuple, set)):
               if len(var)<ii:
+                  self.logger.info(f'{name} len: {len(var)}')
                   return False
           else:
               if var == 0:
+                  self.logger.info(f'{name} = 0')
                   return False
-
         return True
+
+    def operate(self, var1, symb:str, var2, name1:str='', name2:str=''):
+        if not self.is_valid(var1, var2):
+            self.logger.info(f' operate error: {name1} {symb} {name2}')
+            return
+
+        if symb == '-':
+            return var1 - var2
+        elif symb == '+':
+            return var1 - var2
+        elif symb == '/':
+            return var1/var2
+        elif symb == '*':
+            return var1 * var2
+        else:
+            self.logger.info(f' operate error {symb}')
+            return None
+
 
     def checkErrExit(self, *variables):
         for var in variables:
@@ -114,10 +135,10 @@ class nc2imas(imas_connection, netcdf_connection):
 
     #don't use this to fill scalar
     def fill_data(self, ids, dat, mult:float=None, ind:int=-1, name:str=None,
-          resize:bool=True, chk:int=-1):
+          resize:bool=True, chk:int=-1) -> bool:
         nm = name if name is not None else 'data'
         try:
-          if self.is_valid(dat):
+          if self.is_valid(dat, name=nm):
             dat = dat[ind] if ind>= 0 else dat
             if chk>0 and not np.isscalar(dat) and len(dat)!=chk:
                 self.logger.info(f'Error: size mismatch {len(dat)} != {chk}')
@@ -180,8 +201,33 @@ class nc2imas(imas_connection, netcdf_connection):
         return 0
 
 
-    #return list. name's last character is discarded. Eg. XECECH?
+    def make_namelist_re_pattern(self, name:str, nd1:int=0, nd2:int=0, nch1:int=0,
+          nch2:int=0, nd:int=0, nch:int=0) -> str:
+        #only upto ?,? handled (two occurences)
+        nn = name.count('?')
+        st = 1 if nn>1 else -1
+        pat = self.make_re_pattern(name, nd1, nd2, nch1, nch2, nd, nch, step=st)
+        ii = name.find('?')
+
+        if nn > 1:
+            pat = self.make_re_pattern(fr'{pat}{name[ii+1:]}', nd1, nd2, nch1, nch2, nd, nch)
+        return pat
+
+    def get_namelist_keys_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
+          nch2:int=0, nd:int=0, nch:int=0) -> list:
+        # name: regex need escaped \(
+        pat = self.make_namelist_re_pattern(name, nd1, nd2, nch1, nch2, nd, nch)
+
+        if pat is None:
+            return []
+        matches = [k for k in self.nmlist.keys() if re.search(pat, k)]
+        if cut:
+            matches = [s.split(cut,1)[1] for s in matches if len(s.split(cut,1))>1]
+        return matches
+
+
     def get_namelist_vars(self, name:str, tp=None, scale=0):
+        #return list. name's last character is discarded. Eg. XECECH?
         n = self.get_namelist_nvars(name)
         name0 = name[-1]
         try:
@@ -205,7 +251,6 @@ class nc2imas(imas_connection, netcdf_connection):
             val = self.nmlist[name]
             if ind>=0 and isinstance(val, str):
                 val = re.split(r'[\s,;]+', val)[ind]
-
         except:
             self.logger.info(f'** {name} NOT found in name list')
             if self.nmlist is None:
@@ -220,12 +265,23 @@ class nc2imas(imas_connection, netcdf_connection):
 
 
     def get_namelist_var(self, name:str, tp=None, scale=0, ind:int=-1):
+        #name: don't escape (); only regex needs \(
         res = self.get_namelist_var_(name, tp, scale, ind)
-        if res is None:
+        if res is None and ind>=0:
             name = f'{name}({ind+1})'
             res = self.get_namelist_var_(name, tp, scale, ind)
         return res
 
+
+    def extract_str_between(self, name:str, pat1:str, pat2:str, default:str):
+        str_ = None
+        try:
+            li = name.find(pat1)+1
+            ri = name.find(pat2)
+            str_ = name[li:ri] if ri>li+1 else default
+        except:
+            self.logger.debug(f'extract error: {name} doesnot have {pat1} and {pat2}')
+        return str_
 
     def fluxBdryToCenter(self, data, dat0=None):
         dat = []
@@ -277,10 +333,10 @@ class nc2imas(imas_connection, netcdf_connection):
         bflux_tor = self.get_ncvar('TRFLX')
         rho_tor = []
         if self.is_valid(bz, bflux_tor):
-            rho_tor = np.sqrt(bflux_tor/(pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
+            rho_tor = np.sqrt(bflux_tor/(self.pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
 
         psi = self.get_ncvar('PLFLX', 2.*self.pi) #(TIME3, XB)
-        rho_pol_norm = np.sqrt((psi - psi[0])/(psi[-1]-psi[0]))
+        rho_pol_norm = np.sqrt(abs((psi - psi[0])/(psi[-1]-psi[0]))) #TODO
 
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
         gvol = self.get_ncvar('DVOL', self.vconv)
@@ -292,12 +348,12 @@ class nc2imas(imas_connection, netcdf_connection):
 
         psi_axis = self.get_ncvar('PSI0_TR') # Wb/rad
 
-        if len(profiles_1d)==0:
+        if len(ids.profiles_1d)==0:
             ids.profiles_1d.resize(ntimes)
 
         for i in range(ntimes):
             #grid
-            gd = sci.profiles_1d[i].grid
+            gd = ids.profiles_1d[i].grid
             self.fill_data(gd.rho_tor_norm, rho_tor_norm, ind=i)
             self.fill_data(gd.rho_tor, rho_tor, ind=i)
             self.fill_data(gd.rho_pol_norm, rho_pol_norm, ind=i)
@@ -310,6 +366,20 @@ class nc2imas(imas_connection, netcdf_connection):
             if len(psi) > i:
                 gd.psi_boundary = psi[i,-1].astype(float)
 
+    def fill_element_data(self, ids, sp:str, ilab:str='', zn:float=None):
+        #sp is TRANSP symbol
+        if not sp:
+            return
+        #sp is TRANSP symbol defined in atoms_class.entries
+        atom_info = atom_base(sp, ilab)
+        ids.label = sp
+        ids.element.resize(1)
+        ids.element[0].a = atom_info.a
+        if zn:
+            ids.element[0].z_n = zn
+        else:
+            ids.element[0].z_n = atom_info.z_n
+        ids.element[0].atoms_n = 1
 
     #returns n species. fills volume average if plasma and grid volumes are passed in
     def fill_ion_densities(self, ids, ind1:int=-1, ind2:int=-1, pv=None, gv=None):

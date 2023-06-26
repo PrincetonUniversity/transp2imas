@@ -1,5 +1,4 @@
 from nc2imas import *
-from atoms_class import atom_base, scipy_phyc
 
 class imas_summary:
     def __init__(self, ncimas:nc2imas):
@@ -439,6 +438,8 @@ class imas_summary:
         #boundary.distance_inner_outer_separatrices
         #boundary.x_point_main
 
+        if not self.im.is_valid(timep, ind=len(timesc)-1):
+            raise AssertionError(f'timesc {timesc.shape} timep {timep.shape}')
 
         # volume_average
         def fill_volume_average(name:str):
