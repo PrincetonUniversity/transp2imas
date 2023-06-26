@@ -1,7 +1,5 @@
 
 from nc2imas import *
-from atoms_class import atom_base
-
 
 class ion_data(atom_base):
     def __init__(self, label):
@@ -268,7 +266,7 @@ class imas_core_profiles:
         # = sqrt((psi(rho)-psi(magnetic_axis)) / (psi(LCFS)-psi(magnetic_axis)))
         #rho_pol_norm
         plflx = self.im.get_ncvar('PLFLX') #(TIME3, XB)
-        rho_pol_norm = np.sqrt((psi - psi[0])/(psi[-1]-psi[0]))
+        rho_pol_norm = np.sqrt(abs((psi - psi[0])/(psi[-1]-psi[0])))
 
         nrho = rho_tor_norm.shape[1]
 

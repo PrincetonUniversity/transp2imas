@@ -1,5 +1,4 @@
 from nc2imas import *
-from atoms_class import atom_base
 
 class imas_nbi:
     def __init__(self, ncimas:nc2imas):
@@ -43,6 +42,7 @@ class imas_nbi:
             #find NBeam species info from namelist
             sp_a = self.im.get_namelist_var(f'ABEAMA({ib})', float)
             sp_zn = self.im.get_namelist_var(f'XZBEAMA({ib})', float)
+
             self.logger.info(f' species: a {sp_a} zn {sp_zn} # {ib}' )
             sp_label = atomsDef.find_species_label(sp_a, sp_zn, beams)
             if self.im.is_valid(sp_a, sp_zn, sp_label):

@@ -7,7 +7,7 @@ from scipy.constants import physical_constants as scipy_phyc
 import imas
 
 class atom_base():
-    def __init__(self, symbTransp:str=None):
+    def __init__(self, symbTransp:str=None, ilabel:str=''):
         self.a = 0.0
         self.z_n = 0.0
         self.atoms_n = 1
@@ -32,29 +32,35 @@ class atom_base():
                         'T'   : ['T',   3.0160492777,   1.0], #tritium
                         'HE3' : ['He3', 3.016029,       2.0], #helium3
                         'HE4' : ['He4', 4.002602,       2.0], #helium4
-                        'LITH': ['Li',  6.015122,       4.0], #lithium #Li6
-                        'LI7':  ['Li',  7.016004,       4.0], #lithium #Li7
+                        'LITH': ['Li',  6.015122,       3.0], #lithium #Li6
+                        'LI7' : ['Li',  7.016004,       3.0], #lithium #Li7
+                        'LI'  : ['Li',  6.9410,         3.0], #lithium average isotope
+                        'BE'  : ['Be',  9.0122,         4.0], #beryllium average
                         'C'   : ['C',   12.011,         6.0], #carbon  #iostope average
                         'N'   : ['Ne',  20.1790,       10.0], #Neon    #iostope average
+                        'NE'  : ['Ne',  20.1790,       10.0], #Neon    #iostope average
                         'A'   : ['Ar',  39.948,        18.0], #Argon   #iostope average
                         'K'   : ['Kr',  83.800,        36.0], #Krypton #iostope average
                         'X'   : ['Xe',  131.300,       54.0], #Xeon    #iostope average
+                        'W'   : ['W',   183.5000,      74.0], #Tungston av
                         'Z'   : ['Z',   -1.0,          -1.0] #Heavy. High Z
                        }
 
 
-        self.fill_constants(symbTransp)
+        self.fill_constants(symbTransp, ilabel)
 
-    def fill_constants(self, symbTransp):
+    def fill_constants(self, symbTransp, ilab:str=''):
         lab = symbTransp
         if lab is None or lab=='':
             return
-        self.label = self.entries[lab][0]
+        self.label = self.entries[lab][0] + ilab
         self.a = self.entries[lab][1]
         self.z_n = self.entries[lab][2]
 
     #dct is one of self.atoms, beams, ions, or neutrals
     def find_species_label(self, sp_a:float, sp_zn:float, dct:dict)->str :
+        if not (sp_a and sp_zn and dct):
+            return None
         eps = 0.1 #round off
         #dct: {key is Transp symbol, value is label}
         for ts, values in self.entries.items():

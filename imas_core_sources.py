@@ -8,15 +8,7 @@ class imas_core_sources:
         self.create_ids()
 
     def fill_element_data(self, ids, sp:str):
-        if not sp:
-            return
-        #sp is TRANSP symbol defined in atoms_class.entries
-        atom_info = atom_base(sp)
-        ids.label = sp
-        ids.element.resize(1)
-        ids.element[0].a = atom_info.a
-        ids.element[0].z_n = atom_info.z_n
-        ids.element[0].atoms_n = 1
+        self.im.fill_element_data(ids, sp)
 
     #name from ['T', '3', '4', 'P', 'P14']
     def fill_fusion_element_info(self, ids, name:str):

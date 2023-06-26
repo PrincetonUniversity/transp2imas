@@ -36,23 +36,46 @@ class imas_ic_antennas:
 
         nant = self.im.get_nvar_names('PICHA?')
         self.logger.info(f'ic_antenna {nant}')
+
         power = []
 
         ica.antenna.resize(nant)
         for i in range(nant):
+            ant = ica.antenna[i]
             ia = i+1
             sta = f'{ia}'
 
-            ica.antenna[i].name = f'IC Antenna{sta}'
-            ica.antenna[i].identifier = f'IC Antenna{sta}'
+            ant.module.resize(1)
+            mod = ant.module[0]
+            mod.strap.resize(1)
+            si = 0 # only 1 strap
+
+            #dist to Faraday shield
+            dFar = self.im.get_namelist_var(rf'RFARTR_A({ia})', float, cm2m)
+            # regex need escaped \(
+            straps = self.im.get_namelist_keys_re(rf'RGEOANT_A\(?,{ia}\)', cut='RGEO', nd1=1, nd2=3)
+
+            rs, ys, phis = [], [], []
+            for sname in straps:
+                rs.append( self.im.get_namelist_var(rf'RGEO{sname}', float, cm2m) )
+                ys.append( self.im.get_namelist_var(rf'YGEO{sname}', float, cm2m) )
+                phis.append(0.)
+
+            mod.strap[si].distance_to_conductor = dFar
+            mod.strap[si].outline.r = np.array(rs, dtype=float)
+            mod.strap[si].outline.z = np.array(rs, dtype=float)
+            mod.strap[si].outline.phi = np.array(phis, dtype=float)
+
+            ant.name = f'IC Antenna{sta}'
+            ant.identifier = f'IC Antenna{sta}'
 
             #frequency
-            self.im.fill_data(ica.antenna[i].frequency.time, timesc)
-            self.im.fill_data_nc(ica.antenna[i].frequency.data, f'FREQA{sta}')
+            self.im.fill_data(mod.frequency.time, timesc)
+            self.im.fill_data_nc(mod.frequency.data, f'FREQA{sta}')
 
             #power launced
-            self.im.fill_data_nc(ica.antenna[i].power_launched.time, timesc)
-            self.im.fill_data_nc(ica.antenna[i].power_launched.data, f'PICHA{sta}')
+            self.im.fill_data(mod.power_launched.time, timesc)
+            self.im.fill_data_nc(mod.power_launched.data, f'PICHA{sta}')
 
             #power_forward. Forward power arriving to the back of the antenna
 
@@ -62,8 +85,8 @@ class imas_ic_antennas:
             pabs = self.im.get_ncvar(f'RFPWRAB{sta}')
             if self.im.is_valid(plaunch, pabs):
                 prefl = plaunch - pabs
-                self.im.fill_data(ica.antenna[i].power_reflected.data, prefl)
-                self.im.fill_data(ica.antenna[i].power_reflected.time, timesc)
+                self.im.fill_data(ant.power_reflected.data, prefl)
+                self.im.fill_data(ant.power_reflected.time, timesc)
 
 
             #surface_current on the antenna straps and on passive components, for every time slice

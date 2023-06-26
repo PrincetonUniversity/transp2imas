@@ -8,17 +8,6 @@ class imas_pf_passive:
 
         self.create_ids()
 
-    def get_coil_name(self, key:str):
-        # PS_1:long_name  'Current in passive structure n <bvfb>'
-        lname = self.im.get_ncattr(key).strip()
-        name = None
-        try:
-            li = lname.find("<")+1
-            ri = lname.find(">")
-            name = lname[li:ri] if ri>li+1 else None
-        except:
-            pass
-        return name
 
     def create_ids(self):
         self.im.logger.info('\npf_passive')
@@ -49,10 +38,12 @@ class imas_pf_passive:
         #coils
         for i in range(ncoils):
             nst = coils[i]
-            name = self.get_coil_name(f'PS_{nst}:long_name')
-            name = nst if not name else name
 
-            self.logger.info(f'passive coil loop: {nst}')
+            # PS_1:long_name  'Current in passive structure n <bvfb>'
+            lname = self.im.get_ncattr(f'PS_{nst}:long_name').strip()
+            name = self.im.extract_str_between(lname, '<', '>', nst)
+            if i==0 or i==ncoils-1:
+                self.logger.info(f'passive coil loop: {nst}')
 
             pfc.loop[i].name = name
 

@@ -65,32 +65,63 @@ class netcdf_connection:
         matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.search(pat, s)]
         return len(matches)
 
-
-    def get_var_names_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
-          nch2:int=0, nd:int=0, nch:int=0) -> list:
-        '''
+    def make_re_pattern(self, name:str, nd1:int=0, nd2:int=0, nch1:int=0,
+          nch2:int=0, nd:int=0, nch:int=0, dig_last:bool=False, step:int=-1) -> str:
+        r'''
           nd1=digit_begin nd2=digit_end. same for char:nch1,nch2.
           nd, nch for fixed number; override nd1,nd2,nch1,nch2
           Used for specified ranges of # of digits and chars
-          eg: get_var_names_re('VV_PF?', cut='VV_', nd=1, nch1=1, nch2=2)
+          step=-1 :  add ^ + pattern + $;
+          step!=-1 string including 1st '?' after replacing ? by pattern.
+          eg: get_var_names_re('VV_PF?', cut='VV_', nd=1, nch1=1, nch2=2).
+
+          p = make_re_pattern('NAME\(?,?\)', nd1=1, nd2=3, step=1) => NAME\(\d{1,3}[A-z]{0,0}
+          make_re_pattern(fr'{p},?\)', nd1=1, nd2=3)
+                        => NAME\(\d{1,3}[A-z]{0,0},\d{1,3}[A-z]{0,0}\)
+          NOTE: escape ().  Error: NAME(?,?)
+          For non-regex don't do escape
         '''
-        if name[-1] != '?':
-            raise Exception(f'Error in search of array variables {name}')
-        name = name[:-1]
+        ind = name.find('?') #only 1st position of '?''
+        if ind < 0:
+            raise Exception(f'Error in pattern build of {name} : missing "?"')
 
         nd1 = nd if nd>0 else nd1
         nd2 = nd if nd>0 else nd2
         nch1 = nch if nch>0 else nch1
         nch2 = nch if nch>0 else nch2
-        pat = f'^{name}' + r'\d{' + f'{str(nd1)},{str(nd2)}' + r'}' + \
-              r'[A-z]{' + f'{str(nch1)},{str(nch2)}' + r'}$'
+        pat = f'{name[:ind]}'
+        if dig_last:
+            pat =  pat + r'[A-z]{' + f'{str(nch1)},{str(nch2)}'+ r'}' + \
+                 r'\d{' + f'{str(nd1)},{str(nd2)}' + r'}'
+        else:
+            pat =  pat + r'\d{' + f'{str(nd1)},{str(nd2)}' + r'}' + \
+                r'[A-z]{' + f'{str(nch1)},{str(nch2)}' + r'}'
 
+        if step == -1:
+            pat = r'^' + pat + rf'{name[ind+1:]}' + '$'
+
+        return pat
+
+    def get_var_names_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
+          nch2:int=0, nd:int=0, nch:int=0, dig_last:bool=False) -> list:
+
+        pat = self.make_re_pattern(name, nd1, nd2, nch1, nch2, nd, nd, dig_last)
         matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.search(pat, s)]
         if cut:
             matches = [s.split(cut,1)[1] for s in matches if len(s.split(cut,1))>1]
         return matches
 
-    def get_var_names_lst(self, name:str, lst:list, crop=True, cut:str='') -> list:
+
+    #names: list[str] or np.array
+    def split_var_name(self, names, cut:str='') -> dict[str:list]:
+        try:
+            res = {s.split(cut)[0]: s.split(cut)[1:] for s in names if len(s.split(cut))>1}
+
+        except:
+            self.logger.info(f'{name} split error {name.split(chars,1)}')
+
+
+    def get_var_names_lst(self, name:str, lst:list[str], crop=True, cut:str='') -> list[str]:
         '''
           select existing variables matching pattern + passed in lst
           eg: get_var_names_lst('BSTH_?', sp_look); sp_look=['H', 'D', 'T',..]
@@ -116,6 +147,19 @@ class netcdf_connection:
                 return res
         except:
             return np.array([])
+
+    def get_ncvars_lst(self, lst:list[str], scale:float=0., ind:int=-1) -> np.array:
+        tot = []
+        n = 0
+        for name in lst:
+            res = np.array(self.get_ncvar(name, scale, ind))
+            if n>0 and len(res) == len(tot):
+                tot += res
+            if n==0 and len(res)>0:
+                tot = res
+                n = 1
+        return tot if n>0 else np.array([])
+
 
     def get_nc_global_atts(self):
         runid = self.nc.getncattr('Runid').strip()
