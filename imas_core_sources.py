@@ -38,7 +38,6 @@ class imas_core_sources:
             self.im.logger.info(f'core source: nbi species error: {sp}')
             return
 
-        self.im.logger.info(f'core source: nbi')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
 
@@ -69,7 +68,7 @@ class imas_core_sources:
         global_power_tot = bpti_glob + bpte_glob + bpth_glob
 
         #BSTH_D (TIME) N/SEC D BEAM THERMALIZATIONS
-        gptcls += self.im.get_ncvar(f'BSTH_{sp}').astype(float)
+        gptcls += self.im.get_ncvar(f'BSTH_{sp}')
 
         #SBTH_D(TIME3, X) N/CM3/SEC; D BEAM THERMALIZATION SOURCE; SBTH
         ptcls_prof += self.im.get_ncvar(f'SBTH_{sp}')
@@ -129,7 +128,7 @@ class imas_core_sources:
             if self.im.is_valid(total_ion_particles, ind=i):
                 glob.total_ion_particles = total_ion_particles[i].astype(float)
             if self.im.is_valid(gptcls, ind=i):
-                glob.electrons.particles = gptcls[i]
+                glob.electrons.particles = gptcls[i].astype(float)
             if self.im.is_valid(bpte_glob, ind=i):
                 glob.electrons.power = bpte_glob[i].astype(float)
 
@@ -157,7 +156,6 @@ class imas_core_sources:
     #sci source_ids, ntimes:n_time_frames
     def fill_ic_sources(self, sci, ntimes:int):
         #ions and electrons are the resulting sources due to ICRF heating.
-        self.im.logger.info(f'core source: IC')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
         #species
@@ -166,7 +164,7 @@ class imas_core_sources:
                     tname='unspecified', tind=0, tdesc='ICRF antenna')
 
         #PICHTOT(TIME) ; WATTS; TOTAL ICRF ANTENNA POWER
-        #ant_power = self.im.get_ncvar('PICHTOT').astype(float)
+        #ant_power = self.im.get_ncvar('PICHTOT')
 
         #RFPWRAB1(TIME) ;WATTS; Power ABSORBED, Antenna #1
         ants =  self.im.get_var_names_re('RFPWRAB?', nd1=1, nd2=2)
@@ -207,7 +205,7 @@ class imas_core_sources:
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
             if len(power_coupled)>i:
-                glob.power = power_coupled[i]
+                glob.power = power_coupled[i].astype(float)
                 glob.total_ion_power = ion_power_glob[i].astype(float)
                 glob.electrons.power = el_power_glob[i].astype(float)
 
@@ -226,7 +224,6 @@ class imas_core_sources:
 
     #sci source_ids, ntimes:n_time_frames
     def fill_ec_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'core source: ec')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
 
@@ -235,7 +232,7 @@ class imas_core_sources:
                     tname='unspecified', tind=0, tdesc='EC gyrotron')
 
         #PECHT(TIME) ; WATTS; ECRF ELECTRON HEATING
-        power_glob = self.im.get_ncvar('PECHT').astype(float)
+        power_glob = self.im.get_ncvar('PECHT')
 
         #PEECH(TIME3, X) WATTS/CM3; ECRH ELECTRON HEATING
         el_heat_prof = self.im.get_ncvar('PEECH', self.im.vol_inv)
@@ -255,7 +252,7 @@ class imas_core_sources:
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
             if len(power_glob)>i:
-                glob.power = power_glob[i]
+                glob.power = power_glob[i].astype(float)
                 glob.electrons.power = el_power_glob[i].astype(float)
 
             self.im.fill_data(profi.electrons.energy, el_heat_prof, ind=i, chk=nprof, name='el_energy')
@@ -264,7 +261,6 @@ class imas_core_sources:
 
     #sci source_ids, ntimes:n_time_frames
     def fill_lh_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'core source: lh')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
 
@@ -307,7 +303,6 @@ class imas_core_sources:
 
     #sci source_ids, ntimes:n_time_frames
     def fill_fusion_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'core source: fusion')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
 
@@ -319,9 +314,9 @@ class imas_core_sources:
 
         #global
         #FPTI (TIME) W ; FUSION ION POWER TO IONS ; sum of BFTI_
-        gpow_i = self.im.get_ncvar('FPTI').astype(float)
+        gpow_i = self.im.get_ncvar('FPTI')
         #FPTE (TIME) W;  FUSION ION POWER TO ELECTRONS ; sum of BFTE_
-        gpow_e = self.im.get_ncvar('FPTE').astype(float)
+        gpow_e = self.im.get_ncvar('FPTE')
 
         #(P14 is proton(14.7MeV) fusion product fast ion)
         # ['T', '3', '4', 'P', 'P14']; 3=>HE3, 4=>HE4
@@ -329,12 +324,12 @@ class imas_core_sources:
 
         #Total power coupled to the plasma.
         #BFTH_T  (TIME) W ; FUSN T POWER THERMALIZED ; PFION ?
-        gpower = self.im.get_ncvar_sum(f'BFTH_?').astype(float)
+        gpower = self.im.get_ncvar_sum(f'BFTH_?')
 
         #torque FPHTH_3(TIME) ; NT-M  ; FUSN HE3: THERMALIZATION ;  FPHXB_ ??
-        gtorq = self.im.get_ncvar_sum(f'FPHTH_?').astype(float)
+        gtorq = self.im.get_ncvar_sum(f'FPHTH_?')
         #FSTH_3(TIME)  N/SEC FUSN HE3 THERMALIZATIONS ; SFION ?
-        gptcls = self.im.get_ncvar_sum(f'FSTH_?').astype(float)
+        gptcls = self.im.get_ncvar_sum(f'FSTH_?')
         #PFE_3(TIME3, X) ; WATTS/CM^3; FUSN HE3 ELECTRON HEATING
         prof_powe =  self.im.get_ncvar_sum(f'PFE_?', scale=self.im.vol_inv)
 
@@ -350,18 +345,18 @@ class imas_core_sources:
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
             if len(gpower)>i:
-                glob.power = gpower[i]
+                glob.power = gpower[i].astype(float)
             if len(gpow_i)>i:
-                glob.total_ion_power = gpow_i[i]
+                glob.total_ion_power = gpow_i[i].astype(float)
             if len(gptcls)>i:
-                glob.total_ion_particles = gptcls[i]
+                glob.total_ion_particles = gptcls[i].astype(float)
 
             #glob.electrons.particles = 0
             if len(gpow_e)>i:
-                glob.electrons.power = gpow_i[i]
+                glob.electrons.power = gpow_i[i].astype(float)
 
             if len(gtorq)>i:
-                glob.torque_tor = gtorq[i]
+                glob.torque_tor = gtorq[i].astype(float)
 
             self.im.fill_data(profi.electrons.energy, prof_powe, ind=i, chk=nprof, name='prof_el_energy')
 
@@ -384,7 +379,6 @@ class imas_core_sources:
 
     #sci source_ids, ntimes:n_time_frames
     def fill_ohmic_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'Core source: ohmic')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
 
@@ -416,9 +410,9 @@ class imas_core_sources:
         power_fi = self.im.get_ncvar('POHB', self.im.vol_inv)
 
         #BFOH_3(TIME) ; WATTS ; POWER: OH CIRCUIT TO FUSN HE3
-        fusion_power = self.im.get_ncvar_sum(f'BFOH_?').astype(float)
+        fusion_power = self.im.get_ncvar_sum(f'BFOH_?')
         #BPOH_D(TIME) ; POWER: OH CIRCUIT TO D BEAM
-        beam_power = self.im.get_ncvar_sum(f'BPOH_?').astype(float)
+        beam_power = self.im.get_ncvar_sum(f'BPOH_?')
 
         self.im.logger.info(f'{fusion_power.shape}, {beam_power.shape}, {power_fi_glob.shape}')
         power_ions = self.im.sum_arrays(fusion_power, beam_power, power_fi_glob)
@@ -426,7 +420,7 @@ class imas_core_sources:
         #power_ions_glob = self.im.np_multiply_sum(power_ions, gvol, 1, 'power_ions', 'gvol')
 
         #POH(TIME3, X) WATTS/CM3; OHMIC HEATING POWER
-        power_prof = self.im.get_ncvar('POH', self.im.vol_inv).astype(float)
+        power_prof = self.im.get_ncvar('POH', self.im.vol_inv)
         power_glob = self.im.np_multiply_sum(power_prof, gvol, 1, 'power_prof', 'gvol')
 
         #conductivity from resistivity ?
@@ -442,8 +436,8 @@ class imas_core_sources:
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
             if self.im.is_valid(power_glob, power_ions):
-                glob.power = power_glob[i]
-                glob.total_ion_power = power_ions[i]
+                glob.power = power_glob[i].astype(float)
+                glob.total_ion_power = power_ions[i].astype(float)
                 #glob.electrons.power = el_power_glob[i].astype(float)
 
             #self.im.fill_data(profi.electrons.energy, el_heat_prof, ind=i, chk=nprof, name='prof_el_energy')
@@ -455,7 +449,6 @@ class imas_core_sources:
 
     #sci source_ids, ntimes:n_time_frames
     def fill_bremsstrahlung_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'Core source: bremsstrahlung')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
 
@@ -471,7 +464,7 @@ class imas_core_sources:
         #PRAD_BR(TIME3, X) ; W/CM3; BREMSSTRAHLUNG RADIATION
         #negative for radiation power loss
         rad_prof = -1.0*self.im.get_ncvar('PLJBOH', self.im.vol_inv)
-        rad_glob = np.sum(np.multiply(rad_prof, gvol), axis=1).astype(float)
+        rad_glob = np.sum(np.multiply(rad_prof, gvol), axis=1)
 
         sci.profiles_1d.resize(ntimes)
         #fill profiles_1d[*].grid
@@ -482,15 +475,14 @@ class imas_core_sources:
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
             if len(rad_glob)>i:
-                glob.power = rad_glob[i]
-                glob.electrons.power = rad_glob[i]
+                glob.power = rad_glob[i].astype(float)
+                glob.electrons.power = rad_glob[i].astype(float)
 
             self.im.fill_data(profi.electrons.energy, rad_prof, ind=i, chk=nprof, name='el_energy')
 
 
     #sci source_ids, ntimes:n_time_frames
     def fill_line_radiation_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'Core source: line_radiation')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
 
@@ -518,7 +510,7 @@ class imas_core_sources:
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
             if len(rad_glob)>i:
-                glob.power = rad_glob[i]
+                glob.power = rad_glob[i].astype(float)
 
             #profi.ion.resize(1)
             #self.im.fill_data(profi.total_ion_power_inside, rad_glob, ind=i, chk=nprof, name='power_ions')
@@ -533,7 +525,6 @@ class imas_core_sources:
 
     #sci source_ids, ntimes:n_time_frames
     def fill_runaways_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'Core source: runaways')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
 
@@ -550,7 +541,7 @@ class imas_core_sources:
 
         #SERUN(TIME3, X) ; N/CM3/SEC; RUNAWAY ELEC SOURCE RATE
         ptcl_prof = -1.0*self.im.get_ncvar('SERUN', self.im.vol_inv)
-        ptcl_glob = self.im.np_multiply_sum(ptcl_prof, gvol, 1, 'ptcl_prof', 'gvol').astype(float)
+        ptcl_glob = self.im.np_multiply_sum(ptcl_prof, gvol, 1, 'ptcl_prof', 'gvol')
 
         sci.profiles_1d.resize(ntimes)
         #fill profiles_1d[*].grid
@@ -561,14 +552,13 @@ class imas_core_sources:
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
             if len(ptcl_glob)>i:
-                glob.electrons.particles = ptcl_glob[i]
+                glob.electrons.particles = ptcl_glob[i].astype(float)
 
             self.im.fill_data(profi.electrons.particles, ptcl_glob, ind=i, chk=nprof, name='ep_run')
 
 
     #sci source_ids, ntimes:n_time_frames
     def fill_pellet_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'Core source: pellet')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
 
@@ -585,7 +575,7 @@ class imas_core_sources:
         #Error: particles flux needed. PLABD is density difference
         self.im.logger.info(f'Error: Core source-pellet : density filled instead of particle flux')
         ptcl_prof = -1.0*self.im.get_ncvar('PLABD', self.im.vol_inv)
-        ptcl_glob = np.sum(np.multiply(ptcl_prof, gvol), axis=1).astype(float)
+        ptcl_glob = np.sum(np.multiply(ptcl_prof, gvol), axis=1)
 
         sci.profiles_1d.resize(ntimes)
         #fill profiles_1d[*].grid
@@ -596,14 +586,13 @@ class imas_core_sources:
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
             if len(ptcl_glob)>i:
-                glob.electrons.particles = ptcl_glob[i]
+                glob.electrons.particles = ptcl_glob[i].astype(float)
 
             self.im.fill_data(profi.electrons.particles, ptcl_prof, ind=i, chk=nprof, name='pell_ptcl')
 
 
     #sci source_ids, ntimes:n_time_frames
     def fill_gas_puff_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'Core source: gas_puff')
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
 
@@ -627,7 +616,7 @@ class imas_core_sources:
         #Error: particles flux needed. PLABD is density difference
         self.im.logger.info(f'Error: Core source-pellet : density filled instead of particle flux')
         ptcl_prof = -1.0*self.im.get_ncvar('PLABD', self.im.vol_inv)
-        ptcl_glob = np.sum(np.multiply(ptcl_prof, gvol), axis=1).astype(float)
+        ptcl_glob = np.sum(np.multiply(ptcl_prof, gvol), axis=1)
 
         #self.fill_element_data(sci.species.neutral, sp)
 
@@ -640,7 +629,7 @@ class imas_core_sources:
             glob = sci.global_quantities[i]
             profi = sci.profiles_1d[i]
             if len(ptcl_glob)>i:
-                glob.electrons.particles = ptcl_glob[i]
+                glob.electrons.particles = ptcl_glob[i].astype(float)
 
             self.im.fill_data(profi.electrons.particles, ptcl_prof, ind=i, chk=nprof, name='pell_ptcl')
 
@@ -649,15 +638,11 @@ class imas_core_sources:
 
     #sci source_ids, ntimes:n_time_frames
     def fill_ic_nbi_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'core source: IC+NBI')
-
         #QICHFAST(TIME3, X). WATTS/CM3. ICH Heating of Beam & Fusn Ions
         heat_prof = self.im.get_ncvar('QICHFAST', self.im.vol_inv)
 
 
     def fill_total_sources(self, sci, ntimes:int):
-        self.im.logger.info(f'Core source: total')
-
         coord_x = self.im.get_ncvar('X')
         nprof = coord_x.shape[1]
         coord_xb = self.im.get_ncvar('XB')
@@ -761,7 +746,6 @@ class imas_core_sources:
                 species1 = self.im.get_var_names('BSTH_?', cut='BSTH_')
                 species2 = self.im.get_var_names('FSTH_?', cut='FSTH_')
                 species = species1 + species2
-                print(species1, species2)
                 #add HE to beam if '3' or '4'
                 species = ['HE' + s if (s=='3' or s=='4') else s for s in species]
                 name = 'nbi'
@@ -795,33 +779,33 @@ class imas_core_sources:
         timep = self.im.get_ncvar('TIME3')
         ntimep = len(timep)
         self.im.checkErrExit(timesc, timep)
-
-        print(src_dict)
+        nfill = 0
 
         #fill source specific.
         for i, (name_id, srcs) in enumerate(src_dict.items()):
           name, sp = srcs[0], srcs[1]
-          print(i, name_id, name, sp)
           if not self.check_entry(name_id, sp):
               continue
 
-          print('SOURCE ', name_id, name, sp) #delete
-
-          print(f'{i}, source {name_id} {name}')
-
           sci = csc.source[i]
           fname = f'fill_{name}_sources'
-          print(fname,':')
           #all functions fill_<source_name>_sources() in this class called
           if hasattr(self, fname):
+              self.im.logger.info(f'\t {i} {fname} {sp}')
               funct = getattr(self, fname)
               if name == 'nbi':
                   funct(sci, ntimep, sp)
               else:
                   funct(sci, ntimep)
+              nfill += 1
 
-
-        self.im.putdb_imas(csc)
+        if nfill > 0:
+            csc = self.im.fill_properties(csc)
+            self.im.fill_code_properties(csc)
+            csc.ids_properties.homogeneous_time = 1
+            csc.time.resize(ntimep)
+            csc.time = timep
+            self.im.putdb_imas(csc)
         self.logger.info('Done')
 
 

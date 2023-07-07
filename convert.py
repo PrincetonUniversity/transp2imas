@@ -46,11 +46,6 @@ nci.logger.info(f'\n{ncfile}, {nml}')
 #test using 97781K31 different profile size
 
 if all_:
-
-    print('imas_core_sources') # 112989Z09(NSTX), 175286T57
-    imas_core_sources(nci)
-
-    sys.exit()
     print('radiation') #33618Y19.CDF  38530P94
     imas_radiation(nci)
 
@@ -84,10 +79,13 @@ if all_:
     print('wall')
     imas_wall(nci)
 
-    print('core transport') #89846.CDF
+    print('imas_core_sources') # 112989Z09(NSTX), 175286T57
+    imas_core_sources(nci)
+
+    #print('core transport') #89846.CDF
     #imas_core_transport(nci)
 
-    print('edge sources') #112989Z09
+    #print('edge sources') #112989Z09
     #imas_edge_sources(nci)
 
     #print('sawteeth')
