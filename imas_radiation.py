@@ -48,7 +48,7 @@ class imas_radiation:
     def fill_bremsstrahlung(self, rid, timep, timesc):
         self.im.logger.info(f'radiation: bremsstrahlung')
         coord_x = self.im.get_ncvar('X')
-        nprof = len(coord_x)
+        nprof = coord_x.shape[1]
 
         #PRAD_BR(TIME3, X) ; W/CM3; BREMSSTRAHLUNG RADIATION
         #negative for radiation power loss
@@ -109,7 +109,7 @@ class imas_radiation:
 
         #Total = PRAD_LI + PRLS_
         #prad = prad + imp_npwr  #Does PRAD_LI include PRLS_ ?
-        prad_noname = self.im.operate(prad, '-', imp_npwr, 'prad', 'imp_npwr')
+        prad_noname = self.im.operate_arrays(prad, '-', imp_npwr, 'prad', 'imp_npwr')
 
         pwn_prof = np.multiply(prad, gvol)
         pwn = np.sum(pwn_prof, axis=1).astype(float)

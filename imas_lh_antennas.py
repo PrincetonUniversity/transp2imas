@@ -34,7 +34,7 @@ class imas_lh_antennas:
             lha.reference_point.r = raxis[0].astype(float)
             lha.reference_point.z = zaxis[0].astype(float)
 
-        nant = self.im.get_nvar_names('PLHANT?')
+        nant = self.im.get_var_names_re('PLHANT?', nd1=1, nd2=2, length=True)
         self.logger.info(f'lh antenna {nant}')
 
         lha.antenna.resize(nant)

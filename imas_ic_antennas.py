@@ -34,7 +34,7 @@ class imas_ic_antennas:
             ica.reference_point.r = raxis[0].astype(float)
             ica.reference_point.z = zaxis[0].astype(float)
 
-        nant = self.im.get_nvar_names('PICHA?')
+        nant = self.im.get_var_names_re('PICHA?', nd1=1, nd2=2, length=True)
         self.logger.info(f'ic_antenna {nant}')
 
         power = []

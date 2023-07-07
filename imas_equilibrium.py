@@ -20,7 +20,7 @@ class imas_equilibrium:
         ntimep = len(timep)
         coord_x = self.im.get_ncvar('X')
         self.im.checkErrExit(timesc, timep)
-        nprof = len(coord_x)
+        nprof = coord_x.shape[1]
 
         eqm = self.im.fill_properties(eqm)
         self.im.fill_code_properties(eqm)
