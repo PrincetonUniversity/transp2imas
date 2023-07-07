@@ -30,7 +30,7 @@ class imas_core_transport:
         self.im.fill_vac_tor_field(ct)
 
         coord_x = self.im.get_ncvar('X')
-        nprof = len(coord_x)
+        nprof = coord_x.shape[1]
 
         ct.model.resize(1)
         ctm = ct.model[0]

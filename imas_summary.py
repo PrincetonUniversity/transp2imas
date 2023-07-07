@@ -303,12 +303,11 @@ class imas_summary:
 
         #runaways.current. Parallel current driven by the runaway electrons [A]
 
-
         #EC
         #Set of ECRH/ECCD launchers. 6 Max in MDS+.
         #PEECH+1..n gyrotrons. (TIME3,X) WATTS/CM3
         # please, fix this. The number of gyrotrons should not be hardcoded
-        ec_ngyro = self.im.get_nvar_names('PECIN?')
+        ec_ngyro = self.im.get_var_names_re('PECIN?', nd1=1, nd2=2, length=True)
 
         self.logger.info(rf'# EC gyrotrons {ec_ngyro}')
         peech, pecin = 0., 0.
@@ -358,7 +357,7 @@ class imas_summary:
 
         #IC
         # do not hardcode the number of IC antennae
-        nic_ant = self.im.get_nvar_names('PICHA?')
+        nic_ant = self.im.get_var_names_re('PICHA?', nd1=1, nd2=2, length=True)
         self.logger.info(rf'# IC Antenna {nic_ant}')
         picha, pichant = 0., 0.
         sid.heating_current_drive.ic.resize(nic_ant)

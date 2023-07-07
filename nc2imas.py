@@ -16,6 +16,12 @@ from netcdf_class import netcdf_connection
 from imas_class import imas_connection
 from atoms_class import *
 
+class LineNumber:
+    def __str__(self):
+        return str(inspect.currentframe().f_back.f_lineno)
+
+__LINE__ = LineNumber()
+
 
 def getVarName(var):
     localVars = inspect.currentframe().f_back.f_locals.items()
@@ -66,22 +72,56 @@ class nc2imas(imas_connection, netcdf_connection):
                   return False
         return True
 
-    def operate(self, var1, symb:str, var2, name1:str='', name2:str=''):
-        if not self.is_valid(var1, var2):
-            self.logger.info(f' operate error: {name1} {symb} {name2}')
+    def sum_arrays(self, *arrs):
+        res = []
+        init = False
+        try:
+            for arr in arrays:
+                if len(arr)==0:
+                    continue
+                if init:
+                    res = res+arr
+                else:
+                    res = arr
+                    init = True
+        except:
+            self.logger.info(f' operate_arrays error')
+        return res
+
+
+    def operate_arrays(self, arr1, op:str, arr2, name1:str='', name2:str=''):
+        if not self.is_valid(arr1, arr2):
+            self.logger.info(f' operate_arrays error: {name1} {op} {name2}')
             return
 
-        if symb == '-':
-            return var1 - var2
-        elif symb == '+':
-            return var1 - var2
-        elif symb == '/':
-            return var1/var2
-        elif symb == '*':
-            return var1 * var2
-        else:
-            self.logger.info(f' operate error {symb}')
-            return None
+        err = False
+        try:
+            if op == '-':
+                return arr1 - arr2
+            elif op == '+':
+                return arr1 - arr2
+            elif op == '/':
+                return arr1/arr2
+            elif op == '*':
+                return arr1 * arr2
+            else:
+                err = True
+        except:
+            err = True
+
+        if err:
+            self.logger.info(f' operate_arrays error:: {name1} {op} {name2}')
+            return np.array([])
+
+    def np_multiply_sum(self, arr1, arr2, axis:int, name1:str='', name2:str=''):
+        if not self.is_valid(arr1, arr2):
+            self.logger.info(f' np_multiply_sum error: {name1} {name2}')
+            return
+        try:
+            return np.sum(np.multiply(arr1, arr2), axis=axis)
+        except:
+            self.logger.info(f' np_multiply_sum error:: {name1} {name2}')
+            return np.array([])
 
 
     def checkErrExit(self, *variables):
@@ -226,7 +266,7 @@ class nc2imas(imas_connection, netcdf_connection):
         return matches
 
 
-    def get_namelist_vars(self, name:str, tp=None, scale=0):
+    def get_namelist_vars(self, name:str, tp=None, scale=1.):
         #return list. name's last character is discarded. Eg. XECECH?
         n = self.get_namelist_nvars(name)
         name0 = name[-1]
@@ -240,13 +280,13 @@ class nc2imas(imas_connection, netcdf_connection):
             if self.is_valid(val):
                 if tp in [int, float]:
                     val = [tp(x) for x in val]
-                if scale > 0:
+                if scale < 1. or scale > 1.:
                     val = scale*val
                 return val
         return []
 
     #returns scalar
-    def get_namelist_var_(self, name:str, tp=None, scale=0, ind:int=-1):
+    def get_namelist_var_(self, name:str, tp=None, scale=1., ind:int=-1):
         try:
             val = self.nmlist[name]
             if ind>=0 and isinstance(val, str):
@@ -259,7 +299,7 @@ class nc2imas(imas_connection, netcdf_connection):
 
         if tp in [int, float]:
             val = tp(val)
-            if scale > 0:
+            if scale < 1. or scale > 1.:
                 val = scale*val
         return val
 
@@ -372,7 +412,7 @@ class nc2imas(imas_connection, netcdf_connection):
             return
         #sp is TRANSP symbol defined in atoms_class.entries
         atom_info = atom_base(sp, ilab)
-        ids.label = sp
+        ids.label = atom_info.label
         ids.element.resize(1)
         ids.element[0].a = atom_info.a
         if zn:

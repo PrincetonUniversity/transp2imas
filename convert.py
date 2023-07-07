@@ -19,7 +19,7 @@ from imas_pf_passive import *
 from imas_edge_sources import *
 from imas_sawteeth import *
 from imas_radiation import *
-#from imas_core_sources import *
+from imas_core_sources import *
 #from imas_core_transport import *
 
 #example use: python convert.py -i 147634G14 -r 1 -b MDS -new -o 0 -l debug
@@ -47,6 +47,10 @@ nci.logger.info(f'\n{ncfile}, {nml}')
 
 if all_:
 
+    print('imas_core_sources') # 112989Z09(NSTX), 175286T57
+    imas_core_sources(nci)
+
+    sys.exit()
     print('radiation') #33618Y19.CDF  38530P94
     imas_radiation(nci)
 
@@ -85,9 +89,6 @@ if all_:
 
     print('edge sources') #112989Z09
     #imas_edge_sources(nci)
-
-    print('imas_core_sources') # 112989Z09(NSTX), 175286T57
-    #imas_core_sources(nci)
 
     #print('sawteeth')
     #imas_sawteeth()

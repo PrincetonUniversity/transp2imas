@@ -55,16 +55,6 @@ class netcdf_connection:
             pass
         self.open_ncfile()
 
-    #default pattern has 1 or 2 digits \d{1,2}
-    #name's last character is discarded. Eg. PECIN?
-    def get_nvar_names(self, name:str) -> int:
-        if name[-1] != '?':
-            raise Exception(f'Error in search of array variables {name}')
-        name = name[:-1]
-        pat = r'\b' + name + r'\d{1,2}\b'
-        matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.search(pat, s)]
-        return len(matches)
-
     def make_re_pattern(self, name:str, nd1:int=0, nd2:int=0, nch1:int=0,
           nch2:int=0, nd:int=0, nch:int=0, dig_last:bool=False, step:int=-1) -> str:
         r'''
@@ -98,37 +88,66 @@ class netcdf_connection:
                 r'[A-z]{' + f'{str(nch1)},{str(nch2)}' + r'}'
 
         if step == -1:
-            pat = r'^' + pat + rf'{name[ind+1:]}' + '$'
+            pat = pat + rf'{name[ind+1:]}' + '$'
 
         return pat
 
-    def get_var_names_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
-          nch2:int=0, nd:int=0, nch:int=0, dig_last:bool=False) -> list:
+    def make_re_pattern_quest(self, name:str) -> str:
+        r'''
+         Requires at least one '?' in name
+         All '?' are replaced by \w+
+         BSTH_?4_P? converted to BSTH_\w+4_P\w+
+        '''
+        inds = [ind for ind, ch in enumerate(name.lower()) if '?' == ch]
+        if len(inds) < 1:
+            raise Exception(f'Error in pattern build of {name} : missing "?"')
+        pat = rf'{name[:inds[0]]}\w+'
+        for i in range(1,len(inds)):
+            pat += rf'{name[inds[i-1]+1:inds[i]]}\w+'
+        return pat + name[inds[-1]+1:] + '$'
 
-        pat = self.make_re_pattern(name, nd1, nd2, nch1, nch2, nd, nd, dig_last)
-        matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.search(pat, s)]
+    def get_var_names_re_(self, pat, cut:str='', length:bool=False):
+        matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.match(pat, s)]
         if cut:
             matches = [s.split(cut,1)[1] for s in matches if len(s.split(cut,1))>1]
-        return matches
+        return matches if not length else len(matches)
 
+    def get_var_names_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
+          nch2:int=0, nd:int=0, nch:int=0, dig_last:bool=False, length:bool=False):
+        #use number of digits and characters to make pattern
+        pat = self.make_re_pattern(name, nd1, nd2, nch1, nch2, nd, nd, dig_last)
+        return self.get_var_names_re_(pat, cut, length)
+
+    def get_var_names(self, name:str, cut:str='', length=False):
+        #'?' in names are replaced by \w+'
+        pat = self.make_re_pattern_quest(name)
+        return self.get_var_names_re_(pat, cut, length)
+
+    def check_var_name(self, name:str, length=False):
+        pat = rf'{name}$'
+        n = self.get_var_names_re_(pat, length=length)
+        return n>0
 
     #names: list[str] or np.array
     def split_var_name(self, names, cut:str='') -> dict[str:list]:
         try:
             res = {s.split(cut)[0]: s.split(cut)[1:] for s in names if len(s.split(cut))>1}
-
         except:
             self.logger.info(f'{name} split error {name.split(chars,1)}')
 
 
-    def get_var_names_lst(self, name:str, lst:list[str], crop=True, cut:str='') -> list[str]:
-        '''
+    #TODO use chars after '?'
+    def get_var_names_lst(self, name:str, lst:list[str], crop=False, cut:str='') -> list[str]:
+        r'''
           select existing variables matching pattern + passed in lst
           eg: get_var_names_lst('BSTH_?', sp_look); sp_look=['H', 'D', 'T',..]
+          Only 1st position of '?' used to split. Others are treated as characters:
+          BSTH_?_P? is used as BSTH_... while _P? discarded
         '''
-        if name[-1] != '?':
+        ind = name.find('?') #only 1st position of '?' replaced
+        if ind < 0:
             raise Exception(f'Error in search of array variables {name}')
-        name = name[:-1]
+        name = name[:ind]
         look = [name+ str(s) for s in lst]
         matches = [self.vars_[i] for i,s in enumerate(self.vars_) if s in look]
         st = cut if cut else name
@@ -136,19 +155,30 @@ class netcdf_connection:
             matches = [str(s.split(st,1)[1]) for s in matches if len(s.split(st,1))>1]
         return matches
 
-    def get_ncvar(self, var:str, scale:float=0., ind:int=-1) -> np.array:
+    def get_species_names(self, name:str, cut:str) -> list[str]:
+        #characters after 1st position of '?' returned
+        ind = name.find('?') #only 1st position of '?' replaced
+        if ind < 0:
+            raise Exception(f'Error in search of array variables {name}')
+        name = name[:ind]
+        sps = self.get_var_names_re_(name, cut)
+        sps = ['HE' + s if (s=='3' or s=='4') else s for s in sps]
+        return sps
+
+
+    def get_ncvar(self, var:str, scale:float=1., ind:int=-1) -> np.array:
         try:
             res = np.array(self.nc.variables[var][:])
             if ind>=0:
                 res = res[ind]
-            if scale > 0:
+            if scale < 1. or scale > 1.:
                 return scale*res
             else:
                 return res
         except:
             return np.array([])
 
-    def get_ncvars_lst(self, lst:list[str], scale:float=0., ind:int=-1) -> np.array:
+    def get_ncvars_lst(self, lst:list[str], scale:float=1., ind:int=-1) -> np.array:
         tot = []
         n = 0
         for name in lst:
@@ -159,6 +189,10 @@ class netcdf_connection:
                 tot = res
                 n = 1
         return tot if n>0 else np.array([])
+
+    def get_ncvar_sum(self, name:str, scale:float=1.):
+        names = self.get_var_names(name)
+        return self.get_ncvars_lst(names, scale=scale)
 
 
     def get_nc_global_atts(self):

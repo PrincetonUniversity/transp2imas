@@ -35,7 +35,7 @@ class imas_ec_launchers:
         ec.time.resize(ntimes)
         ec.time = timesc
 
-        nbeams = self.im.get_nvar_names('PECIN?')
+        nbeams = self.im.get_var_names_re('PECIN?', nd1=1, nd2=2, length=True)
         ec.beam.resize(nbeams)
         #ec.latency =
 

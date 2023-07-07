@@ -16,7 +16,7 @@ class imas_nbi:
         ntimep = len(timesc)
         self.im.checkErrExit(timesc, timesp)
 
-        nunits = self.im.get_nvar_names('PINJ?')
+        nunits = self.im.get_var_names_re('PINJ?', nd1=1, nd2=2, length=True)
         nbeams = self.im.get_namelist_var('NBEAM')
         na = self.im.get_namelist_nvars('ABEAMA?')
         self.logger.info(f'NBeams nunits {nunits} ABEAMA? {na} nbeam {nbeams}')
