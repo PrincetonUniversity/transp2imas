@@ -1,6 +1,7 @@
 
 import os
 import sys
+from pathlib import Path
 import numpy as np
 import scipy
 import re
@@ -30,7 +31,9 @@ class netcdf_connection:
 
     def open_ncfile(self):
         print(f'netcdf file {self.ncfile}')
-        path_ = os.readlink(self.ncfile)
+        path_ = Path(self.ncfile).absolute()
+        if path_.is_symlink():
+            path_ = os.readlink(self.ncfile)
         self.nc = Dataset(path_, 'r')
         self.expand_vars(self.nc)
 
