@@ -2,6 +2,7 @@
 #
 import os
 import sys
+from pathlib import Path
 import numpy as np
 import inspect
 
@@ -15,6 +16,12 @@ import argparse
 from netcdf_class import netcdf_connection
 from imas_class import imas_connection
 from atoms_class import *
+
+def check_file_exists(name:str)->bool:
+    path_ = Path(name).absolute()
+    if path_.is_symlink():
+        path_ = os.readlink(name)
+    return os.path.isfile(path_)
 
 class LineNumber:
     def __str__(self):
@@ -199,6 +206,10 @@ class nc2imas(imas_connection, netcdf_connection):
             print('**Error: namelist file not set')
             return
         self.nmlist = {}
+        if not check_file_exists(self.nml_name):
+            print(f'**WARNING: namelist file {self.nml_name} not found')
+            return
+
         with open(self.nml_name) as nmf:
             self.logger.info(f'loading {self.nml_name}')
             for line in nmf:
@@ -372,8 +383,15 @@ class nc2imas(imas_connection, netcdf_connection):
         #TRFLX(TIME3, XB)
         bflux_tor = self.get_ncvar('TRFLX')
         rho_tor = []
+
+        print('TRFLX', bflux_tor.shape)
+        print('bz', bz.shape)
+        print('bflux_tor', bflux_tor.shape)
+
         if self.is_valid(bz, bflux_tor):
-            rho_tor = np.sqrt(bflux_tor/(self.pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
+            bzf = self.pi*np.tile(bz[None,:].T, bflux_tor.shape[1])
+            print('bzf', bzf.shape)
+            rho_tor = np.sqrt(bflux_tor/bzf)
 
         psi = self.get_ncvar('PLFLX', 2.*self.pi) #(TIME3, XB)
         rho_pol_norm = np.sqrt(abs((psi - psi[0])/(psi[-1]-psi[0]))) #TODO
@@ -469,9 +487,18 @@ class nc2imas(imas_connection, netcdf_connection):
         return ids
 
 
+def find_file(fname, path_):
+   result = []
+   for root, dir_, files in os.walk(path_):
+      if fname in files:
+         result.append(os.path.join(root, fname))
+   return result
+
+
 def get_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input-cdf', type=str, help='CDF TRANSP output file, with or without .CDF')
+    parser.add_argument('-d', '--input-dir', type=str, help='input directory (any upper level), if file not in pwd')
     parser.add_argument('-b', '--backend', type=str, help='backend: MDS or HDF')
     parser.add_argument('-r', '--run', type=int, help='run number of o/p IDS')
     parser.add_argument('-new', '--new_db', help='create new database', action="store_true")
@@ -489,9 +516,10 @@ def get_args(argv=None):
         print("Example: \npython convert.py -i 147634G14 [ -r 1 -b MDS -new -o 0 -l debug]\n")
         sys.exit(1)
 
-    runid = args.input_cdf
-    runid = runid[:-4] if runid[-4:].upper()=='.CDF' else runid
-
+    #get runid, DAT filename from input cdf filename
+    cdf_name = Path(args.input_cdf).stem
+    runids = [a for a in cdf_name if (a.isdigit() or a.isalpha())]
+    runid = ''.join(runids)
     ii = 0
     for i in range(len(runid)):
       if runid[i].isdigit():
@@ -499,8 +527,33 @@ def get_args(argv=None):
       else:
         break
     shot, rid = int(runid[:ii]), runid[ii:]
-    ncfile = str(shot)+rid+'.CDF'
     nml = str(shot)+rid+'TR.DAT'
+
+    extn = Path(args.input_cdf).suffix
+    ncfile = args.input_cdf if 'CDF' in extn.upper() else args.input_cdf + '.CDF'
+    fdir = os.path.dirname(ncfile)
+    cwd = Path().absolute()
+
+    #if cdf file is not in cwd, then use DAT from dir of cdf file
+    if fdir != cwd and fdir:
+        nml = fdir+'/'+nml
+
+   #use input_dir if present, if the input file not in current dir
+    if not check_file_exists(ncfile):
+        if args.input_dir:
+            loc = Path(args.input_dir)
+            res = find_file(args.input_cdf, loc)
+            if len(res)>0:
+                ncfile = res[0]
+            res = find_file(nml, loc)
+
+            if len(res)>0:
+                nml = res[0]
+
+    if not check_file_exists(ncfile):
+        raise Exception(f'NC file {ncfile} not found.')
+    if not check_file_exists(nml):
+        print(f'*** WARNING: namelist {nml} not found.')
 
     run = 1
     backend='MDS'

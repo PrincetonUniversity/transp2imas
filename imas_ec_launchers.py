@@ -72,7 +72,7 @@ class imas_ec_launchers:
             #IDS defines angles in the EC frame ?? increasing towards the positive phi axis.
             angle = self.im.get_ncvar('PHAIECH'+str(i+1))
             if angle is not None:
-                angle = angle*constants.pi/180.  # (angle-180.0)
+                angle = (angle-180.0)*constants.pi/180.
                 self.im.fill_data(ec.beam[i].steering_angle_tor, angle)
             #If angle-180.0 then inconsistency between tr_imas_mod.f90:468, 470
             #deg2rad*phaiech_use(iant), deg2rad*thetech_use(iant)
@@ -84,7 +84,8 @@ class imas_ec_launchers:
             #IMAS: in the R,Z plane (from the -R axis towards the -Z axis). Not in detector_aperture_coordinates
             angle = self.im.get_ncvar('THETECH'+str(i+1))
             if angle is not None:
-                angle = -(angle+90.0)*constants.pi/180. # (angle-90.0)
+                angle = (angle-90.0)*constants.pi/180.
+                #angle = -(angle+90.0)*constants.pi/180.
                 self.im.fill_data(ec.beam[i].steering_angle_pol, angle)
 
 

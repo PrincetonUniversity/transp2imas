@@ -238,7 +238,7 @@ class imas_core_sources:
         el_heat_prof = self.im.get_ncvar('PEECH', self.im.vol_inv)
 
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
-        el_power_glob = np.sum(np.multiply(el_heat_prof, gvol), axis=1)
+        el_power_glob = self.im.np_multiply_sum(el_heat_prof, gvol, axis=1)
 
         #ECCUR(TIME3, X) ; AMPS/CM2; ECRH CURRENT
         curr = self.im.get_ncvar('ECCUR', self.im.area_inv)
@@ -481,6 +481,43 @@ class imas_core_sources:
             self.im.fill_data(profi.electrons.energy, rad_prof, ind=i, chk=nprof, name='el_energy')
 
 
+
+    #sci source_ids, ntimes:n_time_frames
+    def fill_impurity_radiation_sources(self, sci, ntimes:int):
+        coord_x = self.im.get_ncvar('X')
+        nprof = coord_x.shape[1]
+
+        self.fill_src_properties(sci, iname='impurity_radiation', iind=203,
+            idesc="Line radiation and Bremsstrahlung source; radiation losses are negative",
+                    tname='unspecified', tind=0, tdesc='unspecified')
+
+        #self.fill_element_data(sci.species.ion, sp)
+
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        gvol = self.im.get_ncvar('DVOL', self.im.vconv)
+
+        # PRBS_TOK(TIME3, X) ; W/CM3; TOK Impurity Brem Radiation
+        #negative for radiation power loss
+        rad_prof = -1.0*self.im.get_ncvar('PRBS_TOK', self.im.vol_inv)
+        rad_glob = self.im.np_multiply_sum(rad_prof, gvol, axis=1)
+
+        sci.profiles_1d.resize(ntimes)
+        #fill profiles_1d[*].grid
+        self.im.fill_profiles1d_grid(sci)
+        sci.global_quantities.resize(ntimes)
+
+        for i in range(ntimes):
+            glob = sci.global_quantities[i]
+            profi = sci.profiles_1d[i]
+            if len(rad_glob)>i:
+                glob.power = rad_glob[i].astype(float)
+                glob.total_ion_power = rad_glob[i].astype(float)
+
+            profi.ion.resize(1)
+            self.im.fill_data(profi.ion[0].energy, rad_prof, ind=i, chk=nprof, name='power_ions')
+
+
+
     #sci source_ids, ntimes:n_time_frames
     def fill_line_radiation_sources(self, sci, ntimes:int):
         coord_x = self.im.get_ncvar('X')
@@ -497,6 +534,9 @@ class imas_core_sources:
         #power loss due to line radiation is negative source.
         rad_prof = -1.0 * self.im.get_ncvar('PRAD_LI', self.im.vol_inv)
         rad_glob = np.sum(np.multiply(rad_prof, gvol), axis=1)
+
+        # PRLS_TOK(TIME3, X) ?
+        # PRADS_TOK(TIME3, X) ?
 
         #self.fill_element_data(sci.species.ion, sp)
         #self.fill_element_data(sci.species.neutral, sp)
@@ -767,8 +807,8 @@ class imas_core_sources:
         csc = self.im.ids.core_sources
         #exact imas source term names in core_sources
         src_lst = ['nbi', 'ec', 'lh', 'ic', 'fusion', 'ohmic', 'bremsstrahlung', 'ic_nbi',
-                  'line_radiation', 'collisional_equipartition', 'runaways', 'pellet', 'gas_puff',
-                  'total']
+                  'line_radiation', 'impurity_radiation', 'collisional_equipartition',
+                  'runaways', 'pellet', 'gas_puff', 'total']
         #src_dict{name_id : [name, species]}
         src_dict = self.get_sources_info(src_lst)
         csc.source.resize(len(src_dict))
@@ -791,7 +831,7 @@ class imas_core_sources:
           fname = f'fill_{name}_sources'
           #all functions fill_<source_name>_sources() in this class called
           if hasattr(self, fname):
-              self.im.logger.info(f'\t {i} {fname} {sp}')
+              self.im.logger.info(f'\t {i+1} {fname} {sp}')
               funct = getattr(self, fname)
               if name == 'nbi':
                   funct(sci, ntimep, sp)

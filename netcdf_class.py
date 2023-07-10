@@ -136,7 +136,7 @@ class netcdf_connection:
         try:
             res = {s.split(cut)[0]: s.split(cut)[1:] for s in names if len(s.split(cut))>1}
         except:
-            self.logger.info(f'{name} split error {name.split(chars,1)}')
+            print(f'{name} split error {name.split(chars,1)}')
 
 
     #TODO use chars after '?'
@@ -227,7 +227,7 @@ class netcdf_connection:
         self.shot = int(self.get_ncattr('shot'))
 
         try:
-            runf = self.ncfile[:-4] #.CDF
+            runf = Path(self.ncfile).stem #.CDF
             runid = self.get_ncattr('Runid').strip()
             if runf != runid:
                 print(f'Mismatch of Runid in nc file header {runid} with filename {self.ncfile}')
