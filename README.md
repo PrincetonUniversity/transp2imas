@@ -41,8 +41,23 @@ TRANSP run output CDF file or its symlink is required to be present in the curre
 Python virtual environment with numpy, scipy, netcdf_class, and imass_class or system installations of these are required. Here the \<python_venv\> is the name of the virtual environment directory. The machine name (eg. ITER, D3D) and shot number are retrieved from the input CDF file, in order to avoid errors of passing in mismatched arguments.
 
 
+source <intel_or_gcc_imas_modules>
+module load python/3.10.7
+
+
+If python virtual environment is already setup, skip this this section (of 6 lines).
+````
+cd ~/
+python3 -m venv  python_venv
+(Now we can cd  to anywhere we want)
+source ~/python_venv/bin/activate
+pip install --upgrade pip
+pip install  flake8 matplotlib netCDF4 numpy  PyYAML scipy
 ```
 
+To run convert script,
+
+```
 source <python_venv>/bin/activate
 .   env_gcc.txt  (or . env_intel.txt)
 python convert.py  -i <runid> [ -b MDS/HDF -r <ids_run_num> -new ]

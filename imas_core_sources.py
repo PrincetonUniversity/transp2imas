@@ -190,11 +190,11 @@ class imas_core_sources:
 
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
-        global_power_tot = np.sum(np.multiply(tot_heat_prof, gvol), axis=1)
+        global_power_tot = self.im.np_multiply_sum(tot_heat_prof, gvol, axis=1)
 
-        ion_power_glob = np.sum(np.multiply(ion_heat_prof, gvol), axis=1)
+        ion_power_glob = self.im.np_multiply_sum(ion_heat_prof, gvol, axis=1)
 
-        el_power_glob = np.sum(np.multiply(el_heat_prof, gvol), axis=1)
+        el_power_glob = self.im.np_multiply_sum(el_heat_prof, gvol, axis=1)
 
         sci.profiles_1d.resize(ntimes)
         #fill profiles_1d[*].grid

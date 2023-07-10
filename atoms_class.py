@@ -43,7 +43,8 @@ class atom_base():
                         'K'   : ['Kr',  83.800,        36.0], #Krypton #iostope average
                         'X'   : ['Xe',  131.300,       54.0], #Xeon    #iostope average
                         'W'   : ['W',   183.5000,      74.0], #Tungston av
-                        'Z'   : ['Z',   -1.0,          -1.0] #Heavy. High Z
+                        'Z'   : ['Z',   -1.0,          -1.0], #Heavy. High Z
+                        'TOK' : ['Z',   -1.0,          -1.0] #
                        }
 
 

@@ -17,8 +17,8 @@ class imas_radiation:
     def fill_rad_globals(self, rid, timesc, pwr, pwi=None, pwn=None,
                          pwe=None, vessel:bool=False):
         ntimes = len(timesc)
-        if(ntimes != len(pwr)):
-            self.im.logger.info(f'line_radiation : global ntime {ntimes} != {len(pwr)}')
+        if pwr is None or (ntimes != len(pwr)):
+            self.im.logger.info(f'line_radiation : global ntime {ntimes} != size of pwr')
             return
 
         rid.global_quantities.resize(ntimes)
@@ -104,8 +104,8 @@ class imas_radiation:
         self.im.logger.info(f'pwx_ion_names: {pwx_ion_names}')
         #total; separate is done in profiles
         imp_ipwr = self.im.get_ncvars_lst(pwx_ion_names, self.im.vol_inv)
-        imp_ipwr_prof = np.multiply(imp_ipwr, gvol)
-        imp_ipwr = np.sum(imp_ipwr_prof, axis=1).astype(float)
+        imp_ipwr_prof = self.im.operate_arrays(imp_ipwr, '*', gvol)
+        imp_ipwr = self.im.np_multiply_sum(imp_ipwr, gvol, axis=1)
 
         #Total = PRAD_LI + PRLS_
         #prad = prad + imp_npwr  #Does PRAD_LI include PRLS_ ?
@@ -113,7 +113,7 @@ class imas_radiation:
 
         pwn_prof = np.multiply(prad, gvol)
         pwn = np.sum(pwn_prof, axis=1).astype(float)
-        pwr = pwn + imp_ipwr
+        pwr = self.im.operate_arrays(pwn, '+', imp_ipwr)
         #global quantities
         self.fill_rad_globals(rid, timesc, pwr=pwr, pwn=pwn, pwi=imp_ipwr)
 
@@ -171,12 +171,12 @@ class imas_radiation:
 
         #DVOL(TIME3, X) CM**3; ZONE VOLUME
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
-        pwr = np.sum(np.multiply(hpwr, gvol), axis=1).astype(float)
+        pwr = self.im.np_multiply_sum(hpwr, gvol, axis=1)
 
         #filling pwn:neutral ?
-        self.fill_rad_globals(rid, timesc, pwr=pwi, pwn=pwr)
+        self.fill_rad_globals(rid, timesc, pwr=pwr, pwn=pwr)
 
-        ntimep = len(ntimep)
+        ntimep = len(timep)
         rid.profiles_1d.resize(ntimep)
 
         for i in range(ntimep):
@@ -195,7 +195,7 @@ class imas_radiation:
             idp.neutral.resize(1) #H- only
             self.im.fill_element_data(idp.neutral[0], sp) #label= H+
 
-            self.im.fill_data(idp.power_inside, hpwr, ind=i, name='hpwr')
+            self.im.fill_data(idp.neutral[0].power_inside, hpwr, ind=i, name='hpwr')
 
 
     def create_ids(self):
