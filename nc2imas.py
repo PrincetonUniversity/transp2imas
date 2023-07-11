@@ -499,7 +499,7 @@ def get_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input-cdf', type=str, help='CDF TRANSP output file, with or without .CDF')
     parser.add_argument('-d', '--input-dir', type=str, help='input directory (any upper level), if file not in pwd')
-    parser.add_argument('-b', '--backend', type=str, help='backend: MDS or HDF')
+    parser.add_argument('-b', '--backend', type=str, help='backend: MDS or HDF5')
     parser.add_argument('-r', '--run', type=int, help='run number of o/p IDS')
     parser.add_argument('-new', '--new_db', help='create new database', action="store_true")
     parser.add_argument('-o', '--occur', type=int, help='occurrence')
@@ -571,8 +571,11 @@ def get_args(argv=None):
         occur = int(args.occur)
     if args.log:
         log = args.log
-
-    user = os.path.expanduser('~') +'/public/imasdb' if backend=='MDS' else os.getenv('USER')
+    if args.user:
+        user = args.user
+    else:
+        user = os.path.expanduser('~') +'/public/imasdb' if backend=='MDS' else os.getenv('USER')
+    print(user)
     #new_db = True if occur == 0 else False
 
     return backend, run, occur, user, newdb, ncfile, nml, log
