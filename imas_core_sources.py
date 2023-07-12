@@ -398,8 +398,11 @@ class imas_core_sources:
         jdotb = self.im.get_ncvar('PLJBOH', self.im.area_inv)
 
         #zeros in BZ ?
-        j_parallel = self.im.operate_arrays(jdotb, '/', np.tile(bz[None,:].T, nprof), 'jdotb', 'bz.T')
-
+        j_parallel = []
+        try:
+            j_parallel = np.divide(jdotb, np.tile(bz[None,:].T, nprof))
+        except:
+            pass
         #beams_dict = atom_base().beams
         #beams = self.im.get_var_names_re('BPOH_?', beams_dict.keys())
 
@@ -464,7 +467,7 @@ class imas_core_sources:
         #PRAD_BR(TIME3, X) ; W/CM3; BREMSSTRAHLUNG RADIATION
         #negative for radiation power loss
         rad_prof = -1.0*self.im.get_ncvar('PLJBOH', self.im.vol_inv)
-        rad_glob = np.sum(np.multiply(rad_prof, gvol), axis=1)
+        rad_glob = self.im.np_multiply_sum(rad_prof, gvol, axis=1)
 
         sci.profiles_1d.resize(ntimes)
         #fill profiles_1d[*].grid
@@ -533,7 +536,7 @@ class imas_core_sources:
         #PRAD_LI(TIME3, X) ; WATTS/CM3; LINE RADIATION
         #power loss due to line radiation is negative source.
         rad_prof = -1.0 * self.im.get_ncvar('PRAD_LI', self.im.vol_inv)
-        rad_glob = np.sum(np.multiply(rad_prof, gvol), axis=1)
+        rad_glob = self.im.np_multiply_sum(rad_prof, gvol, axis=1)
 
         # PRLS_TOK(TIME3, X) ?
         # PRADS_TOK(TIME3, X) ?
@@ -615,7 +618,7 @@ class imas_core_sources:
         #Error: particles flux needed. PLABD is density difference
         self.im.logger.info(f'Error: Core source-pellet : density filled instead of particle flux')
         ptcl_prof = -1.0*self.im.get_ncvar('PLABD', self.im.vol_inv)
-        ptcl_glob = np.sum(np.multiply(ptcl_prof, gvol), axis=1)
+        ptcl_glob = self.im.np_multiply_sum(ptcl_prof, gvol, axis=1)
 
         sci.profiles_1d.resize(ntimes)
         #fill profiles_1d[*].grid
@@ -656,7 +659,7 @@ class imas_core_sources:
         #Error: particles flux needed. PLABD is density difference
         self.im.logger.info(f'Error: Core source-pellet : density filled instead of particle flux')
         ptcl_prof = -1.0*self.im.get_ncvar('PLABD', self.im.vol_inv)
-        ptcl_glob = np.sum(np.multiply(ptcl_prof, gvol), axis=1)
+        ptcl_glob = self.im.np_multiply_sum(ptcl_prof, gvol, axis=1)
 
         #self.fill_element_data(sci.species.neutral, sp)
 
@@ -698,13 +701,13 @@ class imas_core_sources:
         #profiles_1d.electrons.energy W.m^-3. Source term for the electron energy equation
         een_flux_dens = self.im.get_ncvar('EETR_OBS', scale=self.im.vol_inv)
         #global_quantities.electrons.power (W)
-        elpow = np.sum(np.multiply(een_flux_dens, gvol), axis=1)
+        elpow = self.im.np_multiply_sum(een_flux_dens, gvol, axis=1)
 
         # EPTR_OBS(TIME3, X) N/CM3/SEC.  Div(electron flux)observed
         #profiles_1d.electrons.particles [m^-3.s^-1]. Source term for electron density equation
         eflux_dens = self.im.get_ncvar('EPTR_OBS', scale=self.im.vol_inv)
         #global_quantities.electrons.particles. Electron particle source [s^-1]
-        elflux = np.sum(np.multiply(eflux_dens, gvol), axis=1)
+        elflux = self.im.np_multiply_sum(eflux_dens, gvol, axis=1)
 
         #UTOTL(TIME3, X) JLES/CM3 TOTAL ENERGY DENSITY
 
@@ -712,14 +715,14 @@ class imas_core_sources:
         #profiles_1d.total_ion_energy
         ion_pow = self.im.get_ncvar('IETR_OBS', scale=self.im.vol_inv)
         #global_quantities.total_ion_power (W). Total power coupled to all ion species
-        ion_pow_tot = np.sum(np.multiply(ion_pow, gvol), axis=1) #TODO
+        ion_pow_tot = self.im.np_multiply_sum(ion_pow, gvol, axis=1) #TODO
 
         # IPTR_OBS(TIME3, X) N/CM3/SEC.  Div(total ion flux)observed
         #profiles_1d.ion.particles [s^-1.m^-3]. Source term for ion density equation
         #WHICH ION ??
         iflux_dens = self.im.get_ncvar('IPTR_OBS', scale=self.im.vol_inv)
         #global_quantities.total_ion_particles. [(ions).s^-1]. Total ion particle source summed over ion species
-        total_ion_particles = np.sum(np.multiply(iflux_dens, gvol), axis=1)
+        total_ion_particles = self.im.np_multiply_sum(iflux_dens, gvol, axis=1)
 
         nprof = coord_x.shape[1]
 
@@ -736,9 +739,11 @@ class imas_core_sources:
 
             #Electron source inside flux surface, cumulative integral of source term
             ptcls = self.im.get_ncvar('DNEDT', self.im.vol_inv, ind=i)       #???
-            if self.im.is_valid(ptcls, gvol):
+            try:
                 einside = np.cumsum(np.multiply(ptcls, gvol[i]))
-            self.im.fill_data(profi.electrons.particles_inside, einside)
+                self.im.fill_data(profi.electrons.particles_inside, einside)
+            except:
+                pass
 
             #energy. Source term for electron energy equation [W.m^-3]
             #EETR_OBS, EETR_MOD(TIME3, X); WATTS/CM3, Div(elec energy flux) (observed, model)
@@ -747,9 +752,11 @@ class imas_core_sources:
             #power_inside. Power coupled to e- inside flux surface.
             #Cumulative volume integral of source term for electron energy equation
             energy = self.im.get_ncvar('EETR_OBS', self.im.vol_inv, ind=i)    #???
-            if self.im.is_valid(energy, gvol):
+            try:
                 pinside = np.cumsum(np.multiply(energy, gvol[i]))
-            self.im.fill_data(profi.electrons.power_inside, pinside)
+                self.im.fill_data(profi.electrons.power_inside, pinside)
+            except:
+                pass
 
 
             #total_ion_energy
@@ -770,9 +777,11 @@ class imas_core_sources:
 
             #power_inside
             energy = self.im.get_ncvar('IETR_OBS', self.im.vol_inv, ind=i)
-            if self.im.is_valid(energy, gvol):
+            try:
                 pinside = np.cumsum(np.multiply(energy, gvol[i]))
-            self.im.fill_data(profi.total_ion_power_inside, pinside)
+                self.im.fill_data(profi.total_ion_power_inside, pinside)
+            except:
+                pass
 
 
 

@@ -30,7 +30,7 @@ class netcdf_connection:
         self.ncfile = ncfile
 
     def open_ncfile(self):
-        print(f'netcdf file {self.ncfile}')
+        print(f'{"-"*30} \n netcdf file {self.ncfile}')
         path_ = Path(self.ncfile).absolute()
         if path_.is_symlink():
             path_ = os.readlink(self.ncfile)
@@ -199,13 +199,21 @@ class netcdf_connection:
 
 
     def get_nc_global_atts(self):
-        runid = self.nc.getncattr('Runid').strip()
-        cdf_date = self.nc.getncattr('CDF_date').strip()
-        build_date = self.nc.getncattr('BUILD_date').strip()
-        device = self.nc.getncattr('device').strip()
-        year = self.nc.getncattr('year').strip()
-        tglf = self.nc.getncattr('TGLF_hash').strip()
-        glf = self.nc.getncattr('GLF23_hash').strip()
+        runid, cdf_date, build_date, device, year, tglf, glf = None, \
+                                  None, None, None, None, None, None
+        try:
+            runid = self.nc.getncattr('Runid').strip()
+            cdf_date = self.nc.getncattr('CDF_date').strip()
+            build_date = self.nc.getncattr('BUILD_date').strip()
+            device = self.nc.getncattr('device').strip()
+            year = self.nc.getncattr('year').strip()
+        except:
+            pass
+        try:
+            tglf = self.nc.getncattr('TGLF_hash').strip()
+            glf = self.nc.getncattr('GLF23_hash').strip()
+        except:
+            pass
         return runid, device, year, cdf_date, build_date, tglf, glf
 
 
