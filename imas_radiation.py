@@ -61,8 +61,8 @@ class imas_radiation:
 
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
-        rad_prof = np.multiply(rad_prof, gvol)
-        rad_glob = np.sum(rad_prof, axis=1).astype(float)
+        radxv = self.im.operate_arrays(rad_prof, '*', gvol)
+        rad_glob = self.im.np_multiply_sum(radxv, gvol, axis=1)
 
         self.fill_rad_globals(rid, timesc, pwr=rad_glob, pwi=rad_glob)
 
@@ -111,8 +111,7 @@ class imas_radiation:
         #prad = prad + imp_npwr  #Does PRAD_LI include PRLS_ ?
         prad_noname = self.im.operate_arrays(prad, '-', imp_npwr, 'prad', 'imp_npwr')
 
-        pwn_prof = np.multiply(prad, gvol)
-        pwn = np.sum(pwn_prof, axis=1).astype(float)
+        pwn = self.im.np_multiply_sum(prad, gvol, axis=1)
         pwr = self.im.operate_arrays(pwn, '+', imp_ipwr)
         #global quantities
         self.fill_rad_globals(rid, timesc, pwr=pwr, pwn=pwn, pwi=imp_ipwr)
@@ -140,7 +139,7 @@ class imas_radiation:
                 pwri = self.im.get_ncvar(name, self.im.vol_inv, ind=i)
                 if self.im.is_valid(pwri, name=name):
                     self.im.fill_element_data(profi.neutral[ni], sp)
-                    pwri = np.sum(np.multiply(pwri, gvol), axis=1)
+                    pwri = self.im.np_multiply_sum(pwri, gvol, axis=1)
                     self.im.fill_data(profi.neutral[ni].power_inside, pwri, name='pwr_n')
 
             nii = len(ions_dict)

@@ -48,9 +48,7 @@ class imas_equilibrium:
 
         #PMHD(TIME3, X). Pressure from equilibrium solver
         pmhd = self.im.get_ncvar('PMHD')
-        emhd = []
-        if self.im.is_valid(pmhd, gvol, ind=nprof-1):
-            emhd = 1.5 * np.sum(np.multiply(pmhd, gvol), axis=1)
+        emhd = self.im.np_multiply_sum(pmhd, gvol, axis=1, scale=1.5)
 
         self.logger.info(f'ntimesc {ntimes} nprof {nprof} raxis {raxis.shape}')
         #
@@ -119,9 +117,12 @@ class imas_equilibrium:
         geom_axisz = []
 
         #f
-        fprof = fbz * bzxR[:,None] # BZXR*FBZ
-
-        self.logger.info(f'nprof1d {nprof1d} bzxR {bzxR.shape} fbz {fbz.shape}')
+        fprof = []
+        try:
+            self.logger.info(f'nprof1d {nprof1d} bzxR {bzxR.shape} fbz {fbz.shape}')
+            fprof = fbz * bzxR[:,None] # BZXR*FBZ
+        except:
+            pass
 
         #Normalised tor flux coord
         rho_tor_norm = np.multiply(coord_x, coord_x)

@@ -72,9 +72,12 @@ class imas_summary:
         ip = sid.global_quantities.ip.value
         # PAREA(TIME) - plasma CS area[cm^2]
         area = self.im.get_ncvar('PAREA')*1.e-4
-        if self.im.is_valid(area):
+        try:
             a = np.sqrt(area/self.im.pi)
             data = 1.0e8*btor*a*b0/ip
+        except:
+            self.im.logger.info('Error: beta_tor_norm')
+        else:
             self.im.fill_value(sid.global_quantities.beta_tor_norm, data)
 
         #beta_tor_thermal_norm
@@ -88,13 +91,14 @@ class imas_summary:
         gvol = self.im.get_ncvar('DVOL')
 
         if self.im.is_valid(utot, gvol):
-            etot = 3.0/2.0 * np.sum(np.multiply(utot, gvol), axis=1)
+            utotv = self.im.np_multiply_sum(utot, gvol, axis=1)
+            etot = self.im.operate_arrays(utotv, '*', 1.5)
             self.im.fill_value(sid.global_quantities.energy_total, etot)
 
         #PMHD(TIME3, X). Pressure from equilibrium solver 
         pmhd = self.im.get_ncvar('PMHD')
         if self.im.is_valid(pmhd, gvol):
-            emhd = 1.5 * np.sum(np.multiply(pmhd, gvol), axis=1)
+            emhd = self.im.np_multiply_sum(pmhd, gvol, axis=1, scale=1.5)
             self.im.fill_value(sid.global_quantities.energy_mhd, emhd)
 
         #volume PVOL(TIME) CM^3 : PLASMA VOLUME
@@ -104,28 +108,31 @@ class imas_summary:
         #energy_thermal UTHRM(TIME3, X) JLES/CM3 THERMAL ENERGY DENSITY
         utherm = self.im.get_ncvar('UTHRM')
         if self.im.is_valid(utherm):
-            etherm = 1.5 * np.sum(np.multiply(utherm, gvol), axis=1)
+            etherm = self.im.np_multiply_sum(utherm, gvol, axis=1, scale=1.5)
             self.im.fill_value(sid.global_quantities.energy_thermal, etherm)
 
         #BPOL(TIME3, XB) Tesla
         bpol = self.im.get_ncvar('BPOL')
         if self.im.is_valid(bpol):
-            for ib, bp in enumerate(bpol):
-                bpol[ib] = np.interp(coord_x[ib], coord_xb[ib], bp)
-            bpol2 = np.multiply(bpol, bpol)
-            ebpol = 1.0e6 * 1.0/(2.0*constants.mu_0) * np.sum(np.multiply(bpol2, gvol), axis=1)
+            try:
+                for ib, bp in enumerate(bpol):
+                    bpol[ib] = np.interp(coord_x[ib], coord_xb[ib], bp)
+                bpol2 = np.multiply(bpol, bpol)
+                ebpol = 1.0e6 * 1.0/(2.0*constants.mu_0) * np.sum(np.multiply(bpol2, gvol), axis=1)
+            except:
+                self.im.logger.info('error calculating ebpol')
             self.im.fill_value(sid.global_quantities.energy_b_field_pol, ebpol)
 
         # UFASTPP(TIME3, X) JLES/CM3 FAST ION PERP ENERGY DENSITY
         efastpp = self.im.get_ncvar('UFASTPP')
         if self.im.is_valid(efastpp):
-            efastpp = 1.5 * np.sum(np.multiply(efastpp, gvol), axis=1)
+            efastpp = self.im.np_multiply_sum(efastpp, gvol, axis=1, scale=1.5)
             self.im.fill_value(sid.global_quantities.energy_fast_perpendicular, efastpp)
 
         # UFASTPA(IME3, X) JLES/CM3 FAST ION PLL ENERGY DENSITY
         efastpl = self.im.get_ncvar('UFASTPA')
         if self.im.is_valid(efastpl):
-            efastpl = 1.5 * np.sum(np.multiply(efastpl, gvol), axis=1)
+            efastpl = self.im.np_multiply_sum(efastpl, gvol, axis=1, scale=1.5)
             self.im.fill_value(sid.global_quantities.energy_fast_parallel, efastpl)
 
 
@@ -134,7 +141,7 @@ class imas_summary:
         #PPLAS(TIME3, X) PASCALS PLASMA PRESSURE
         pplas = self.im.get_ncvar('PPLAS') #TODO
         if self.im.is_valid(pplas):
-            edia = 3.0/2.0 * np.sum(np.multiply(pplas, gvol), axis=1)*1.0e-6 #cm3 to m3
+            edia = self.im.np_multiply_sum(pplas, gvol, axis=1, scale=1.5*1.0e-6) #cm3 to m3
             self.im.fill_value(sid.global_quantities.energy_diamagnetic, edia)
 
 
@@ -147,14 +154,15 @@ class imas_summary:
         #CUROH(TIME3, X)AMPS/CM2
         j_ohmic = self.im.get_ncvar('CUROH')
         if self.im.is_valid(grid_area, j_ohmic):
-            current_ohm = np.sum(np.multiply(j_ohmic, grid_area), axis=1)
+            current_ohm = self.im.np_multiply_sum(j_ohmic, grid_area, axis=1)
             self.im.fill_value(sid.global_quantities.current_ohm, current_ohm, mult=sgn)
 
         # current_non_inductive. Toroidal component.
         # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
         cur_tot = self.im.get_ncvar('CUR')
         if self.im.is_valid(cur_tot):
-            j_nonind =  np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
+            curm = self.im.operate_arrays(cur_tot, '-', j_ohmic)
+            j_nonind =  self.im.np_multiply_sum(curm, grid_area, axis=1)
             self.im.fill_value(sid.global_quantities.current_non_inductive, j_nonind, mult=sgn)
 
         #tau_energy. TAUA1(TIME), SECONDS, ENERGY CONFINEMENT (TOTAL)
@@ -173,7 +181,7 @@ class imas_summary:
         # check surface itnegration
         curbs = self.im.get_ncvar('CURBS')
         if self.im.is_valid(curbs):
-            curbsxa = sgn * np.sum(np.multiply(curbs, grid_area), axis=1)
+            curbsxa = self.im.np_multiply_sum(curbs, grid_area, axis=1, scale=sgn)
             self.im.fill_value(sid.global_quantities.current_bootstrap, curbsxa)
 
 
@@ -194,37 +202,37 @@ class imas_summary:
         #ETA_USE(TIME3, X)OHM*CM. RESISTIVITY USED OR INFERRED
         #resist = self.im.get_ncvar('ETA_USE')
         #if resist is not None:
-        #    resist = np.sum(np.multiply(resist, coord_x), axis=1) #TODO
+        #    resist = self.im.np_multiply_sum(resist, coord_x, axis=1) #TODO
         #    self.im.fill_value(sid.global_quantities.resistance, resist)
 
         #POH(TIME3, X) WATTS/CM3, OHMIC HEATING POWER
         poh = self.im.get_ncvar('POH')
         if self.im.is_valid(poh):
-            poh = np.sum(np.multiply(poh, gvol), axis=1)
+            poh = self.im.np_multiply_sum(poh, gvol, axis=1)
         self.im.fill_value(sid.global_quantities.power_ohm, poh)
 
         #PRAD(TIME3, X) WATTS/CM3 NET RADIATED POWER USED
         prad = self.im.get_ncvar('PRAD')
         if self.im.is_valid(prad):
-            prad = np.sum(np.multiply(prad, gvol), axis=1)
+            prad = self.im.np_multiply_sum(prad, gvol, axis=1)
         self.im.fill_value(sid.global_quantities.power_radiated, prad)
 
         #PRAD_LI(TIME3, X) WATTS/CM3 , LINE RADIATION
         prad_li = self.im.get_ncvar('PRAD_LI')
         if self.im.is_valid(prad_li):
-            prad_li = np.sum(np.multiply(prad_li, gvol), axis=1)
+            prad_li = self.im.np_multiply_sum(prad_li, gvol, axis=1)
         self.im.fill_value(sid.global_quantities.power_line, prad_li)
 
         #PRAD_BR(TIME3, X) WATTS/CM3  BREMSSTRAHLUNG RADIATION
         prad_br = self.im.get_ncvar('PRAD_BR')
         if self.im.is_valid(prad_br):
-            prad_br = np.sum(np.multiply(prad_br, gvol), axis=1)
+            prad_br = self.im.np_multiply_sum(prad_br, gvol, axis=1)
         self.im.fill_value(sid.global_quantities.power_bremsstrahlung, prad_br)
 
         #PRAD_CY(TIME3, X) WATTS/CM3 CYCLOTRON RADIATION
         prad_cy = self.im.get_ncvar('PRAD_CY')
         if self.im.is_valid(prad_cy):
-            prad_cy = np.sum(np.multiply(prad_cy, gvol), axis=1)
+            prad_cy = self.im.np_multiply_sum(prad_cy, gvol, axis=1)
         self.im.fill_value(sid.global_quantities.power_synchrotron, prad_cy)
 
         #power_loss through separatrix [W]
@@ -241,7 +249,7 @@ class imas_summary:
         # XB is sqrt(norm. toroidal flux) defined in zone boundary
         #rho_tor_norm. XB(TIME3, XB).
 
-        xcoord = np.multiply(coord_x, coord_x) #?
+        xcoord = self.im.operate_arrays(coord_x, '*', coord_x) #multiply ?
         # only one coordinate at one time ?
         #self.im.fill_value(sid.local.magnetic_axis.rho_tor_norm, xcoord[:,-1]) #TODO
 
@@ -298,7 +306,7 @@ class imas_summary:
         # SERUN(TIME3, X) N/CM3/SEC . RUNAWAY ELEC SOURCE RATE
         serun = self.im.get_ncvar('SERUN')
         if self.im.is_valid(serun):
-            run_ptcls = np.sum(np.multiply(serun, gvol), axis=1)
+            run_ptcls = self.im.np_multiply_sum(serun, gvol, axis=1)
             self.im.fill_value(sid.runaways.particles, run_ptcls)
 
         #runaways.current. Parallel current driven by the runaway electrons [A]
@@ -316,7 +324,7 @@ class imas_summary:
             peechi = self.im.get_ncvar('PEECH'+str(i+1))
             if self.im.is_valid(peechi):
                 peech += peechi
-                power = np.sum(np.multiply(peechi, gvol), axis=1)
+                power = self.im.np_multiply_sum(peechi, gvol, axis=1)
                 self.im.fill_value(sid.heating_current_drive.ec[i].power, power)
 
             # launched or injected is PECINn WATTS
@@ -328,7 +336,7 @@ class imas_summary:
             #ECCURn(TIME3, X) AMPS/CM2  ;ECRH CURRENT (GYROTRON n)
             eccur = self.im.get_ncvar('ECCUR'+str(i+1))
             if self.im.is_valid(eccur):
-                current = np.sum(np.multiply(eccur, grid_area), axis=1)
+                current = self.im.np_multiply_sum(eccur, grid_area, axis=1)
                 self.im.fill_value(sid.heating_current_drive.ec[i].current, current)
 
             #Toroidal angle of ECRH at resonance [rad]
@@ -351,7 +359,7 @@ class imas_summary:
             self.im.fill_value(sid.heating_current_drive.power_launched_ec, pecin)
         # Total EC power coupled to plasma. PEECH(TIME3,X) WATTS/CM3 ;ECRH ELECTRON HEATING
         if self.im.is_valid(peech):
-            power_ec =  np.sum(np.multiply(peech, gvol), axis=1)
+            power_ec = self.im.np_multiply_sum(peech, gvol, axis=1)
             self.im.fill_value(sid.heating_current_drive.power_ec, power_ec)
 
 
@@ -387,7 +395,7 @@ class imas_summary:
             self.im.fill_value(sid.heating_current_drive.power_launched_ic, picha)
         # PICHANT (TIME3,X)  WATTS/CM3 . ICRF HEATING by ANTENNA
         if np.any(pichant > 0.):
-            pichant = np.sum(np.multiply(pichant, gvol), axis=1)
+            pichant = self.im.np_multiply_sum(pichant, gvol, axis=1)
             self.im.fill_value(sid.heating_current_drive.power_ic, pichant)
 
         #heating_current_drive.nbi
@@ -402,11 +410,14 @@ class imas_summary:
         #RBOUN(TIME3, XB)
 
         bzxR = self.im.get_ncvar('BZXR')
-        if self.im.is_valid(bzxR):
+        try:
             rvalues = bzxR/bz
             rcent = 0.5*(rvalues[0]+rvalues[-1])*1.0e-2
             rcent = np.tile(np.atleast_1d(rcent), ntimep)
-        self.im.fill_value(sid.boundary.geometric_axis_r, rcent, name='rcent')
+        except:
+            self.im.logger.info('Error: geometric_axis_r')
+        else:
+            self.im.fill_value(sid.boundary.geometric_axis_r, rcent, name='rcent')
 
         #sid.boundary.geometric_axis_z
 
@@ -444,7 +455,8 @@ class imas_summary:
         def fill_volume_average(name:str):
             dat = self.im.get_ncvar(name)
             if self.im.is_valid(dat, gvol, pvol):
-                dat = np.divide(np.sum(np.multiply(dat, gvol), axis=1), pvol)
+                dat = self.im.np_multiply_sum(dat, gvol, axis=1)
+                dat = self.im.operate_arrays(dat, '/', pvol)
                 if name=='TE':
                     self.im.fill_value(sid.volume_average.t_e, dat, name='t_e')
                 elif name=='NE':
@@ -471,9 +483,10 @@ class imas_summary:
         #t_i_average
         #TI(TIME3, X) EV ION TEMPERATURE
         ntot = self.im.get_ncvar('TI')
-        if self.im.is_valid(ntot, nsp):
+        if self.im.is_valid(ntot, nsp, pvol):
             ntot /= nsp
-            ntot = np.divide(np.sum(np.multiply(ntot, gvol), axis=1), 1.0e-6*pvol)
+            ntot = self.im.np_multiply_sum(ntot, gvol, axis=1)
+            ntot = self.im.operate_arrays(ntot, '/', 1.0e-6*pvol)
             self.im.fill_value(sid.volume_average.t_i_average, ntot)
 
         #DNEDT(TIME3, X) N/CM3/SEC D/DT(ELECTRON DENSITY)
@@ -494,15 +507,21 @@ class imas_summary:
         mh = atom_base('H').a * umu2mev # Mev
         md = atom_base('D').a * umu2mev # Mev
         mt = atom_base('T').a * umu2mev #
-        if self.im.is_valid(nh, nd, nt, mh, md, mt):
-            nH = np.divide(np.sum(np.multiply(nh, gvol), axis=1), 1.0e-6*pvol)
-            nD = np.divide(np.sum(np.multiply(nd, gvol), axis=1), 1.0e-6*pvol)
-            nT = np.divide(np.sum(np.multiply(nt, gvol), axis=1), 1.0e-6*pvol)
-            meffh = np.divide(mh*nH + md*nD + mt*nT, nH+nD+nT)
+        if self.im.is_valid(nh, nd, nt, mh, md, mt, gvol):
+            nhv = self.im.np_multiply_sum(nh, gvol, axis=1)
+            nH = self.im.operate_arrays(nhv, '/', 1.0e-6*pvol)
+
+            ndv = self.im.np_multiply_sum(nd, gvol, axis=1)
+            nD = self.im.operate_arrays(ndv, '/', 1.0e-6*pvol)
+
+            ntv = self.im.np_multiply_sum(nt, gvol, axis=1)
+            nT = self.im.operate_arrays(ntv, '/', 1.0e-6*pvol)
+
+            meffh = self.im.operate_arrays(mh*nH + md*nD + mt*nT, '/', nH+nD+nT)
             self.im.fill_value(sid.volume_average.meff_hydrogenic, meffh)
 
             #isotope_fraction_hydrogen. nH/(nH+nD+nT))
-            fh = np.divide(nh, nH+nD+nT)
+            fh = self.im.operate_arrays(nh, '/', nH+nD+nT)
             self.im.fill_value(sid.volume_average.isotope_fraction_hydrogen, fh)
 
 

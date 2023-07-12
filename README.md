@@ -41,12 +41,12 @@ TRANSP run output CDF file or its symlink is required to be present in the curre
 Python virtual environment with numpy, scipy, netcdf_class, and imass_class or system installations of these are required. Here the \<python_venv\> is the name of the virtual environment directory. The machine name (eg. ITER, D3D) and shot number are retrieved from the input CDF file, in order to avoid errors of passing in mismatched arguments.
 
 
-source <intel_or_gcc_imas_modules>
+source \<intel_or_gcc_imas_modules\>
 module load python/3.10.7
 
 
 If python virtual environment is already setup, skip this this section (of 6 lines).
-````
+```
 cd ~/
 python3 -m venv  python_venv
 (Now we can cd  to anywhere we want)
@@ -85,7 +85,7 @@ options:
   -l LOG, --log LOG     Provide logging level
 
 ```
-The above steps will create MDS+ backend if HDF is not opted for. A log file log.out is written including which variables were not found in the input CDF file, for each IDS written out.
+The above steps will create MDS+ backend if HDF is not opted for. A log file log.out is written including which variables were not found in the input CDF file, for each IDS written out. In the above command line arguments, the run number is the end part of MDS output file names, while occurrence can be selected only when the ids is accessed, or from VIZ. If an existing database is appended, the size of MDS+ ids_...datafile increases with the current run.
 
 
 ### IMAS VIZ for visualization
@@ -96,14 +96,14 @@ The above steps will create MDS+ backend if HDF is not opted for. A log file log
 source <python_venv>/bin/activate
 .   env_gcc.txt (or . env_intel.txt)
 module load imas-viz/2.6.1
-python  /usr/pppl/imas-viz/2.6.1/imasviz/VizGUI/QtVIZ_GUI.py
+python  $VIZ_HOME/imasviz/VizGUI/QtVIZ_GUI.py
 
 ```
 
 After opening the VIZ GUI, the database selector shows the available IDS in ~/public/imasdb,
-for HDF and MDS+ separately. Opening IDS from other directories seem to be not possible.
+for HDF and MDS+ separately. According to user document, by changing username, ids from that user area can be seen and open. Opening IDS from other directories (not from public/imasdb) seem to be not possible.
 Selecting and double clicking the desired IDS will just populate the
-fields on the upper section. Then, click "open" in order to open the IDS. After opening, the filled IDS's will be shown in blue color. Double-click each of those in order to load, or right-click and select "get .. data for occurrence #". Upon double clicking the message window on the bottom part shows the status, and any errors in red color. This is one way for checking if IDS have valid entries.
+fields on the upper section. Then, click "open" in order to open the IDS. After opening, the filled IDS's will be shown in blue color. Double-click each of those in order to load, or right-click and select "get .. data for occurrence #". It seems that only the first loaded occurrence shows contents, even though all the occurrence can be loaded. There is no unload option in orer to see the contents of other occurrences. The only way is to re-open the VIZ. Upon double clicking the message window on the bottom part shows the status, and any errors in red color. This is one way for checking if IDS have valid entries.
 
 For HDF5 backend, the VIZ shows the shot number and occurrence, but not the separate .h5 files.
 

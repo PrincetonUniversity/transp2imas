@@ -1,7 +1,7 @@
 import os
 import sys
 from datetime import datetime
-#from types import NoneType
+from types import NoneType
 import numpy as np
 
 import imas
@@ -21,13 +21,12 @@ class imas_connection:
         self.iter_ = True if db[:4].upper()=='ITER' else False
         self.init_imas_database()
         self.get_imas_database()
-        self.print_debug()
 
     def print_debug(self, msg:str='', force=False):
         print(msg)
-        print(' backend:', self.backend, 'run:', self.run)
-        print(' create_new:', self.create_new, 'user:', self.user)
-        print(' machine/imas_db:', self.imas_dbname, 'shot:', self.shot)
+        print(' create_new:', self.create_new, '; occur:', self.occur)
+        print(' machine/imas_db:', self.imas_dbname, ' backend:', self.backend)
+        print('shot:', self.shot, '; converted run number:', self.run)
 
     #for MDS+ backend the directory needs to exist in ~/public/imasdb
     def create_dir(self, public_db:bool=True):
@@ -61,28 +60,28 @@ class imas_connection:
             except:
                 raise Exception('Error initializing IMAS database')
 
-    def get_imas_database(self, create:bool=False):
-        if create:
-            self.create_new = True
+    def get_imas_database(self):
         if not self.ids:
             raise Exception('ids is not valid, call init_database first')
         if self.create_new:
             status, idx = self.ids.create_env_backend(self.user,self.imas_dbname,
                                             os.environ['IMAS_VERSION'], self.backend)
+            self.print_debug('create new databse')
             if status != 0:
-                self.print_debug('create_new:')
                 raise Exception('Error creating database')
         else:
             status, idx = self.ids.open_env_backend(self.user,self.imas_dbname,
                                        os.environ['IMAS_VERSION'], self.backend)
+            self.print_debug(f'Attempting to open existing databse for run {self.run}')
             if status != 0:
-                self.print_debug('open:')
-                raise Exception('Error openning database')
+                mes = f'\n ***Error opening database for run {self.run}.'
+                mes = mes + ' Make sure it exists, else use -new'
+                raise Exception(mes)
 
 
-    def putdb_imas(self, ids, occur:int=0):
+    def putdb_imas(self, ids):
         if ids:
-            ids.put(occur)
+            ids.put(self.occur)
         else:
             raise TypeError('ids not valid')
 

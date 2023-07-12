@@ -3,6 +3,7 @@
 import os
 import sys
 from pathlib import Path
+import math
 import numpy as np
 import inspect
 
@@ -96,10 +97,10 @@ class nc2imas(imas_connection, netcdf_connection):
         return res
 
 
-    def operate_arrays(self, arr1, op:str, arr2, name1:str='', name2:str=''):
+    def operate_arrays(self, arr1, op:str, arr2=None, name1:str='', name2:str=''):
         if not self.is_valid(arr1, arr2):
             self.logger.info(f' operate_arrays error: {name1} {op} {name2}')
-            return
+            return np.array([])
 
         err = False
         try:
@@ -111,6 +112,15 @@ class nc2imas(imas_connection, netcdf_connection):
                 return arr1/arr2
             elif op == '*':
                 return arr1 * arr2
+            elif op == 'sqrt':
+                if isinstance(arr1, np.ndarray):
+                    return np.sqrt(arr1)
+                elif isinstance(arr1, list):
+                    return [math.sqrt(x) for x in arr1]
+                elif isinstance(arr1, set):
+                    return {math.sqrt(x) for x in arr1}
+                elif isinstance(arr1, tuple):
+                    return tuple(math.sqrt(x) for x in arr1)
             else:
                 err = True
         except:
@@ -120,12 +130,15 @@ class nc2imas(imas_connection, netcdf_connection):
             self.logger.info(f' operate_arrays error:: {name1} {op} {name2}')
             return np.array([])
 
-    def np_multiply_sum(self, arr1, arr2, axis:int, name1:str='', name2:str=''):
+    def np_multiply_sum(self, arr1, arr2, axis:int, name1:str='', name2:str='', scale=None):
         if not self.is_valid(arr1, arr2):
             self.logger.info(f' np_multiply_sum error: {name1} {name2}')
-            return
+            return np.array([])
         try:
-            return np.sum(np.multiply(arr1, arr2), axis=axis)
+            if scale is not None:
+                return scale * np.sum(np.multiply(arr1, arr2), axis=axis)
+            else:
+                return np.sum(np.multiply(arr1, arr2), axis=axis)
         except:
             self.logger.info(f' np_multiply_sum error:: {name1} {name2}')
             return np.array([])
@@ -238,6 +251,51 @@ class nc2imas(imas_connection, netcdf_connection):
             pass
         self.load_namelist()
 
+
+    #TODO move to utils
+    def parse_number(self, ss:str, tp):
+        if not isinstance(ss, str):
+            return tp(ss)
+
+        #replace exponential 10** if any
+        ss0 = ss
+        res= ss.find('10**')
+        if res >=0:
+            ss = ss.replace('10**', 'E')
+        opls = ['*', '/', '+', '-']
+        nn = []
+        ops = []
+        p = 0
+
+        #splitting into separate number strings
+        for i,a in enumerate(ss):
+            if a in opls and i>0 and ss[i-1].upper() !='E':
+                nn.append(ss[p:i])
+                ops.append(a)
+                p = i+1
+
+        if p<len(ss):
+            nn.append(ss[p:])
+        if len(ops)!=len(nn)-1:
+            raise Exception(f'Error in parsing string to number {ss0}')
+        n = 0
+        try:
+            n = tp(nn[0]) if len(nn)>0 else None
+        except:
+            print(f'{ss0} extracted: {nn}')
+        for i,s in enumerate(ops):
+            d = tp(nn[i+1])
+            if s=='*':
+                n = n * d
+            elif s=='/':
+                n = n/d
+            elif s=='+':
+                n = n+d
+            elif s=='-':
+                n = n-d
+        return n
+
+
     #name's last character is discarded. Eg. XECECH?
     def get_namelist_nvars(self, name:str):
         if name[-1] != '?':
@@ -290,7 +348,7 @@ class nc2imas(imas_connection, netcdf_connection):
         else:
             if self.is_valid(val):
                 if tp in [int, float]:
-                    val = [tp(x) for x in val]
+                    val = [self.parse_number(x, tp) for x in val]
                 if scale < 1. or scale > 1.:
                     val = scale*val
                 return val
@@ -309,7 +367,7 @@ class nc2imas(imas_connection, netcdf_connection):
             return None
 
         if tp in [int, float]:
-            val = tp(val)
+            val = self.parse_number(val, tp)
             if scale < 1. or scale > 1.:
                 val = scale*val
         return val
@@ -355,7 +413,7 @@ class nc2imas(imas_connection, netcdf_connection):
         log = log if log is not None else 'error'
         level = levels.get(log.lower())
         self.logger.setLevel(level=level)
-        self.logger.addHandler(logging.FileHandler('log.out', mode='w'))
+        self.logger.addHandler(logging.FileHandler('log.out', mode='a'))
 
     #for all times
     def fill_vac_tor_field(self, ids):
@@ -384,14 +442,10 @@ class nc2imas(imas_connection, netcdf_connection):
         bflux_tor = self.get_ncvar('TRFLX')
         rho_tor = []
 
-        print('TRFLX', bflux_tor.shape)
-        print('bz', bz.shape)
-        print('bflux_tor', bflux_tor.shape)
-
         if self.is_valid(bz, bflux_tor):
             bzf = self.pi*np.tile(bz[None,:].T, bflux_tor.shape[1])
-            print('bzf', bzf.shape)
-            rho_tor = np.sqrt(bflux_tor/bzf)
+            rho_tor = self.operate_arrays(bflux_tor, '/', bzf)
+            rho_tor = self.operate_arrays(rho_tor, 'sqrt')
 
         psi = self.get_ncvar('PLFLX', 2.*self.pi) #(TIME3, XB)
         rho_pol_norm = np.sqrt(abs((psi - psi[0])/(psi[-1]-psi[0]))) #TODO
@@ -462,7 +516,8 @@ class nc2imas(imas_connection, netcdf_connection):
                 dat = dat[:, ind2]
             elif pv is not None:
                  #volume average if plasma volume is passed in, and NO index passed
-                 dat = np.divide(np.sum(np.multiply(dat, gv), axis=1), 1.0e-6*pv)
+                 datv = self.np_multiply_sum(dat, gv, axis=1)
+                 dat = self.operate_arrays(datv, '/', 1.0e-6*pv)
 
             ids.value.resize(len(dat), refcheck=False)
             ids.value[:] = mult*dat
@@ -487,6 +542,15 @@ class nc2imas(imas_connection, netcdf_connection):
         return ids
 
 
+def find_all_files(pat, path_):
+    result = []
+    for root, dir_, files in os.walk(path_):
+        for fshort in files:
+            if fshort.endswith(pat):
+                result.append(os.path.join(root,fshort))
+    return result
+
+
 def find_file(fname, path_):
    result = []
    for root, dir_, files in os.walk(path_):
@@ -499,9 +563,10 @@ def get_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input-cdf', type=str, help='CDF TRANSP output file, with or without .CDF')
     parser.add_argument('-d', '--input-dir', type=str, help='input directory (any upper level), if file not in pwd')
-    parser.add_argument('-b', '--backend', type=str, help='backend: MDS or HDF5')
-    parser.add_argument('-r', '--run', type=int, help='run number of o/p IDS')
-    parser.add_argument('-new', '--new_db', help='create new database', action="store_true")
+    parser.add_argument('-b', '--backend', type=str, help='backend: MDS or HDF')
+    parser.add_argument('-r', '--run', type=int,
+      help='run number of o/p IDS (overrides default converted number: Z10->2610)')
+    parser.add_argument('-new', '--new-db', help='create new database', action="store_true")
     parser.add_argument('-o', '--occur', type=int, help='occurrence')
     parser.add_argument('-u', '--user', type=str, help='username or path of database')
 
@@ -526,40 +591,50 @@ def get_args(argv=None):
         ii = i+1
       else:
         break
-    shot, rid = int(runid[:ii]), runid[ii:]
-    nml = str(shot)+rid+'TR.DAT'
 
+    shot, rid = int(runid[:ii]), runid[ii:]
+
+    #ncfile and nml file
+    nml = str(shot)+rid+'TR.DAT'
     extn = Path(args.input_cdf).suffix
     ncfile = args.input_cdf if 'CDF' in extn.upper() else args.input_cdf + '.CDF'
-    fdir = os.path.dirname(ncfile)
+    fdir = Path(ncfile).parent
     cwd = Path().absolute()
-
     #if cdf file is not in cwd, then use DAT from dir of cdf file
     if fdir != cwd and fdir:
-        nml = fdir+'/'+nml
+        nml = os.path.join(fdir, nml)
 
-   #use input_dir if present, if the input file not in current dir
-    if not check_file_exists(ncfile):
-        if args.input_dir:
-            loc = Path(args.input_dir)
-            res = find_file(args.input_cdf, loc)
-            if len(res)>0:
-                ncfile = res[0]
-            res = find_file(nml, loc)
-
-            if len(res)>0:
-                nml = res[0]
+    #use input_dir if present
+    if args.input_dir:
+        fname = Path(ncfile).name
+        loc = Path(args.input_dir)
+        res = find_file(fname, loc)
+        if len(res)==0:
+            raise Exception(f'{fname} not found in {loc}')
+        ncfile = res[0]
+        loc = Path(ncfile).parent
+        nml = Path(nml).name
+        res = find_file(nml, loc)
+        nml = ''
+        if len(res)>0:
+            nml = res[0]
 
     if not check_file_exists(ncfile):
         raise Exception(f'NC file {ncfile} not found.')
     if not check_file_exists(nml):
         print(f'*** WARNING: namelist {nml} not found.')
 
-    run = 1
-    backend='MDS'
-    newdb=True
-    occur=0
-    log='debug'  #for logger
+    part = [str(ord(x)-96) if x.isalpha() else x for x in rid.lower()]
+    run = 0
+    try:
+        run = int(''.join(part))
+    except:
+        print(' converting runcode', part)
+
+    backend = 'MDS'
+    newdb = False
+    occur = 0
+    log = 'debug'  #for logger
 
     if args.run:
         run = int(args.run)
@@ -571,11 +646,10 @@ def get_args(argv=None):
         occur = int(args.occur)
     if args.log:
         log = args.log
-    if args.user:
-        user = args.user
-    else:
-        user = os.path.expanduser('~') +'/public/imasdb' if backend=='MDS' else os.getenv('USER')
-    print(user)
+    if args.new_db:
+        newdb = True
+
+    user = os.path.expanduser('~') +'/public/imasdb' if backend=='MDS' else os.getenv('USER')
     #new_db = True if occur == 0 else False
 
     return backend, run, occur, user, newdb, ncfile, nml, log

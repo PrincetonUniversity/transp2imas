@@ -153,14 +153,15 @@ class imas_core_profiles:
         cur_tot = self.im.get_ncvar('CUR', aconv)
         j_ohmic = self.im.get_ncvar('CUROH', aconv)
         if self.im.is_valid(cur_tot, j_ohmic, grid_area):
-            j_nonind =  np.sum(np.multiply(cur_tot - j_ohmic, grid_area), axis=1)
+            curt = self.im.operate_arrays(cur_tot, '-', j_ohmic)
+            j_nonind =  self.im.np_multiply_sum(curt, grid_area, axis=1)
             self.im.fill_data(cp.global_quantities.current_non_inductive, j_nonind, mult=sgn)
 
         #Bootstrap current (toroidal component). CURBS(TIME3, X) AMPS/CM2
         # check surface integration
         curbs = self.im.get_ncvar('CURBS', aconv)
         if len(curbs) > 0:
-            curbsxa = sgn * np.sum(np.multiply(curbs, grid_area), axis=1)
+            curbsxa = sgn * self.im.np_multiply_sum(curbs, grid_area, axis=1)
             self.im.fill_data(cp.global_quantities.current_bootstrap, curbsxa)
 
         #vloop VSURC(TIME)
@@ -178,10 +179,13 @@ class imas_core_profiles:
         btor = self.im.get_ncvar('BTEQ') #toroidal beta
         # PAREA(TIME) - plasma CS area[cm^2]
         parea = self.im.get_ncvar('PAREA', aconv)
-        if self.im.is_valid(parea, bz, btor, currents):
+        beta_tor_norm = []
+        try:
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
             a = np.sqrt(parea/pi)
             beta_tor_norm = 100.*btor*a*bz/currents
+        except:
+            pass
 
         #beta_pol BETAT(TIME)
         self.im.fill_data_nc(cp.global_quantities.beta_pol, 'BETAT')
@@ -194,7 +198,7 @@ class imas_core_profiles:
         #PPLAS(TIME3, X) PASCALS PLASMA PRESSURE
         pplas = self.im.get_ncvar('PPLAS') #TODO
         if len(pplas)> 0:
-            edia = 3.0/2.0 * np.sum(np.multiply(pplas, gvol), axis=1)
+            edia = self.im.np_multiply_sum(pplas, gvol, axis=1, scale=1.5)
             self.im.fill_data(cp.global_quantities.energy_diamagnetic, edia)
 
         #z_eff_resistive
@@ -205,17 +209,21 @@ class imas_core_profiles:
         tev = []
         #volume PVOL(TIME) CM^3 : PLASMA VOLUME
         pvol = self.im.get_ncvar('PVOL', vconv)
-        if self.im.is_valid(te0, tel, pvol):
+        try:
             tev = np.sum(np.multiply(tel, gvol), axis=1) / pvol
             self.im.fill_data(cp.global_quantities.t_e_peaking, te0/tev)
+        except:
+            pass
 
         #t_i_average_peaking
         ti0 = self.im.get_ncvar('TI0') #magnetic axis
         tion = self.im.get_ncvar('TI')  #TE(TIME3,X)EV
         tiv = []
         if self.im.is_valid(ti0, tion, pvol):
-            ti_ = np.sum(np.multiply(tion, gvol), axis=1) / pvol
-            self.im.fill_data(cp.global_quantities.t_i_average_peaking, ti0/ti_)
+            ti_ = self.im.np_multiply_sum(tion, gvol, axis=1)
+            ti_ = self.im.operate_arrays(ti_, '/', pvol)
+            ti0_ti = self.im.operate_arrays(ti0, '/', ti_)
+            self.im.fill_data(cp.global_quantities.t_i_average_peaking, ti0_ti)
 
         #resistive_psi_losses
         #ejima
@@ -227,7 +235,8 @@ class imas_core_profiles:
         #n_e_volume_average
         nel = self.im.get_ncvar('NE')
         if len(nel) >0:
-          ne_ = np.sum(np.multiply(nel, gvol), axis=1) / pvol
+          ne_ = self.im.np_multiply_sum(nel, gvol, axis=1)
+          ne_ = self.im.operate_arrays(ne_, '/', pvol)
           self.im.fill_data(cp.global_quantities.n_e_volume_average, ne_)
 
         #IONS
@@ -239,7 +248,8 @@ class imas_core_profiles:
         #n_i_volume_average
         nion = self.im.get_ncvar('NI')
         if len(nion) >0:
-          ni_ = np.sum(np.multiply(nion, gvol), axis=1) / pvol
+          ni_ = self.im.np_multiply_sum(nion, gvol, axis=1)
+          ni_ = self.im.operate_arrays( ni_, '/', pvol)
           self.im.fill_data(cp.global_quantities.n_e_volume_average, ni_)
 
         #ion_time_slice
@@ -252,8 +262,10 @@ class imas_core_profiles:
         #TRFLX(TIME3, XB)
         bflux_tor = self.im.get_ncvar('TRFLX')
         rho_tor = []
-        if self.im.is_valid(bz, bflux_tor):
+        try:
             rho_tor = np.sqrt(bflux_tor/(pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
+        except:
+            self.im.logger.info('error calculating rho_tor')
 
         psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
 
@@ -266,7 +278,11 @@ class imas_core_profiles:
         # = sqrt((psi(rho)-psi(magnetic_axis)) / (psi(LCFS)-psi(magnetic_axis)))
         #rho_pol_norm
         plflx = self.im.get_ncvar('PLFLX') #(TIME3, XB)
-        rho_pol_norm = np.sqrt(abs((psi - psi[0])/(psi[-1]-psi[0])))
+        rho_pol_norm = []
+        try:
+            rho_pol_norm = np.sqrt(abs((psi - psi[0])/(psi[-1]-psi[0])))
+        except:
+            pass
 
         nrho = rho_tor_norm.shape[1]
 
