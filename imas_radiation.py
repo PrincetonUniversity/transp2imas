@@ -66,13 +66,13 @@ class imas_radiation:
 
         self.fill_rad_globals(rid, timesc, pwr=rad_glob, pwi=rad_glob)
 
-        ntime = len(timep)
+        ntime = len(timesc)
         rid.profiles_1d.resize(ntime)
         #fill profiles_1d[*].grid
         self.im.fill_profiles1d_grid(rid)
         for i in range(ntime):
             profi = rid.profiles_1d[i]
-            profi.time = timep[i].astype(float)
+            profi.time = timesc[i].astype(float)
 
             if i==0:
                 self.im.logger.info(f'PRAD_BR time {i}')
@@ -116,15 +116,15 @@ class imas_radiation:
         #global quantities
         self.fill_rad_globals(rid, timesc, pwr=pwr, pwn=pwn, pwi=imp_ipwr)
 
-        ntimep = len(timep)
-        rid.profiles_1d.resize(ntimep)
+        ntimesc = len(timesc)
+        rid.profiles_1d.resize(ntimesc)
+        self.im.fill_profiles1d_grid(rid)
 
-        for i in range(ntimep):
+        for i in range(ntimesc):
             #rid.profiles_1d.grid is filled in this
-            self.im.fill_profiles1d_grid(rid)
             profi = rid.profiles_1d[i]
 
-            profi.time = timep[i].astype(float)
+            profi.time = timesc[i].astype(float)
 
             #PRAD_LI is total neutral  ;  unnamed neutral = PRAD_LI - PRLS_
             #add neutral impurities separately
@@ -175,14 +175,14 @@ class imas_radiation:
         #filling pwn:neutral ?
         self.fill_rad_globals(rid, timesc, pwr=pwr, pwn=pwr)
 
-        ntimep = len(timep)
-        rid.profiles_1d.resize(ntimep)
+        ntimesc = len(timesc)
+        rid.profiles_1d.resize(ntimesc)
 
-        for i in range(ntimep):
+        for i in range(ntimesc):
             #rid.profiles_1d.grid filled
             self.im.fill_profiles1d_grid(rid)
             idp = rid.profiles_1d[i]
-            idp.time = timep[i].astype(float)
+            idp.time = timesc[i].astype(float)
 
             #emissivity_neutral_total
 

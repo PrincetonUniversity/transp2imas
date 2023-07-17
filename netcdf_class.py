@@ -68,8 +68,10 @@ class netcdf_connection:
           step!=-1 string including 1st '?' after replacing ? by pattern.
           eg: get_var_names_re('VV_PF?', cut='VV_', nd=1, nch1=1, nch2=2).
 
+          #step call
           p = make_re_pattern('NAME\(?,?\)', nd1=1, nd2=3, step=1) => NAME\(\d{1,3}[A-z]{0,0}
-          make_re_pattern(fr'{p},?\)', nd1=1, nd2=3)
+          #second of the step call
+          make_re_pattern(fr'{p},?\)', nd1=1, nd2=3)  #p is pat from 1st call= \d{1,3}[A-z]{0,0}
                         => NAME\(\d{1,3}[A-z]{0,0},\d{1,3}[A-z]{0,0}\)
           NOTE: escape ().  Error: NAME(?,?)
           For non-regex don't do escape
@@ -112,7 +114,7 @@ class netcdf_connection:
     def get_var_names_re_(self, pat, cut:str='', length:bool=False):
         matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.match(pat, s)]
         if cut:
-            matches = [s.split(cut,1)[1] for s in matches if len(s.split(cut,1))>1]
+            matches = [str(s.split(cut,1)[1]) for s in matches if len(s.split(cut,1))>1]
         return matches if not length else len(matches)
 
     def get_var_names_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
@@ -194,6 +196,11 @@ class netcdf_connection:
         return tot if n>0 else np.array([])
 
     def get_ncvar_sum(self, name:str, scale:float=1.):
+        r'''
+         Requires at least one '?' in name
+         All '?' are replaced by \w+
+         BSTH_?4_P? converted to BSTH_\w+4_P\w+
+        '''
         names = self.get_var_names(name)
         return self.get_ncvars_lst(names, scale=scale)
 

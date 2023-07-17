@@ -449,7 +449,7 @@ class imas_summary:
         #boundary.x_point_main
 
         if not self.im.is_valid(timep, ind=len(timesc)-1):
-            raise AssertionError(f'timesc {timesc.shape} timep {timep.shape}')
+            self.im.logger.info(f'timesc {timesc.shape} timep {timep.shape}')
 
         # volume_average
         def fill_volume_average(name:str):

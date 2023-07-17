@@ -12,7 +12,7 @@ class imas_nbi:
         #scalar time
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)
-        timesp = self.im.get_ncvar('TIME')
+        timesp = self.im.get_ncvar('TIME3')
         ntimep = len(timesc)
         self.im.checkErrExit(timesc, timesp)
 

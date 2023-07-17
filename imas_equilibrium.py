@@ -22,13 +22,6 @@ class imas_equilibrium:
         self.im.checkErrExit(timesc, timep)
         nprof = coord_x.shape[1]
 
-        eqm = self.im.fill_properties(eqm)
-        self.im.fill_code_properties(eqm)
-        eqm.ids_properties.homogeneous_time = 1
-        eqm.time.resize(ntimes)
-        eqm.time = timesc
-        eqm.time_slice.resize(ntimes)
-
         currents = self.im.get_ncvar('PCURC') #(TIME)
         raxis = self.im.get_ncvar('RAXIS', cm2m) #RAXISEQ
         yaxis = self.im.get_ncvar('YAXIS', cm2m) #YAXISEQ
@@ -73,10 +66,12 @@ class imas_equilibrium:
         bz = self.im.get_ncvar('BZ') #(TIME) T
         # PAREA(TIME) - plasma CS area[cm^2]
         area = self.im.get_ncvar('PAREA')*1.e-4
-        if len(area) > 0:
+        try:
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
             a = np.sqrt(area/pi)
             beta_tor_norm = 1.0e8*btor*a*bz/currents
+        except:
+            pass
 
         #Area of the LCFS poloidal cross section
         #ZONE CROSS SECTIONAL AREA
@@ -107,10 +102,16 @@ class imas_equilibrium:
         qpsi = self.im.get_ncvar('Q')
         pres = self.im.get_ncvar('PPLAS') #'PMHD')
         fbz = self.im.get_ncvar('GFUN')
-        nprof1d = psi.shape[1]
+
+        nprof1d = 0
+        try:
+            nprof1d = psi.shape[1]
+        except:
+            print(' Error getting equilibrium psi')
+            return
 
         bzxR = self.im.get_ncvar('BZXR', cm2m) #(TIME) TESLA*CM. vac field
-        b_field_tor = bzxR / raxis
+        b_field_tor = self.im.operate_arrays(bzxR, '/', raxis)
 
         #RMJMP flux surface centers
         geom_axisr = self.im.get_ncvar('RMJMP', cm2m)
@@ -134,6 +135,13 @@ class imas_equilibrium:
 
         #RSURF - flux surface R locations
         #rsurf, ysurf
+
+        eqm = self.im.fill_properties(eqm)
+        self.im.fill_code_properties(eqm)
+        eqm.ids_properties.homogeneous_time = 1
+        eqm.time.resize(ntimes)
+        eqm.time = timesc
+        eqm.time_slice.resize(ntimes)
 
         self.logger.info(f'equilibrium #time slices {ntimes}')
         for i in range(ntimes):
@@ -198,81 +206,47 @@ class imas_equilibrium:
             if len(elongb) > i:
                 eqm.time_slice[i].boundary.elongation = elongb[i]
 
-
             #profiles 1d
-            if len(psi)>i and len(phi)>i and len(qpsi)>i and len(fprof)>i and len(pres)>i:
-                eqm.time_slice[i].profiles_1d.psi.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.q.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.pressure.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.phi.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.f.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.psi = psi[i]
-                eqm.time_slice[i].profiles_1d.phi = phi[i]
-                eqm.time_slice[i].profiles_1d.q = qpsi[i]
-                eqm.time_slice[i].profiles_1d.f = fprof[i]
-                eqm.time_slice[i].profiles_1d.pressure = pres[i]
-            else:
-                self.logger.info(f'psi {len(psi)} phi {len(phi)} q {len(qpsi)} f {len(fprof)} p {len(pres)}')
+            iprof = eqm.time_slice[i].profiles_1d
+            self.im.fill_data(iprof.psi, psi, ind=i, name='psi')
+            self.im.fill_data(iprof.phi, phi, ind=i, name='phi')
+            self.im.fill_data(iprof.q, qpsi, ind=i, name='qpsi')
+            self.im.fill_data(iprof.f, fprof, ind=i, name='fprof')
+            self.im.fill_data(iprof.pressure, pres, ind=i, name='pres')
 
-            if len(rho_tor_norm)>i:
-                eqm.time_slice[i].profiles_1d.rho_tor_norm.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.rho_tor_norm = rho_tor_norm[i]
+            self.im.fill_data(iprof.rho_tor_norm, rho_tor_norm, ind=i, name='rho_tor_norm')
+            self.im.fill_data(iprof.elongation, elong, ind=i, name='elong')
+            self.im.fill_data(iprof.squareness_upper_outer, square_up, ind=i, name='square_up')
+            self.im.fill_data(iprof.squareness_lower_outer, square_lo, ind=i, name='square_lo')
+            self.im.fill_data(iprof.triangularity_upper, triang_up, ind=i, name='triang_up')
+            self.im.fill_data(iprof.triangularity_lower, triang_lo, ind=i, name='triang_lo')
+            self.im.fill_data(iprof.geometric_axis.r, geom_axisr, ind=i, name='geom_axisr')
+            self.im.fill_data(iprof.geometric_axis.z, geom_axisz, ind=i, name='geom_axisz')
 
-            if len(elong)>i:
-                eqm.time_slice[i].profiles_1d.elongation.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.elongation = elong[i]
+            #self.im.fill_data(iprof.j_tor, jtor, ind=i, name='jtor')
+            #self.im.fill_data(iprof.f_df_dpsi, fdp_dspi, ind=i, name='fdp_dspi')
+            #self.im.fill_data(iprof.dpressure_dpsi, dpressure_dpsi, ind=i, name='dpressure_dpsi')
 
-            if len(square_up) > i:
-                eqm.time_slice[i].profiles_1d.squareness_upper_outer = square_up[i]
-            if len(square_lo) > i:
-                eqm.time_slice[i].profiles_1d.squareness_lower_outer = square_lo[i]
+            eqm.time_slice[i].profiles_2d.resize(1)
+            prof2 = eqm.time_slice[i].profiles_2d[0]
+            self.im.fill_data(prof2.grid.dim1, rgrid, ind=i, name='rgrid')
+            self.im.fill_data(prof2.grid.dim2, zgrid, ind=i, name='zgrid')
+            #prof2.grid_type = 1 #Error
 
-            if len(triang_up)>i and len(triang_lo)>i:
-                eqm.time_slice[i].profiles_1d.triangularity_upper.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.triangularity_lower.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.triangularity_upper = triang_up[i]
-                eqm.time_slice[i].profiles_1d.triangularity_lower = triang_lo[i]
+            #TODO all 2d profiles
 
-            if len(geom_axisr) > i:
-                eqm.time_slice[i].profiles_1d.geometric_axis.r.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.geometric_axis.r = geom_axisr[i]
-            if len(geom_axisz) > i:
-                eqm.time_slice[i].profiles_1d.geometric_axis.z.resize(nprof1d)
-                eqm.time_slice[i].profiles_1d.geometric_axis.z = geom_axisz[i]
-
-
-
-            #if len(jtor)>i and len(fdp_dspi)>i:
-            #   eqm.time_slice[i].profiles_1d.j_tor.resize(nprof1d)
-            #   eqm.time_slice[i].profiles_1d.f_df_dpsi.resize(nprof1d)
-            #   eqm.time_slice[i].profiles_1d.j_tor = jtor[i]
-            #   eqm.time_slice[i].profiles_1d.f_df_dpsi = fdp_dspi[i]
-
-            #if len(dpressure_dpsi)>i:
-            #   eqm.time_slice[i].profiles_1d.dpressure_dpsi.resize(nprof1d)
-            #   eqm.time_slice[i].profiles_1d.dpressure_dpsi = dpressure_dpsi[i]
-
-
-            if len(rgrid)>i and len(psirz)>i:
-                eqm.time_slice[i].profiles_2d.resize(1)
-                #TODO all 2d profiles
-                eqm.time_slice[i].profiles_2d[0].grid.dim1.resize(len(rgrid[i]))
-                eqm.time_slice[i].profiles_2d[0].grid.dim2.resize(len(zgrid[i]))
-                eqm.time_slice[i].profiles_2d[0].grid.dim1 = rgrid[i]
-                eqm.time_slice[i].profiles_2d[0].grid.dim2 = zgrid[i]
-                ##eqm.time_slice[i].profiles_2d[0].grid_type = 1 #Error
-
+            if self.im.is_valid(rgrid, zgrid, ind=i):
                 xv, yv = np.meshgrid(rgrid[i], zgrid[i])
-                eqm.time_slice[i].profiles_2d[0].r.resize(xv.shape)
-                eqm.time_slice[i].profiles_2d[0].z.resize(yv.shape)
-                eqm.time_slice[i].profiles_2d[0].r = xv
-                eqm.time_slice[i].profiles_2d[0].z = yv
+                prof2.r.resize(xv.shape)
+                prof2.z.resize(yv.shape)
+                prof2.r = xv
+                prof2.z = yv
 
                 rn = len(rgrid[i])
                 zn = int(len(psirz[i])/rn)
-                eqm.time_slice[i].profiles_2d[0].psi.resize((zn,rn))
-                eqm.time_slice[i].profiles_2d[0].psi = np.reshape(psirz[i], (-1, rn))
-                eqm.time_slice[i].profiles_2d[0].type = 0 #total
+                prof2.psi.resize((zn,rn))
+                prof2.psi = np.reshape(psirz[i], (-1, rn))
+                prof2.type = 0 #total
                 #self.outdb.put_slice(eq, occur)
                 if i==ntimes-1:
                     self.logger.info(f'wrote 2d profile : psi, rgrid {rn}, zgrid{zn}')

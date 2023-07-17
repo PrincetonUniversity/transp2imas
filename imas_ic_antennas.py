@@ -47,24 +47,26 @@ class imas_ic_antennas:
 
             ant.module.resize(1)
             mod = ant.module[0]
-            mod.strap.resize(1)
             si = 0 # only 1 strap
 
-            #dist to Faraday shield
-            dFar = self.im.get_namelist_var(rf'RFARTR_A({ia})', float, cm2m)
-            # regex need escaped \(
-            straps = self.im.get_namelist_keys_re(rf'RGEOANT_A\(?,{ia}\)', cut='RGEO', nd1=1, nd2=3)
+            # don't fill geometry from namelist
+            if False:
+              mod.strap.resize(1)
+              #dist to Faraday shield
+              dFar = self.im.get_namelist_var(rf'RFARTR_A({ia})', float, cm2m)
+              # regex need escaped \(
+              straps = self.im.get_namelist_keys_re(rf'RGEOANT_A\(?,{ia}\)', cut='RGEO', nd1=1, nd2=3)
 
-            rs, ys, phis = [], [], []
-            for sname in straps:
-                rs.append( self.im.get_namelist_var(rf'RGEO{sname}', float, cm2m) )
-                ys.append( self.im.get_namelist_var(rf'YGEO{sname}', float, cm2m) )
-                phis.append(0.)
+              rs, ys, phis = [], [], []
+              for sname in straps:
+                  rs.append( self.im.get_namelist_var(rf'RGEO{sname}', float, cm2m) )
+                  ys.append( self.im.get_namelist_var(rf'YGEO{sname}', float, cm2m) )
+                  phis.append(0.)
 
-            mod.strap[si].distance_to_conductor = dFar
-            mod.strap[si].outline.r = np.array(rs, dtype=float)
-            mod.strap[si].outline.z = np.array(rs, dtype=float)
-            mod.strap[si].outline.phi = np.array(phis, dtype=float)
+              mod.strap[si].distance_to_conductor = dFar
+              mod.strap[si].outline.r = np.array(rs, dtype=float)
+              mod.strap[si].outline.z = np.array(rs, dtype=float)
+              mod.strap[si].outline.phi = np.array(phis, dtype=float)
 
             ant.name = f'IC Antenna{sta}'
             ant.identifier = f'IC Antenna{sta}'
