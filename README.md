@@ -52,7 +52,7 @@ python3 -m venv  python_venv
 (Now we can cd  to anywhere we want)
 source ~/python_venv/bin/activate
 pip install --upgrade pip
-pip install  flake8 matplotlib netCDF4 numpy  PyYAML scipy
+pip install flake8 matplotlib netCDF4 f90nml numpy  PyYAML scipy
 ```
 
 To run convert script,

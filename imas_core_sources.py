@@ -206,7 +206,9 @@ class imas_core_sources:
             profi = sci.profiles_1d[i]
             if len(power_coupled)>i:
                 glob.power = power_coupled[i].astype(float)
+            if len(ion_power_glob)>i:
                 glob.total_ion_power = ion_power_glob[i].astype(float)
+            if len(el_power_glob)>i:
                 glob.electrons.power = el_power_glob[i].astype(float)
 
             self.im.fill_data(profi.electrons.energy, el_heat_prof, ind=i, chk=nprof, name='prof_el_energy')
@@ -843,9 +845,9 @@ class imas_core_sources:
               self.im.logger.info(f'\t {i+1} {fname} {sp}')
               funct = getattr(self, fname)
               if name == 'nbi':
-                  funct(sci, ntimep, sp)
+                  funct(sci, ntimes, sp)
               else:
-                  funct(sci, ntimep)
+                  funct(sci, ntimes)
               nfill += 1
 
         if nfill > 0:

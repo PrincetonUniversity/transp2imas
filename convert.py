@@ -20,6 +20,7 @@ from imas_edge_sources import *
 from imas_sawteeth import *
 from imas_radiation import *
 from imas_core_sources import *
+from imas_waves import *
 #from imas_core_transport import *
 
 #example use: python convert.py -i 147634G14 -r 1 -b MDS -new -o 0 -l debug
@@ -82,6 +83,9 @@ def do_convert(argvs):
 
         print('imas_core_sources') # 112989Z09(NSTX), 175286T57
         imas_core_sources(nci)
+
+        print('imas_waves')
+        imas_waves(nci)
 
         #print('core transport') #89846.CDF
         #imas_core_transport(nci)

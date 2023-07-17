@@ -382,15 +382,19 @@ class nc2imas(imas_connection, netcdf_connection):
         return res
 
 
-    def extract_str_between(self, name:str, pat1:str, pat2:str, default:str):
-        str_ = None
+    def extract_str_between(self, name:str, pat1:str, pat2:str, default:str, tp=None):
+        res = None
         try:
-            li = name.find(pat1)+1
-            ri = name.find(pat2)
-            str_ = name[li:ri] if ri>li+1 else default
+            li = name.find(pat1) + len(pat1) + 1
+            #can have multiple occurences. eg: ','
+            ris = [s.start() for s in re.finditer(pat2, name)]
+            ri = [i for i in ris if i>li][0]
+            res = name[li:ri] if ri>li+1 else default
+            if tp is not None:
+                res = tp(res)
         except:
             self.logger.debug(f'extract error: {name} doesnot have {pat1} and {pat2}')
-        return str_
+        return res
 
     def fluxBdryToCenter(self, data, dat0=None):
         dat = []
@@ -430,8 +434,8 @@ class nc2imas(imas_connection, netcdf_connection):
     #fill ids.profiles_1d[*].grid. Resize if not laready done
     def fill_profiles1d_grid(self, ids):
         #scalar time
-        timesc = self.get_ncvar('TIME')
-        ntimes = len(timesc)
+        timesp = self.get_ncvar('TIME3')
+        ntimep = len(timesp)
         coord_x = self.get_ncvar('X')
         #profiles_1d
         # X(TIME3,X) is sqrt(norm. toroidal flux)
@@ -461,9 +465,9 @@ class nc2imas(imas_connection, netcdf_connection):
         psi_axis = self.get_ncvar('PSI0_TR') # Wb/rad
 
         if len(ids.profiles_1d)==0:
-            ids.profiles_1d.resize(ntimes)
+            ids.profiles_1d.resize(ntimep)
 
-        for i in range(ntimes):
+        for i in range(ntimep):
             #grid
             gd = ids.profiles_1d[i].grid
             self.fill_data(gd.rho_tor_norm, rho_tor_norm, ind=i)
@@ -626,18 +630,20 @@ def get_args(argv=None):
 
     part = [str(ord(x)-96) if x.isalpha() else x for x in rid.lower()]
     run = 0
-    try:
-        run = int(''.join(part))
-    except:
-        print(' converting runcode', part)
+    if args.run:
+        run = int(args.run)
+    else:
+        try:
+            run = int(''.join(part))
+        except:
+            print(' Error getting run-number:', part, 'shot:', shot,
+              'code:', rid, 'runid:', runid)
 
     backend = 'MDS'
     newdb = False
     occur = 0
     log = 'debug'  #for logger
 
-    if args.run:
-        run = int(args.run)
     if args.backend:
         backend = args.backend
     if args.new_db:
