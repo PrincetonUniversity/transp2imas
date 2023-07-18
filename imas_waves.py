@@ -46,7 +46,7 @@ class imas_waves:
 
 
         ids.coherent_wave.resize(nicha)
-        for astr in ants:
+        for iw,astr in enumerate(ants):
             wav = ids.coherent_wave[iw]
             wav.identifier.type.name = 'IC'
             wav.identifier.type.index = 3
@@ -57,8 +57,8 @@ class imas_waves:
 
             freq = self.im.get_ncvar(f'FREQA{astr}')
 
-            #RFPWRAB1(TIME) WATTS; Power ABSORBED, Antenna #1
-            gpower = self.im.get_ncvar_sum(f'RFPWRAB{astr}')
+            #RFPWRAB1(TIME) WATTS; Power ABSORBED, Antenna #1. PIC_F1 ??
+            gpower = self.im.get_ncvar(f'RFPWRAB{astr}')
 
             #global
             wav.global_quantities.resize(ntimes)
@@ -70,7 +70,7 @@ class imas_waves:
                     glob.power = gpower[i].astype(float)
 
                 #XGRID_NPHI(TIME3, XGRID_NPHI); (numbers) ;Nphi Grid
-                self.im.fill_data_nc(glob.n_tor, 'XGRID_NPHI', ind=i, name='n_tor')
+                self.im.fill_data_nc(glob.n_tor, 'XGRID_NPHI', ind=i)
 
                 if False: #data is for all antennas
                     #electrons
@@ -103,8 +103,8 @@ class imas_waves:
             self.im.fill_vac_tor_field(ids)
             ids = self.im.fill_properties(ids)
             self.im.fill_code_properties(ids)
-            ids.ids_properties.homogeneous_time = 0
-            ids.time.resize(ntimesc)
+            ids.ids_properties.homogeneous_time = 1
+            ids.time.resize(ntimes)
             ids.time = timesc
             self.im.putdb_imas(ids)
             self.logger.info('Done')
