@@ -19,7 +19,7 @@ class imas_equilibrium:
         timep = self.im.get_ncvar('TIME3')
         ntimep = len(timep)
         coord_x = self.im.get_ncvar('X')
-        if not self.im.is_valid(timesc, timep, 'times'):
+        if not self.im.is_valid(timesc, timep, name='times'):
             return
         nprof = coord_x.shape[1]
 
@@ -38,7 +38,7 @@ class imas_equilibrium:
         gvol = self.im.get_ncvar('DVOL', 1.0e-6) #(TIME3,X) cm^3
         #plasma volume
         pvol = self.im.get_ncvar('PVOL', 1.0e-6) #(TIME) cm^3
-        if not self.im.is_valid(gvol, pvol, 'vol'):
+        if not self.im.is_valid(gvol, pvol, name='vol'):
             return
 
         #PMHD(TIME3, X). Pressure from equilibrium solver
@@ -135,7 +135,7 @@ class imas_equilibrium:
 
         rsh = rgrid.shape
         if len(rsh)>1 and rsh[1]>0 and rgrid[0,rsh[1]-1]<0.2:
-            print('RGRID', rgrid[0])
+            print('Check RGRID unit:', rgrid[0])
             #raise Exception('RGRID too small:expected in cm')
         self.logger.info(f'rgrid {rgrid.shape}')
 
