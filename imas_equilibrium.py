@@ -130,8 +130,12 @@ class imas_equilibrium:
 
         rgrid = self.im.get_ncvar('RGRID', cm2m)
         zgrid = self.im.get_ncvar('ZGRID', cm2m)
-        psirz = self.im.get_ncvar('PSIRZ', 2.*pi)
-        self.logger.info(f'rgrid {rgrid.shape} psirz {psirz.shape}')
+
+        rsh = rgrid.shape
+        if len(rsh)>1 and rsh[1]>0 and rgrid[0,rsh[1]-1]<0.2:
+            print('RGRID', rgrid[0])
+            #raise Exception('RGRID too small:expected in cm')
+        self.logger.info(f'rgrid {rgrid.shape}')
 
         #RSURF - flux surface R locations
         #rsurf, ysurf
@@ -235,7 +239,8 @@ class imas_equilibrium:
 
             #TODO all 2d profiles
 
-            if self.im.is_valid(rgrid, zgrid, ind=i):
+            psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=i)
+            if self.im.is_valid(rgrid, zgrid, ind=i) and self.im.is_valid(psirz):
                 xv, yv = np.meshgrid(rgrid[i], zgrid[i])
                 prof2.r.resize(xv.shape)
                 prof2.z.resize(yv.shape)
@@ -243,14 +248,15 @@ class imas_equilibrium:
                 prof2.z = yv
 
                 rn = len(rgrid[i])
-                zn = int(len(psirz[i])/rn)
-                prof2.psi.resize((zn,rn))
-                prof2.psi = np.reshape(psirz[i], (-1, rn))
+                zn = int(len(psirz)/rn)
+                prof2.psi.resize((rn, zn))
+                prof2.psi = np.reshape(psirz, (rn, zn))
+
                 prof2.type = 0 #total
                 #self.outdb.put_slice(eq, occur)
                 if i==ntimes-1:
-                    self.logger.info(f'wrote 2d profile : psi, rgrid {rn}, zgrid{zn}')
-            elif i==0:
+                    self.logger.info(f't {i}: wrote 2d profile : rgrid {rn}, zgrid {zn} psi {prof2.psi.shape}')
+            elif i==ntimes-1:
                 self.logger.info('2d profile : psi, rgrid, zgrid not available')
 
 

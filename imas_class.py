@@ -64,10 +64,14 @@ class imas_connection:
         if not self.ids:
             raise Exception('ids is not valid, call init_database first')
         if self.create_new:
-            status, idx = self.ids.create_env_backend(self.user,self.imas_dbname,
+            try:
+                status, idx = self.ids.create_env_backend(self.user,self.imas_dbname,
                                             os.environ['IMAS_VERSION'], self.backend)
-            self.print_debug('create new databse')
+            except:
+                status = 1
+                traceback.format_exc()
             if status != 0:
+                self.print_debug('create new databse')
                 raise Exception('Error creating database')
         else:
             status, idx = self.ids.open_env_backend(self.user,self.imas_dbname,
