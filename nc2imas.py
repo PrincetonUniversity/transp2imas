@@ -59,24 +59,27 @@ class nc2imas(imas_connection, netcdf_connection):
 
     #scalar 0 is invalid. Don't check if it can be valid
     #Don't call this using varargs forwarded by another function
-    def is_valid(self, *variables, ind:int=0, name:str='var'):
+    def is_valid(self, *variables, ind:int=0, name:str=''):
         ii = ind+1
         for var in variables:
           if var is None:
-              self.logger.info(f'{name} is None')
+              if ind==1:
+                  self.logger.info(f'{name} is None')
               return False
           elif isinstance(var, np.ndarray):
               sh = var.shape
               if sh[0]<ii or (len(sh)>1 and sh[1]==0):
-                  self.logger.info(f'{name} shpe {sh}')
+                  if ind==1:
+                      self.logger.info(f'{name} shape {sh}')
                   return False
           elif isinstance(var, (list, tuple, set)):
               if len(var)<ii:
-                  self.logger.info(f'{name} len: {len(var)}')
+                  if ind==1:
+                      self.logger.info(f'{name} len: {len(var)}')
                   return False
           else:
               if var == 0:
-                  self.logger.info(f'{name} = 0')
+                  #self.logger.info(f'{name} = 0')
                   return False
         return True
 
@@ -144,19 +147,18 @@ class nc2imas(imas_connection, netcdf_connection):
             return np.array([])
 
 
-    def checkErrExit(self, *variables):
+    def checkErrExit(self, *variables, name:str=''):
         for var in variables:
-            name = getVarName(var)
             stat = self.is_valid(var)
             if stat:
-                self.logger.exception(f'{name} is empty')
+                self.logger.exception(f'var {name} is empty')
 
 
     #fill ids.value
     def fill_value(self, ids, dat, rsz:int=-1, mult:float=None, name:str=None):
         name_ = name if name else 'data'
         if not self.is_valid(dat):
-            self.logger.info(f'{name} is None')
+            #self.logger.info(f'{name} is None')
             return
 
         nresize = len(dat) if (not np.isscalar(dat) and rsz==-1) else rsz
@@ -175,7 +177,8 @@ class nc2imas(imas_connection, netcdf_connection):
     def fill_value_nc(self, ids, var:str, rsz:int=-1, mult:float=None):
         dat = self.get_ncvar(var)
         if dat is None:
-            self.logger.info(f'{var} not found')
+            pass
+            #self.logger.info(f'{var} not found')
         else:
             self.fill_value(ids, dat, rsz=rsz, mult=mult)
 
@@ -184,7 +187,8 @@ class nc2imas(imas_connection, netcdf_connection):
             raise ValueError(f'variable {var} is not string')
         dat = self.get_ncvar(var)
         if not self.is_valid(dat):
-            self.logger.info(f'{var} not-found')
+            if ind==0:
+                self.logger.info(f'{var} not-found')
         else:
             dat = dat if ind<0 else dat[ind]
             if resize:
@@ -201,7 +205,8 @@ class nc2imas(imas_connection, netcdf_connection):
           if self.is_valid(dat, name=nm):
             dat = dat[ind] if ind>= 0 else dat
             if chk>0 and not np.isscalar(dat) and len(dat)!=chk:
-                self.logger.info(f'Error: size mismatch {len(dat)} != {chk}')
+                if ind==0:
+                    self.logger.info(f'Error: size mismatch {len(dat)} != {chk}')
                 return
 
             if (not np.isscalar(dat)) and resize:
@@ -209,10 +214,11 @@ class nc2imas(imas_connection, netcdf_connection):
             if mult is not None:
                 dat = mult*dat
             ids[:] = dat
-          else:
+          elif ind==0:
             self.logger.info(f'{nm} is invalid')
         except:
-            self.logger.info(f'{nm} is invalid')
+            if ind==0:
+                self.logger.info(f'{nm} is invalid')
 
     def load_namelist(self):
         if self.nml_name is None:
