@@ -19,7 +19,8 @@ class imas_equilibrium:
         timep = self.im.get_ncvar('TIME3')
         ntimep = len(timep)
         coord_x = self.im.get_ncvar('X')
-        self.im.checkErrExit(timesc, timep)
+        if not self.im.is_valid(timesc, timep, 'times'):
+            return
         nprof = coord_x.shape[1]
 
         currents = self.im.get_ncvar('PCURC') #(TIME)
@@ -37,7 +38,8 @@ class imas_equilibrium:
         gvol = self.im.get_ncvar('DVOL', 1.0e-6) #(TIME3,X) cm^3
         #plasma volume
         pvol = self.im.get_ncvar('PVOL', 1.0e-6) #(TIME) cm^3
-        self.im.checkErrExit(gvol, pvol)
+        if not self.im.is_valid(gvol, pvol, 'vol'):
+            return
 
         #PMHD(TIME3, X). Pressure from equilibrium solver
         pmhd = self.im.get_ncvar('PMHD')
@@ -240,7 +242,7 @@ class imas_equilibrium:
             #TODO all 2d profiles
 
             psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=i)
-            if self.im.is_valid(rgrid, zgrid, ind=i) and self.im.is_valid(psirz):
+            if self.im.is_valid(rgrid, zgrid, ind=i, name='grid') and self.im.is_valid(psirz, name='prirz'):
                 xv, yv = np.meshgrid(rgrid[i], zgrid[i])
                 prof2.r.resize(xv.shape)
                 prof2.z.resize(yv.shape)
