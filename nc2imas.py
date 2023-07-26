@@ -417,7 +417,7 @@ class nc2imas(imas_connection, netcdf_connection):
         log = log if log is not None else 'error'
         level = levels.get(log.lower())
         self.logger.setLevel(level=level)
-        self.logger.addHandler(logging.FileHandler('log.out', mode='a'))
+        self.logger.addHandler(logging.FileHandler('log.out', mode='w')) #'a'
 
     #for all times
     def fill_vac_tor_field(self, ids):
