@@ -37,7 +37,7 @@ log = 'debug'  #for logger
 all_ = True
 def do_convert(argvs):
     #get arguments from command line
-    #if -i 'all' instead of CDF file name, then search for all CDF files in that dir,
+    #if -i all -d <dir> ;instead of CDF file name, then search for all CDF files in that dir,
     #and run in a loop
     backend, run, occur, user, newdb, ncfile, nml, log = get_args(argvs) #(sys.argv)
 
@@ -101,7 +101,7 @@ def do_convert(argvs):
     nci.close_imas_database()
 
 
-#if -i all then run in a loop; otherwise run provided input file only
+#if -i all -d <dir> ; then run in a loop; otherwise run provided input file only
 if __name__ == '__main__':
     argvs = sys.argv
     indf = [i for i,x in enumerate(argvs) if x=='all' and i>0 and argvs[i-1]=="-i"]
