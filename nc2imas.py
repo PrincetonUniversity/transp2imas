@@ -570,25 +570,29 @@ def find_file(fname, path_):
 
 
 def get_args(argv=None):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--input-cdf', type=str, help='CDF TRANSP output file, with or without .CDF')
-    parser.add_argument('-d', '--input-dir', type=str, help='input directory (any upper level), if file not in pwd')
-    parser.add_argument('-b', '--backend', type=str, help='backend: MDS or HDF')
+    parser = argparse.ArgumentParser(description='Convert TRANSP output CDF to IMAS IDS')
+    parser.add_argument('-i', '--input-cdf', type=str,
+        help='CDF TRANSP output file, with or without .CDF')
+    parser.add_argument('-d', '--input-dir', type=str,
+        help='input directory (file can be in its subdir), if file not in pwd')
+    parser.add_argument('-b', '--backend', type=str, default='MDS',
+        choices=['MDS','MDSPLUS', 'HDF', 'HDF5'], help='IMAS backend')
     parser.add_argument('-r', '--run', type=int,
-      help='run number of o/p IDS (overrides default converted number: Z10->2610)')
+        help='run number of o/p IDS (overrides default converted number: eg: Z10 -> 2610)')
     parser.add_argument('-new', '--new-db', help='create new database', action="store_true")
     parser.add_argument('-o', '--occur', type=int, help='occurrence')
     parser.add_argument('-u', '--user', type=str, help='username or path of database')
-
-    parser.add_argument('-v', '--verbose', action='store_true')
-    parser.add_argument("-l", "--log", help="Provide logging level=debug,info,warn,error,critical")
+    # -h is added by default for help
+    parser.add_argument('-v', '--verbose', action='count', default=0, help='increase output verbosity')
+    parser.add_argument("-l", "--log", choices=['debug','info','warn','error','critical'],
+        help="Provide logging level")
 
     args = parser.parse_args()
 
     if not args.input_cdf:
         print("** Error: Failed to get command line arguments**\n")
-        parser.print_help()
-        print("Example: \npython convert.py -i 147634G14 [ -r 1 -b MDS -new -o 0 -l debug]\n")
+        parser.print_help(sys.stderr)
+        print("Example: \npython convert.py -i 147634G14 [ -r 1 -b MDS -new -l debug]\n")
         sys.exit(1)
 
     #get runid, DAT filename from input cdf filename
@@ -661,7 +665,8 @@ def get_args(argv=None):
     if args.new_db:
         newdb = True
 
-    user = os.path.expanduser('~') +'/public/imasdb' if backend=='MDS' else os.getenv('USER')
+    user = os.path.expanduser('~') +'/public/imasdb' if \
+            (backend=='MDS' or backend=='MDSPLUS') else os.getenv('USER')
     #new_db = True if occur == 0 else False
 
     return backend, run, occur, user, newdb, ncfile, nml, log
