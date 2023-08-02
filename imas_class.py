@@ -43,9 +43,9 @@ class imas_connection:
         if self.ids is not None:
             print('ids exists')
             return
-        if self.backend=='HDF5':
+        if self.backend=='HDF5' or self.backend=='HDF':
             self.backend = imas.imasdef.HDF5_BACKEND
-        elif self.backend=='MDS':
+        elif self.backend=='MDS' or self.backend=='MDSPLUS':
             self.backend = imas.imasdef.MDSPLUS_BACKEND
         if not self.user:
             self.user = os.getenv('USER')
@@ -67,12 +67,13 @@ class imas_connection:
             try:
                 status, idx = self.ids.create_env_backend(self.user,self.imas_dbname,
                                             os.environ['IMAS_VERSION'], self.backend)
-            except:
+            except Exception:
                 status = 1
-                traceback.format_exc()
+                import traceback
+                traceback.print_exc(file=sys.stdout)
             if status != 0:
-                self.print_debug('create new databse')
-                raise Exception('Error creating database')
+                self.print_debug('Error creating new databse using input:')
+                raise sys.exit(1)
         else:
             status, idx = self.ids.open_env_backend(self.user,self.imas_dbname,
                                        os.environ['IMAS_VERSION'], self.backend)
