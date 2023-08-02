@@ -570,7 +570,8 @@ def find_file(fname, path_):
 
 
 def get_args(argv=None):
-    parser = argparse.ArgumentParser(description='Convert TRANSP output CDF to IMAS IDS')
+    desc = f' (To run all CDF files in <dir_path> and its subdirs: -i all -d <dir_path>)'
+    parser = argparse.ArgumentParser(description='Convert TRANSP output CDF to IMAS IDS' + desc)
     parser.add_argument('-i', '--input-cdf', type=str,
         help='CDF TRANSP output file, with or without .CDF')
     parser.add_argument('-d', '--input-dir', type=str,

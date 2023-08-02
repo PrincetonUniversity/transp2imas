@@ -68,21 +68,34 @@ python convert.py  -i <runid> [ -b MDS/HDF -r <ids_run_num> -new ]
 
 
 All options:
-  python convert.py [-h] [-i INPUT_CDF] [-b BACKEND] [-r RUN] [-new] [-o OCCUR] [-u USER] [-v] [-l LOG]
+ convert.py [-h] [-i INPUT_CDF] [-d INPUT_DIR] [-b {MDS,MDSPLUS,HDF,HDF5}] [-r RUN] [-new] [-o OCCUR] [-u USER]
+                  [-v] [-l {debug,info,warn,error,critical}]
 
 options:
   -h, --help            show this help message and exit
   -i INPUT_CDF, --input-cdf INPUT_CDF
                         CDF TRANSP output file, with or without .CDF
-  -b BACKEND, --backend BACKEND
-                        backend: MDS or HDF
-  -r RUN, --run RUN     run number
-  -new, --new_db        new database
+  -d INPUT_DIR, --input-dir INPUT_DIR
+                        input directory (file can be in its subdir), if file not in pwd
+  -b {MDS,MDSPLUS,HDF,HDF5}, --backend {MDS,MDSPLUS,HDF,HDF5}
+                        IMAS backend
+  -r RUN, --run RUN     run number of o/p IDS (overrides default converted number: eg: Z10 -> 2610)
+  -new, --new-db        create new database
   -o OCCUR, --occur OCCUR
                         occurrence
   -u USER, --user USER  username or path of database
-  -v, --verbose
-  -l LOG, --log LOG     Provide logging level
+  -v, --verbose         increase output verbosity
+  -l {debug,info,warn,error,critical}, --log {debug,info,warn,error,critical}
+                        Provide logging level
+
+
+To convert a CDF file in a different directory :
+$ python convert.py -i </path/CDFname>
+or, $ python convert.py -i <CDFname> -d <dir_path>
+
+To convert all CDF files in a directory and its subdirectories:
+$ python convert.py -i all -d <dir_path>
+The namelists in corresponding directories will be used if available.
 
 ```
 The above steps will create MDS+ backend if HDF is not opted for. A log file log.out is written including which variables were not found in the input CDF file, for each IDS written out. In the above command line arguments, the run number is the end part of MDS output file names, while occurrence can be selected only when the ids is accessed, or from VIZ. If an existing database is appended, the size of MDS+ ids_...datafile increases with the current run.
