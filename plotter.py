@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.backends.backend_pdf import PdfPages
 
+
 def check_valid(ids, pre, name):
     pre = pre if pre else ''
     times = 0
@@ -22,7 +23,17 @@ def save_pdf(fig, name):
     pdf.savefig(fig)
     pdf.close()
 
+def finalize_plots(name):
+    pdf = PdfPages(name+".pdf")
+    fig_nums = plt.get_fignums()
+    figs = [plt.figure(n) for n in fig_nums]
+    for fig in figs:
+        fig.savefig(pdf, format='pdf')
+    pdf.close()
+
+
 def finalize_plot(plt, fig, fname, save):
+    return
     if not save:
         plt.show() #block=False)
         #plt.pause(1)
@@ -38,7 +49,7 @@ def plot_limiters(limitr, limitz, save:bool=True, fname:str=None):
     ax.grid()
     ax.set_title(fname)
     plt.plot(limitr, limitz)
-    finalize_plot(plt, fig, fname, save)
+    #finalize_plot(plt, fig, fname, save)
 
 def plot_subgrid(fig, gsp, var1, var2, lab1, lab2):
     if var1.shape != var2.shape:
@@ -84,7 +95,7 @@ def plot_data2d_samex(name, nr, nc, var, lab, *args):
         for j, t in enumerate(iplots):
             lab2 = lab1 + str(t)
             fig = plot_subgrid(fig, gsp[j], var[t], data[t], lab, lab2)
-        finalize_plot(plt, fig, name2, save)
+        #finalize_plot(plt, fig, name2, save)
 
 def plot_data1d_samex(name, var, lab, *args):
     save = True
@@ -96,7 +107,7 @@ def plot_data1d_samex(name, var, lab, *args):
         data = args[i][0]
         lab1 = args[i][1]
         fig = plot_subgrid(fig, gsp[i], var, data, lab, lab1)
-    finalize_plot(plt, fig, name, save)
+    #finalize_plot(plt, fig, name, save)
 
 def plot_Ip_vacBR_loopV(times, currents, vac_b0, vac_r0, vloop=None,
      save=True, pre:str=None):
@@ -122,7 +133,7 @@ def plot_Ip_vacBR_loopV(times, currents, vac_b0, vac_r0, vloop=None,
         fig = plot_subgrid(fig, gsp[3], times, vloop, 'times', 'vloop')
         name = name + '_Vloop'
     #fig.title('core profiles')
-    finalize_plot(plt, fig, name, save)
+    #finalize_plot(plt, fig, name, save)
 
 
 def plot_eq_global(times, rmaxis, zmaxis, b_field_tor, psi_axis,
@@ -149,7 +160,7 @@ def plot_eq_outline(times, rminor, outline_r, outline_z, lab=None, save=True,
     for i, t in enumerate(tplots):
         fig = plot_subgrid(fig, gsp[i+1], outline_r[t], outline_z[t],
          'outline_R', f'outline_Z t={t}')
-    finalize_plot(plt, fig, name, save)
+    #finalize_plot(plt, fig, name, save)
 
 def plot_tslice_grid(nr, nc, times, dat, pre, lab, xtime:bool=False, save=True):
     fig = plt.figure(tight_layout=True)
@@ -166,7 +177,7 @@ def plot_tslice_grid(nr, nc, times, dat, pre, lab, xtime:bool=False, save=True):
             ax.plot(dat[t])
             ax.grid()
             ax.set_title(f'{lab} t={t}')
-    finalize_plot(plt, fig, pre+lab, save)
+    #finalize_plot(plt, fig, pre+lab, save)
 
 def plot_equilibrium_1d(times, psi, qpsi, pres, torflux_phi, rho_tor_norm,
         elong, triang_top, triang_bot, jtor, fdp_dspi, dpressure_dpsi,
@@ -242,9 +253,10 @@ def plot_equilibrium_2d(times, rgrid, zgrid, psirz, rz_range:bool=True, save=Tru
             img.format_cursor_data = format_cursor_data
         ax.grid()
 
-    name = f'psirz_{1+int(rz_range==True)}'
-    name = pre+'_'+name if pre else ''
-    finalize_plot(plt, fig, name, save)
+    #name = f'psirz_{1+int(rz_range==True)}'
+    #name = pre+'_'+name if pre else ''
+    #finalize_plot(plt, fig, name, save)
+
 
 def declare_np_arrays(n, m):
     vars = []
@@ -253,7 +265,7 @@ def declare_np_arrays(n, m):
     return vars
 
 #ni number of indices, 0 will use default
-def plot_equilibrium_ids(eq, ni:int=0, pre:str=None, save=False):
+def plot_equilibrium_ids(eq, ni:int=0, pre:str=None, name='eq', save=False):
     nslices = len(eq.time_slice)
     times = eq.time
     print(f'times {times.shape} n_times {nslices}')
@@ -335,7 +347,11 @@ def plot_equilibrium_ids(eq, ni:int=0, pre:str=None, save=False):
         plot_equilibrium_2d(times, rgrid, zgrid, psirz, rz_range=True, pre=pre, ni=ni,
           image2d=image_clr,ncontour=n_ctr)
 
-def plot_core_profiles(cp, pre:str=None, save:bool=True):
+    fname = pre+'_'+name if pre else name
+    finalize_plots(fname)
+
+
+def plot_core_profiles(cp, pre:str=None, name='cp', save:bool=True):
     ntimes = 0
     try:
         ntimes = len(cp.time)
@@ -351,9 +367,11 @@ def plot_core_profiles(cp, pre:str=None, save:bool=True):
     vac_r0 = cp.vacuum_toroidal_field.r0 #single value
     vac_b0 = cp.vacuum_toroidal_field.b0
     plot_Ip_vacBR_loopV(times, currents, vac_b0, vac_r0, vloop, pre=pre)
+    fname = pre+'_'+name if pre else name
+    finalize_plots(fname)
 
 
-def plot_limiter_ids(wall, pre:str=None, save:bool=True):
+def plot_limiter_ids(wall, pre:str=None, name='limiter', save:bool=True):
     pre = pre if pre else ''
     nunits = 0
     try:
@@ -371,10 +389,11 @@ def plot_limiter_ids(wall, pre:str=None, save:bool=True):
         lz = wall.description_2d[0].limiter.unit[i].outline.z
         print('unit',i, 'closed',cl)
         plot_limiters(lr, lz, pre+'limiters'+str(i))
-
+    fname = pre+'_'+name if pre else name
+    finalize_plots(fname)
 
 def plot_thomson_data(radr, radz, rad_phi, dr, dz, dphi, dtimes, dsmd,
-      dsmt, ted, tet, ned, net, save:bool=True, pre:str=None, ni:int=0):
+      dsmt, ted, tet, ned, net, fname='ts', save:bool=True, pre:str=None, ni:int=0):
     nchannels = len(radr)
     name = 'thomson_pos'
     name = pre+'_'+name if pre else name
@@ -399,8 +418,10 @@ def plot_thomson_data(radr, radz, rad_phi, dr, dz, dphi, dtimes, dsmd,
     name = pre+'_'+name if pre else name
     plot_data2d_samex(name, nr, nc, tet, 'times', (dsmd, 'sepx_dist'),
        (ted, 't_e'), (ned, 'n_e'))
+    fname = pre+'_'+fname if pre else fname
+    finalize_plots(fname)
 
-def plot_thomson_scattering_ids(ts, pre:str=None, save:bool=True):
+def plot_thomson_scattering_ids(ts, pre:str=None, name='ts', save:bool=True):
     ntimes, nch = 0, 0
     times, ntimes, pre = check_valid(pf, pre, 'thomson_scattering')
     nch = len(ts.channel)
@@ -436,12 +457,11 @@ def plot_thomson_scattering_ids(ts, pre:str=None, save:bool=True):
         net[i] = ts.channel[i].n_e.time
 
     plot_thomson_data(radr, radz, rad_phi, dr, dz, dphi, dtimes,
-      dsmd, dsmt, ted, tet, ned, net)
+      dsmd, dsmt, ted, tet, ned, net, name)
 
 
 
-def  plot_pf_data(times, current, voltage, pre):
-    name = 'pf_active'
+def  plot_pf_data(times, current, voltage, name, pre=''):
     name = pre+'_'+name if pre else name
     nr, nc = 2, 2
 
@@ -449,7 +469,7 @@ def  plot_pf_data(times, current, voltage, pre):
     # (voltage, 'voltage'))
 
 
-def plot_PFActive(pf, pre:str=None, save:bool=True):
+def plot_PFActive(pf, name='pfa', pre:str=None, save:bool=True):
     times, ntimes, pre = check_valid(pf, pre, 'PFActive')
     if ntimes == 0:
         return
@@ -462,8 +482,9 @@ def plot_PFActive(pf, pre:str=None, save:bool=True):
         #geomt = pf.coil[i].element[0].geometry.geometry_type
         voltage[i] = pf.coil[i].voltage.data
 
-    plot_pf_data(times, current, voltage, pre)
-
+    plot_pf_data(times, current, voltage, name, pre)
+    fname = pre+'_'+name if pre else name
+    finalize_plots(fname)
 
 def plot_CHERS(cx, pre:str=None, save:bool=True):
     pre = pre if pre else ''
@@ -472,9 +493,7 @@ def plot_CHERS(cx, pre:str=None, save:bool=True):
 def plot_NBI(nb, pre:str=None, save:bool=True):
     pre = pre if pre else ''
 
-
-
-if __name__ == '__main__':
+def test_plot():
     def func3(x, y):
       return (1 - x / 2 + x**5 + y**3) * np.exp(-(x**2 + y**2))
     dx, dy = 0.05, 0.05
@@ -483,4 +502,7 @@ if __name__ == '__main__':
     X, Y = np.meshgrid(x, y)
     Z2 = func3(X, Y)
     plot_equilibrium_2d(None, x, y, Z2)
+
+if __name__ == '__main__':
+    print('please use : python tests.py')
 

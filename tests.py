@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 import imas
 import MDSplus
 from plotter import *
+from utils import *
 
 
 
@@ -16,8 +17,11 @@ class Tests:
         print('Running tests')
 
     def init_database(self, db, shot, run, backend=None, user=None):
-        if backend is None:
+        if backend == 'MDS' or backend =='MDSPLUS':
             backend = imas.imasdef.MDSPLUS_BACKEND
+        elif backend == 'HDF' or backend == 'HDF5':
+            backend = imas.imasdef.HDF5_BACKEND
+
         if user is None:
             user = os.getenv('USER')
         print('backend', backend)
@@ -65,17 +69,15 @@ class Tests:
         pre = self.pre+'_nbi' if self.pre else 'nbi'
         plot_NBI(nb, pre=pre, save=self.save)
 
-    def do_test_eq(self, shot, run, db):
-        backend = imas.imasdef.MDSPLUS_BACKEND
+    def do_test_eq(self, shot, run, db, backend):
         self.init_database(db,shot,run,backend)
         self.input.open()
         self.test_equilibrium()
         self.input.close()
 
-    def do_test(self, shot, run, db):
+    def do_tests(self, shot, run, db, backend):
         #shot,run,db = 141711,2502,'NSTX'
         # 10000,99,'test'
-        backend = None #imas.imasdef.HDF5_BACKEND
         self.init_database(db,shot,run,backend)
         self.input.open()
         self.test_NBI()
@@ -91,23 +93,19 @@ class Tests:
 
 
 if __name__ == '__main__':
-    db = ''
-    shot = ''
-    run = ''
-    if len(sys.argv) > 1 and sys.argv[1]!= '-':
-        db = sys.argv[1]
-    if len(sys.argv) > 2 and sys.argv[2]!= '-':
-        shot = int(sys.argv[2])
-    if len(sys.argv) > 3 and sys.argv[3]!= '-':
-        run = int(sys.argv[3])
+    if(len(sys.argv)<3):
+        print('usage: python tests.py  <runid/CDFname> <db(NSTX)> <backend/HDF,MDS>')
 
-    if not (db or shot or run):
-        #shot,run,db = 163303,8702,'D3Dr' #r'
-        shot,run,db = 100001, 1, 'NSTX'
-    print(f'testing stored database {db} {shot} {run}')
+    runid = sys.argv[1]
+    run, shot, rid = find_runid_shot_code(runid)
+    db = sys.argv[2]
+    backend = sys.argv[3] if len(sys.argv)>3 else 'HDF5'
+
+    #shot,run,db = 163303,8702,'D3Dr' #r'
+    print(f'testing  {db} {shot} {run} {backend}')
 
     pre = db+str(run) # +'_h5'
     save_plots = True
     tt = Tests(pre, save_plots)
-    tt.do_test_eq(shot, run, db)
+    tt.do_test_eq(shot, run, db, backend)
     #tt.do_test(shot,run,db)

@@ -6,6 +6,7 @@ import numpy as np
 
 print('imas loading...')
 from nc2imas import nc2imas, get_args
+from utils import *
 from imas_summary import *
 from imas_equilibrium import *
 from imas_wall import *
