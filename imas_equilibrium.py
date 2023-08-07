@@ -252,7 +252,7 @@ class imas_equilibrium:
                 rn = len(rgrid[i])
                 zn = int(len(psirz)/rn)
                 prof2.psi.resize((rn, zn))
-                prof2.psi = np.reshape(psirz, (rn, zn))
+                prof2.psi = np.reshape(psirz, (rn, zn)).T
 
                 prof2.type = 0 #total
                 #self.outdb.put_slice(eq, occur)
