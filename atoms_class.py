@@ -7,7 +7,7 @@ from scipy.constants import physical_constants as scipy_phyc
 import imas
 
 class atom_base():
-    def __init__(self, symbTransp:str=None, ilabel:str=''):
+    def __init__(self, symbTransp:str=None):
         self.a = 0.0
         self.z_n = 0.0
         self.atoms_n = 1
@@ -19,7 +19,7 @@ class atom_base():
         self.atoms = {'H':'H', 'D':'D', 'T':'T', '3':'He3', '4':'He4'}
         self.nb2 = {'N':'Ne', 'A':'Ar', 'K':'Kr', 'X':'Xe', 'Z':'HI_Z'} #'High_Z or heavy ??
         self.beams = {**self.atoms, **self.nb2} #self.atoms.copy()
-        self.ions = {**self.atoms, 'LITH':'Li', 'C':'C'}
+        self.ions = {**self.atoms, 'LITH':'Li', 'C':'C'} #some variables: 3=>HE3; 4=>HE4
         self.neutrals = {**self.atoms, 'LITH':'Li'}
         #  NEON, ARGON, KRYPTON, XENON
         self.fusion_ions = {'P':'H', 'P14':'H', 'T':'T', '3':'He3', '4':'He4'}
@@ -141,18 +141,19 @@ class atom_base():
                         'TM'  : ['Tm',  168.9342,     69.0], #Tm
                         'U'   : ['U',   238.0290,     92.0], #U
                         'V'   : ['V',    50.9414,     23.0], #V
-                        'X'   : ['Xe',  131.300,      54.0], #Xeon    iostope average
+                        'X'   : ['Xe',  131.300,      54.0], #Xenon
                         'W'   : ['W',   183.5000,     74.0], #Tungston av
                         'Y'   : ['Y',    88.9059,     39.0], #Y
                         'YB'  : ['Yb',  173.0400,     70.0], #Yb
                         'ZN'  : ['Zn',   65.3800,     30.0], #Zn
                         'ZR'  : ['Zr',   91.2200,     40.0], #Zr
                         'Z'   : ['Z',    -1.0,        -1.0], #Heavy. High Z
-                        'TOK' : ['Z',    -1.0,        -1.0] #
+                        'TOK' : ['Z',    -1.0,        -1.0], #
+                        'X'   : ['X',    -1.0,        -1.0] #
                       }
 
 
-        self.fill_constants(symbTransp, ilabel)
+        self.fill_constants(symbTransp)
 
     def fill_constants(self, symbTransp, ilab:str=''):
         lab = symbTransp
