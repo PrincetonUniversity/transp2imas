@@ -2,8 +2,8 @@
 from nc2imas import *
 
 class ion_data(atom_base):
-    def __init__(self, label):
-        super().__init__(label)
+    def __init__(self, symb):
+        super().__init__(symb)
         #arrays for times
         self.dens = []
         self.temp = []
@@ -15,8 +15,8 @@ class ion_data(atom_base):
         self.rotation_frequency_tor = []
 
 class neutrals_data(atom_base):
-     def __init__(self, label):
-        super().__init__(label)
+     def __init__(self, symb):
+        super().__init__(symb)
         #arrays for times
         self.dens = []
         self.temp = []
@@ -35,39 +35,41 @@ class imas_core_profiles:
         ions = []
         rmaj = np.average(self.im.get_ncvar('RMJSYM'))  # RMJSYM RMJM
 
-        for symb, label in ionDict.items():
+        for short, label in ionDict.items():
+            symb = 'HE' + short if short in ['3', '4'] else short
             dens = self.im.get_ncvar(f'N{symb}', 1.0e6)
             if len(dens) == 0:
                 continue
             self.logger.info(f'ion: {symb} => {label}')
-            ion = ion_data(label)
+            ion = ion_data(symb)
             ion.dens = dens
             #FUSN HE4 ION DENSITY'%'N/CM**3'%FDENS_4
             #EFUSN_4  average fusion helium 4
             self.logger.info(f'{symb}, dens {len(ion.dens)}')
-            ion.temp = self.im.get_ncvar(f'T{symb}')
-            self.logger.info(f'{symb} temp {len(ion.temp)}')
+            ion.temp = self.im.get_ncvar(f'TI')
+            self.logger.info(f'TI temp {len(ion.temp)}')
             ion.vel_rad = self.im.get_ncvar(f'VNDNC_{symb}', 0.01)
             self.logger.info(f'{symb} vel_rad {len(ion.vel_rad)}')
-            ion.vel_pol = self.im.get_ncvar(f'VPOL{symb}_NC', 0.01)
+            ion.vel_pol = self.im.get_ncvar(f'VPOL{short}_NC', 0.01)
             self.logger.info(f'{symb} vel_pol {len(ion.vel_pol)}')
-            ion.vel_tor = self.im.get_ncvar(f'VTOR{symb}_NC', 0.01)
+            ion.vel_tor = self.im.get_ncvar(f'VTOR{short}_NC', 0.01)
             self.logger.info(f'{symb} vel_tor {len(ion.vel_tor)}')
-            ion.vel_par = []
+            ion.vel_par = [] #UPLLHATI/(BZXR/RAXIS)*1.0D-2
             ion.z_ion_1d = []
-            ang_vel = self.im.get_ncvar(f'OMG_{symb}') #CMG_H CMG_D
+            ang_vel = self.im.get_ncvar(f'OMG_{short}') #CMG_H CMG_D
+
             if self.im.is_valid(ang_vel, rmaj):
                 ion.rotation_frequency_tor = ang_vel / rmaj
             ions.append(ion)
 
         #impurity = average in TRANSP, not only an element.
-        label = 'X'
         symb = 'X'
+        label = 'X'
         dens = self.im.get_ncvar('NIMP', 1.0e6) #XDENS.  NIMP or NIMP_NC
         if len(dens) == 0:
            return ions
-        self.logger.info(f'ion: {label} {symb}')
-        ion = ion_data(label)
+        self.logger.info(f'impurity ion: {label}  => {symb}')
+        ion = ion_data(symb)
         ion.dens = dens
         ion.temp = self.im.get_ncvar(f'TXNC')                   # TX  TXNC
         self.logger.info(f'{symb} temp {len(ion.temp)}')
@@ -120,7 +122,7 @@ class imas_core_profiles:
         aconv = 1.0e-4
         vconv = 1.0e-6
         pi = constants.pi  #scipy
-        sgn = -1 if self.im.iter_ else 1
+        sgn = 1 #-1 if self.im.iter_ else 1 TODO
 
         #scalar time
         timesc = self.im.get_ncvar('TIME')
@@ -233,7 +235,8 @@ class imas_core_profiles:
           self.im.fill_data(cp.global_quantities.t_e_volume_average, tev)
 
         #n_e_volume_average
-        nel = self.im.get_ncvar('NE')
+        #NE(TIME3, X) N/CM3
+        nel = self.im.get_ncvar('NE', self.im.vol_inv)
         if len(nel) >0:
           ne_ = self.im.np_multiply_sum(nel, gvol, axis=1)
           ne_ = self.im.operate_arrays(ne_, '/', pvol)
@@ -257,7 +260,7 @@ class imas_core_profiles:
 
         #profiles_1d
         # X(TIME3,X) is sqrt(norm. toroidal flux)
-        rho_tor_norm = np.multiply(coord_x, coord_x)
+        rho_tor_norm = coord_x #np.multiply(coord_x, coord_x)
 
         #TRFLX(TIME3, XB)
         bflux_tor = self.im.get_ncvar('TRFLX')
@@ -267,7 +270,10 @@ class imas_core_profiles:
         except:
             self.im.logger.info('error calculating rho_tor')
 
-        psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
+        #(TIME3, XB)
+        psi = self.im.get_ncvar('PLFLX2PI')
+        if not self.im.is_valid:
+            psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
 
         #Surface area of the toroidal flux surface
         #FLUX SURFACE AREA (TIME3,X) cm^2
@@ -296,7 +302,7 @@ class imas_core_profiles:
         if self.im.is_valid(nion, nel):
           n_i_total_over_n_e = nion/nel
 
-        neutrals = self.get_neutral_data()
+        neutrals = [] #self.get_neutral_data()
 
         #ZEFFP(TIME3, X) PLASMA COMPOSITION ZEFF PROFILE
         zeff = self.im.get_ncvar('ZEFFP')
@@ -338,6 +344,7 @@ class imas_core_profiles:
           self.im.fill_data(cp.profiles_1d[i].grid.rho_tor, rho_tor, ind=i)
           self.im.fill_data(cp.profiles_1d[i].grid.rho_pol_norm, rho_pol_norm, ind=i)
           self.im.fill_data(cp.profiles_1d[i].grid.volume, gvol, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].grid.psi, psi, ind=i)
           self.im.fill_data(cp.profiles_1d[i].grid.area, grid_area, ind=i)
           self.im.fill_data(cp.profiles_1d[i].grid.surface, surface, ind=i)
 

@@ -27,7 +27,7 @@ class imas_equilibrium:
         raxis = self.im.get_ncvar('RAXIS', cm2m) #RAXISEQ
         yaxis = self.im.get_ncvar('YAXIS', cm2m) #YAXISEQ
 
-        psi_axis = self.im.get_ncvar('PSI0_TR') # Wb/rad
+        psi_axis = self.im.get_ncvar('PSI0_TR', 2*pi) # Wb/rad
         #psi_bdry =
         q95 = self.im.get_ncvar('Q95')
         qaxis  = self.im.get_ncvar('Q0')
@@ -99,7 +99,9 @@ class imas_equilibrium:
         triang_lob = np.interp(timesc, timep, triang_lo[:,-1])
         triang_upb = np.interp(timesc, timep, triang_up[:,-1])
 
-        psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
+        psi = self.im.get_ncvar('PLFLX2PI')
+        if not self.im.is_valid:
+            psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
         phi = self.im.get_ncvar('TRFLX', 2.*pi)
         qpsi = self.im.get_ncvar('Q')
         pres = self.im.get_ncvar('PPLAS') #'PMHD')
