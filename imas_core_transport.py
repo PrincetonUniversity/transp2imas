@@ -8,6 +8,13 @@ class imas_core_transport:
 
         self.create_ids()
 
+   def div2flux(self, vname, dvol, parea):
+        divx = self.im.get_ncvar(vname, self.im.vol_inv)
+        flux = []
+        if self.im.is_valid(divx, dvol, parea):
+            flux = divx*dvol/parea
+        return flux
+
     def create_ids(self):
         self.im.logger.info('\ncore transport')
         ct = self.im.ids.core_transport
@@ -64,30 +71,33 @@ class imas_core_transport:
         #C%EETRAN_MODEL(#1)%'Div(elec energy flux) (model)'%'WATTS/CM3'%EETR_MOD#+EETR
         # EETR_MOD(TIME3, X); WATTS/CM3; Div(elec energy flux) (model)
         # EETR_MOD * DVOL /  PAREA
-        eetr_mod = self.im.get_ncvar('EETR_MOD', self.im.vol_inv)
         dvol = self.im.get_ncvar('DVOL', self.im.vconv)
         parea = self.im.get_ncvar('PAREA', self.im.aconv)
-        eeflux = []
-        if self.im.is_valid(eetr_mod, dvol, parea):
-            eeflux = eetr_mod*dvol/parea
-
-        #IETR_MOD(TIME3, X); WATTS/CM3; Div(ion energy flux) (model)
-        ietr_mod = self.im.get_ncvar('IETR_MOD', self.im.vol_inv)
-        ieflux = []
-        if self.im.is_valid(ietr_mod, dvol, parea):
-            ieflux = ietr_mod*dvol/parea
-
-        #EPTR_MOD(TIME3, X); N/CM3/SEC; Div(electron flux) (model)
-        eptr_mod = self.im.get_ncvar('EPTR_MOD', self.im.vol_inv)
-        epflux = []
-        if self.im.is_valid(eptr_mod, dvol, parea):
-            epflux = eptr_mod*dvol/parea
-
-        #IPTR_MOD(TIME3, X) ; N/CM3/SEC; Div(total ion flux) (model)
-        iptr_mod = self.im.get_ncvar('IPTR_MOD', self.im.vol_inv)
-        ipflux = []
-        if self.im.is_valid(iptr_mod, dvol, parea):
-            ipflux = iptr_mod*dvol/parea
+        #
+        eeflux_o = div2flux('EETR_OBS', dvol, parea)    # electron thermal
+        eeflux_m = div2flux('EETR_MOD', dvol, parea)
+        ieflux_o = div2flux('IETR_OBS', dvol, parea)    # ion thermal
+        ieflux_m = div2flux('IETR_MOD', dvol, parea)
+        tmflux_o = div2flux('AMTR_OBS', dvol, parea)    # toroidal momentum
+        tmflux_m = div2flux('AMTR_MOD', dvol, parea)
+        piflux_o = div2flux('IPTR_OBS', dvol, parea)    # ion particle
+        piflux_m = div2flux('IPTR_MOD', dvol, parea)
+        peflux_o = div2flux('EPTR_OBS', dvol, parea)    # electron particle
+        peflux_m = div2flux('EPTR_MOD', dvol, parea)
+        pzflux_o = div2flux('XPTR_OBS', dvol, parea)    # impurity particle
+        pzflux_m = div2flux('XPTR_MOD', dvol, parea)
+        phflux_o = div2flux('PTRH_OBS', dvol, parea)    # H+
+        phflux_m = div2flux('PTRH_MOD', dvol, parea)
+        pdflux_o = div2flux('PDRH_OBS', dvol, parea)    # D+
+        pdflux_m = div2flux('PDRH_MOD', dvol, parea)    
+        ptflux_o = div2flux('PTRH_OBS', dvol, parea)    # T+
+        ptflux_m = div2flux('PTRH_MOD', dvol, parea)
+        p3flux_o = div2flux('PTRHE3_OBS', dvol, parea)  # He3+
+        p3flux_m = div2flux('PTRHE3_MOD', dvol, parea)
+        p4flux_o = div2flux('PTRHE4_OBS', dvol, parea)  # He4+
+        p4flux_m = div2flux('PTRHE4_MOD', dvol, parea)
+        plflux_o = div2flux('PTRLI_OBS', dvol, parea)   # Li+
+        plflux_m = div2flux('PTRLI_MOD', dvol, parea)
 
         #ions = self.im.get_var_names_re('DFI_?', ....  )
 
