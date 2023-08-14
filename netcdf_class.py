@@ -245,7 +245,7 @@ class netcdf_connection:
             runf = Path(self.ncfile).stem #.CDF
             runid = self.get_ncattr('Runid').strip()
             if runf != runid:
-                print(f'Mismatch of Runid in nc file header {runid} with filename {self.ncfile}')
+                print(f'Runid in nc file header {runid}')
         except:
             print(f'Could not verify Runid with filename {self.ncfile}')
 
