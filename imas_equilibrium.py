@@ -19,6 +19,7 @@ class imas_equilibrium:
         timep = self.im.get_ncvar('TIME3')
         ntimep = len(timep)
         coord_x = self.im.get_ncvar('X')
+        coord_xb = self.im.get_ncvar('XB')
         if not self.im.is_valid(timesc, timep, name='times'):
             return
         nprof = coord_x.shape[1]
@@ -57,7 +58,7 @@ class imas_equilibrium:
         bttot = self.im.get_ncvar('BTTOT') #(TIME3, X)
         beta_normal = [] #replaced by beta_tor_norm
         try:
-          for i in range(ntimep):
+          for it in range(ntimep):
               beta_normal.append( np.multiply(bttot, gvol) / pvol[:,None] )
         except:
           self.logger.info(f'Error- beta_normal: bttot {bttot.shape} gvol {gvol.shape}')
@@ -135,7 +136,15 @@ class imas_equilibrium:
         rgrid = self.im.get_ncvar('RGRID', cm2m)
         zgrid = self.im.get_ncvar('ZGRID', cm2m)
 
+        #TODO check if RMC0's are included
+        nmoments = self.im.get_var_names_re('RMC?', nd1=1, nd2=2, length=True)
+
         rsh = rgrid.shape
+        zsh = zgrid.shape
+        nr = rsh[1] if len(rsh)>1 else rsh[0]
+        nz = zsh[1] if len(zsh)>1 else zsh[0]
+        nrz = nr*nz
+
         if len(rsh)>1 and rsh[1]>0 and rgrid[0,rsh[1]-1]<0.2:
             print('Check RGRID unit:', rgrid[0])
             #raise Exception('RGRID too small:expected in cm')
@@ -152,129 +161,180 @@ class imas_equilibrium:
         eqm.time_slice.resize(ntimes)
 
         self.logger.info(f'equilibrium #time slices {ntimes}')
-        for i in range(ntimes):
-            if i==0 or i==ntimes-1:
-                self.logger.info(f'time slice: {i}')
+        for it in range(ntimes):
+            if it==0 or it==ntimes-1:
+                self.logger.info(f'time slice: {it}')
             #global
-            if len(currents) > i :
-                eqm.time_slice[i].global_quantities.ip = currents[i].astype(float)
-            if len(raxis) > i:
-                eqm.time_slice[i].global_quantities.magnetic_axis.r = raxis[i].astype(float)
-                eqm.time_slice[i].global_quantities.magnetic_axis.z = yaxis[i].astype(float)
+            if len(currents) > it :
+                eqm.time_slice[it].global_quantities.ip = currents[it].astype(float)
+            if len(raxis) > it:
+                eqm.time_slice[it].global_quantities.magnetic_axis.r = raxis[it].astype(float)
+                eqm.time_slice[it].global_quantities.magnetic_axis.z = yaxis[it].astype(float)
             #total toroidal magnetic field at the magnetic axis
-            if len(b_field_tor) > i:
-                eqm.time_slice[i].global_quantities.magnetic_axis.b_field_tor = b_field_tor[i].astype(float)
+            if len(b_field_tor) > it:
+                eqm.time_slice[it].global_quantities.magnetic_axis.b_field_tor = b_field_tor[it].astype(float)
 
-            if len(psi_axis) > i:
-                eqm.time_slice[i].global_quantities.psi_axis = psi_axis[i].astype(float)
+            if len(psi_axis) > it:
+                eqm.time_slice[it].global_quantities.psi_axis = psi_axis[it].astype(float)
             #last  or ALCFSMHD ??
-            if len(psi) > i:
-                eqm.time_slice[i].global_quantities.psi_boundary = psi[i,-1].astype(float)
+            if len(psi) > it:
+                eqm.time_slice[it].global_quantities.psi_boundary = psi[it,-1].astype(float)
 
-            if len(q95) > i:
-                eqm.time_slice[i].global_quantities.q_95 = q95[i].astype(float)
-            if len(qaxis) >i:
-                eqm.time_slice[i].global_quantities.q_axis = qaxis[i].astype(float)
-            if len(li3) > i:
-                eqm.time_slice[i].global_quantities.li_3 = li3[i].astype(float)
-            if len(bpeq) >i:
-                eqm.time_slice[i].global_quantities.beta_pol = bpeq[i].astype(float)
-            if len(btor) >i:
-                eqm.time_slice[i].global_quantities.beta_tor = btor[i].astype(float)
+            if len(q95) > it:
+                eqm.time_slice[it].global_quantities.q_95 = q95[it].astype(float)
+            if len(qaxis) >it:
+                eqm.time_slice[it].global_quantities.q_axis = qaxis[it].astype(float)
+            if len(li3) > it:
+                eqm.time_slice[it].global_quantities.li_3 = li3[it].astype(float)
+            if len(bpeq) >it:
+                eqm.time_slice[it].global_quantities.beta_pol = bpeq[it].astype(float)
+            if len(btor) >it:
+                eqm.time_slice[it].global_quantities.beta_tor = btor[it].astype(float)
             if len(beta_tor_norm):
-                eqm.time_slice[i].global_quantities.beta_normal = beta_tor_norm[i].astype(float)
-            if len(pvol) > i:
-                eqm.time_slice[i].global_quantities.volume = pvol[i].astype(float)
-            if len(darea) > i:
-                eqm.time_slice[i].global_quantities.area = darea[i,-1].astype(float)
+                eqm.time_slice[it].global_quantities.beta_normal = beta_tor_norm[it].astype(float)
+            if len(pvol) > it:
+                eqm.time_slice[it].global_quantities.volume = pvol[it].astype(float)
+            if len(darea) > it:
+                eqm.time_slice[it].global_quantities.area = darea[it,-1].astype(float)
             #last ??
-            if len(surface) > i:
-                eqm.time_slice[i].global_quantities.surface = surface[i,-1].astype(float)
+            if len(surface) > it:
+                eqm.time_slice[it].global_quantities.surface = surface[it,-1].astype(float)
 
-            if len(emhd) >i:
-                eqm.time_slice[i].global_quantities.energy_mhd = emhd[i].astype(float)
+            if len(emhd) >it:
+                eqm.time_slice[it].global_quantities.energy_mhd = emhd[it].astype(float)
 
-            #if len(rminor) > i:
-            #    eqm.time_slice[i].boundary.minor_radius = rminor[i]
-            #if len(outline_r) >i:
-            #   eqm.time_slice[i].boundary.outline.r.resize(outline_r.shape[1])
-            #   eqm.time_slice[i].boundary.outline.z.resize(outline_z.shape[1])
-            #   eqm.time_slice[i].boundary.outline.r = outline_r[i]  #1D
-            #   eqm.time_slice[i].boundary.outline.z = outline_z[i]
-            #if len(psi_sepx) >i:
-            #    eqm.time_slice[i].boundary_separatrix.psi = psi_sepx[i]
+            #if len(rminor) > it:
+            #    eqm.time_slice[it].boundary.minor_radius = rminor[it]
+            #if len(outline_r) >it:
+            #   eqm.time_slice[it].boundary.outline.r.resize(outline_r.shape[1])
+            #   eqm.time_slice[it].boundary.outline.z.resize(outline_z.shape[1])
+            #   eqm.time_slice[it].boundary.outline.r = outline_r[it]  #1D
+            #   eqm.time_slice[it].boundary.outline.z = outline_z[it]
+            #if len(psi_sepx) >it:
+            #    eqm.time_slice[it].boundary_separatrix.psi = psi_sepx[it]
 
-            if len(triangb) > i:
-                eqm.time_slice[i].boundary.triangularity = triangb[i].astype(float)
-            if len(triang_upb) > i:
-                eqm.time_slice[i].boundary.triangularity_upper = triang_upb[i].astype(float)
-            if len(triang_lob) > i:
-                eqm.time_slice[i].boundary.triangularity_lower = triang_lob[i].astype(float)
+            if len(triangb) > it:
+                eqm.time_slice[it].boundary.triangularity = triangb[it].astype(float)
+            if len(triang_upb) > it:
+                eqm.time_slice[it].boundary.triangularity_upper = triang_upb[it].astype(float)
+            if len(triang_lob) > it:
+                eqm.time_slice[it].boundary.triangularity_lower = triang_lob[it].astype(float)
 
-            if len(elongb) > i:
-                eqm.time_slice[i].boundary.elongation = elongb[i]
+            if len(elongb) > it:
+                eqm.time_slice[it].boundary.elongation = elongb[it]
 
             #profiles 1d
-            iprof = eqm.time_slice[i].profiles_1d
-            self.im.fill_data(iprof.psi, psi, ind=i, name='psi')
-            self.im.fill_data(iprof.phi, phi, ind=i, name='phi')
-            self.im.fill_data(iprof.q, qpsi, ind=i, name='qpsi')
-            self.im.fill_data(iprof.f, fprof, ind=i, name='fprof')
-            self.im.fill_data(iprof.pressure, pres, ind=i, name='pres')
+            iprof = eqm.time_slice[it].profiles_1d
+            self.im.fill_data(iprof.psi, psi, ind=it, name='psi')
+            self.im.fill_data(iprof.phi, phi, ind=it, name='phi')
+            self.im.fill_data(iprof.q, qpsi, ind=it, name='qpsi')
+            self.im.fill_data(iprof.f, fprof, ind=it, name='fprof')
+            self.im.fill_data(iprof.pressure, pres, ind=it, name='pres')
 
-            self.im.fill_data(iprof.rho_tor_norm, rho_tor_norm, ind=i, name='rho_tor_norm')
-            self.im.fill_data(iprof.elongation, elong, ind=i, name='elong')
-            self.im.fill_data(iprof.squareness_upper_outer, square_up, ind=i, name='square_up')
-            self.im.fill_data(iprof.squareness_lower_outer, square_lo, ind=i, name='square_lo')
-            self.im.fill_data(iprof.triangularity_upper, triang_up, ind=i, name='triang_up')
-            self.im.fill_data(iprof.triangularity_lower, triang_lo, ind=i, name='triang_lo')
-            self.im.fill_data(iprof.geometric_axis.r, geom_axisr, ind=i, name='geom_axisr')
-            self.im.fill_data(iprof.geometric_axis.z, geom_axisz, ind=i, name='geom_axisz')
+            self.im.fill_data(iprof.rho_tor_norm, rho_tor_norm, ind=it, name='rho_tor_norm')
+            self.im.fill_data(iprof.elongation, elong, ind=it, name='elong')
+            self.im.fill_data(iprof.squareness_upper_outer, square_up, ind=it, name='square_up')
+            self.im.fill_data(iprof.squareness_lower_outer, square_lo, ind=it, name='square_lo')
+            self.im.fill_data(iprof.triangularity_upper, triang_up, ind=it, name='triang_up')
+            self.im.fill_data(iprof.triangularity_lower, triang_lo, ind=it, name='triang_lo')
+            self.im.fill_data(iprof.geometric_axis.r, geom_axisr, ind=it, name='geom_axisr')
+            self.im.fill_data(iprof.geometric_axis.z, geom_axisz, ind=it, name='geom_axisz')
 
-            #self.im.fill_data(iprof.j_tor, jtor, ind=i, name='jtor')
-            #self.im.fill_data(iprof.f_df_dpsi, fdp_dspi, ind=i, name='fdp_dspi')
-            #self.im.fill_data(iprof.dpressure_dpsi, dpressure_dpsi, ind=i, name='dpressure_dpsi')
+            #self.im.fill_data(iprof.j_tor, jtor, ind=it, name='jtor')
+            #self.im.fill_data(iprof.f_df_dpsi, fdp_dspi, ind=it, name='fdp_dspi')
+            #self.im.fill_data(iprof.dpressure_dpsi, dpressure_dpsi, ind=it, name='dpressure_dpsi')
 
-            eqm.time_slice[i].profiles_2d.resize(1)
-            prof2 = eqm.time_slice[i].profiles_2d[0]
-            self.im.fill_data(prof2.grid.dim1, rgrid, ind=i, name='rgrid')
-            self.im.fill_data(prof2.grid.dim2, zgrid, ind=i, name='zgrid')
-            #prof2.grid_type = 1 #Error
-
-            #TODO all 2d profiles
-
-            psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=i)
-            if self.im.is_valid(rgrid, zgrid, ind=i, name='grid') and self.im.is_valid(psirz, name='prirz'):
-                xv, yv = np.meshgrid(rgrid[i], zgrid[i])
-                prof2.r.resize(xv.shape)
-                prof2.z.resize(yv.shape)
-                prof2.r = xv
-                prof2.z = yv
-
-                rn = len(rgrid[i])
-                zn = int(len(psirz)/rn)
-                prof2.psi.resize((rn, zn))
-                prof2.psi = np.reshape(psirz, (rn, zn)).T
-
-                prof2.type = 0 #total
-                #self.outdb.put_slice(eq, occur)
-                if i==ntimes-1:
-                    self.logger.info(f't {i}: wrote 2d profile : rgrid {rn}, zgrid {zn} psi {prof2.psi.shape}')
-            elif i==ntimes-1:
-                self.logger.info('2d profile : psi, rgrid, zgrid not available')
+            eqm.time_slice[it].profiles_2d.resize(1)
+            prof2 = eqm.time_slice[it].profiles_2d[0]
+            #prof2.type.index = 0
+            prof2.grid_type.index = 1
+            self.im.fill_data(prof2.grid.dim1, rgrid, ind=it, name='rgrid')
+            self.im.fill_data(prof2.grid.dim2, zgrid, ind=it, name='zgrid')
 
 
-                #inverse equilibrium
-                #Values of the major radius on the grid
-            if False:
-                eqm.time_slice[i].coordinate_system.grid.dim1.resize(nr)
-                eqm.time_slice[i].coordinate_system.grid.dim2.resize(nz)
-                eqm.time_slice[i].coordinate_system.grid.dim1 = rgrid[i]
-                eqm.time_slice[i].coordinate_system.grid.dim2 = zgrid[i]
-                eqm.time_slice[i].coordinate_system.r.resize(nr*nz)
-                eqm.time_slice[i].coordinate_system.z.resize(nr*nz)
-                #eqm.time_slice[i].coordinate_system.r = rsurf[i]
-                #eqm.time_slice[i].coordinate_system.z = ysurf[i]
+            psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
+            if self.im.is_valid(rgrid, zgrid, ind=it, name='grid') and self.im.is_valid(psirz, name='prirz'):
+                prof2.psi.resize((nr, nz))
+                prof2.psi = np.reshape(psirz, (nr, nz)).T
+
+                if it==ntimes-1:
+                    self.logger.info(f't {it}: wrote 2d profile : rgrid {nr}, zgrid {nz} psi {prof2.psi.shape}')
+
+            bfield = self.im.get_ncvar('B_FIELD', ind=it)
+            if self.im.is_valid(bfield, name='bfield'):
+                self.im.fill_data(prof2.b_field_r, bfield, ind=0, ind2=nrz)
+                self.im.fill_data(prof2.b_field_tor, bfield, ind=nrz, ind2=2*nrz)
+                self.im.fill_data(prof2.b_field_z, bfield, ind=2*nrz, ind2=3*nrz)
+                if it==ntimes-1:
+                    self.logger.info(f't {it}: wrote B_FIELD {bfield.shape}')
+
+            #inverse equilibrium
+            coord = eqm.time_slice[it].coordinate_system
+
+
+
+
+
+            #201 ??
+            ntheta = 201
+            #TODO check dimension of fill data
+
+            dtheta = 2*pi/ntheta
+            theta = np.array([it*dtheta for it in range(ntheta)])
+            self.im.fill_data(coord.grid.dim1, theta, name="grid_theta")
+            self.im.fill_data(coord.grid.dim2, coord_xb, name="gridr", ind=it)
+
+            ncoord_xb = coord_xb.shape[1]
+            rsurf = np.zeros(shape=(ntheta, ncoord_xb))
+            ysurf = np.zeros(shape=(ntheta, ncoord_xb))
+            rcos = np.zeros(shape=(nmoments+1, ncoord_xb))
+            rsin = np.zeros(shape=(nmoments+1, ncoord_xb))
+            ycos = np.zeros(shape=(nmoments+1, ncoord_xb))
+            ysin = np.zeros(shape=(nmoments+1, ncoord_xb))
+
+            #RMC00(TIME3, XB); CM; 0TH ASYM R MOMENT
+            rcos[0] = self.im.get_ncvar(f'RMC00', ind=it, scale=cm2m)
+            ycos[0] = self.im.get_ncvar(f'YMC00', ind=it, scale=cm2m)
+
+            for k in range(1, nmoments):
+               kn = f'0{k}' if k<10 else k
+               #RMCn(TIME3, XB); CM ; nth ASYM R COS MOMENT
+               rcos[k] = self.im.get_ncvar(f'RMC{kn}', ind=it, scale=cm2m)
+               rsin[k] = self.im.get_ncvar(f'RMS{kn}', ind=it, scale=cm2m)
+               ycos[k] = self.im.get_ncvar(f'YMC{kn}', ind=it, scale=cm2m)
+               ysin[k] = self.im.get_ncvar(f'YMS{kn}', ind=it, scale=cm2m)
+
+            for ith in range(ntheta):
+               th = ith*dtheta
+               for k in range(nmoments):
+                  rsurf[ith] += rcos[k]*(np.cos(k*th)) + rsin[k]*(np.sin(k*th))
+                  ysurf[ith] += ycos[k]*(np.cos(k*th)) + ysin[k]*(np.sin(k*th))
+            rsurf = rsurf.T
+            ysurf = ysurf.T
+
+
+            #check
+            rsurf = np.zeros(shape=(ncoord_xb, ntheta))
+            ysurf = np.zeros(shape=(ncoord_xb, ntheta))
+            for j in range(ncoord_xb):
+               for ith in range(ntheta):
+                  th = ith*dtheta
+                  for k in range(nmoments):
+                     rsurf[j,ith] += rcos[k,j]*(np.cos(k*th)) + rsin[k,j]*(np.sin(k*th))
+                     ysurf[j,ith] += ycos[k,j]*(np.cos(k*th)) + ysin[k,j]*(np.sin(k*th))
+                     #if it==0 and j==0 and k<3:
+                     #   print('>>', j,ith,k,rcos[k,j],rsin[k,j], rsurf[j,ith], '== ', ysin[k,j], ycos[k,j], ysurf[j,ith])
+
+
+            #fill data
+            coord.r.resize(ncoord_xb, ntheta)
+            if self.im.is_valid(rsurf):
+               coord.r = rsurf
+            coord.z.resize(ncoord_xb, ntheta)
+            if self.im.is_valid(ysurf):
+               coord.z = ysurf
+
+            #self.outdb.put_slice(eq, occur)
 
         self.logger.info('writing ids')
         self.im.putdb_imas(eqm)

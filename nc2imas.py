@@ -50,6 +50,14 @@ class nc2imas(imas_connection, netcdf_connection):
         self.sgn = -1 if self.iter_ else 1
         self.pi = constants.pi  #scipy
 
+
+    def check_1dim(self, dat):
+         if isinstance(dat, np.ndarray):
+              return dat.ndim==1
+         elif isinstance(dat, (list, tuple, set)):
+              return np.array(dat).ndim==1
+
+
     #scalar 0 is invalid. Don't check if it can be valid
     #Don't call this using varargs forwarded by another function
     def is_valid(self, *variables, ind:int=0, name:str=''):
@@ -178,12 +186,12 @@ class nc2imas(imas_connection, netcdf_connection):
     def fill_data_nc(self, ids, var:str, mult:float=None, ind:int=-1, resize:bool=True):
         if not isinstance(var, str):
             raise ValueError(f'variable {var} is not string')
-        dat = self.get_ncvar(var)
+        dat = self.get_ncvar(var, ind)
         if not self.is_valid(dat):
             if ind==0:
                 self.logger.info(f'{var} not-found')
         else:
-            dat = dat if ind<0 else dat[ind]
+            dat = dat[ind] if ind>= 0 else dat
             if resize:
                 ids.resize(len(dat), refcheck=False)
             if mult is not None:
@@ -191,17 +199,24 @@ class nc2imas(imas_connection, netcdf_connection):
             ids[:] = dat
 
     #don't use this to fill scalar
-    def fill_data(self, ids, dat, mult:float=None, ind:int=-1, name:str=None,
-          resize:bool=True, chk:int=-1) -> bool:
+    def fill_data(self, ids, dat, mult:float=None, ind:int=-1, ind2:int=-1,
+          name:str=None, resize:bool=True, chk:int=-1) -> bool:
         nm = name if name is not None else 'data'
+
         try:
           if self.is_valid(dat, name=nm):
-            dat = dat[ind] if ind>= 0 else dat
-            if chk>0 and not np.isscalar(dat) and len(dat)!=chk:
-                if ind==0:
-                    self.logger.info(f'Error: size mismatch {len(dat)} != {chk}')
-                return
+            if (ind>= 0 and ind2>=0):
+               dat = dat[ind:ind2]
+            elif ind>= 0:
+               dat[ind]
 
+            if chk>0 and not np.isscalar(dat) and len(dat)!=chk:
+               if ind==0:
+                  self.logger.info(f'Error: size mismatch {len(dat)} != {chk}')
+               return
+
+            if np.isscalar(dat):
+               raise Exception('Cannot fill scalar value')
             if (not np.isscalar(dat)) and resize:
                 ids.resize(len(dat), refcheck=False)
             if mult is not None:
@@ -212,6 +227,10 @@ class nc2imas(imas_connection, netcdf_connection):
         except:
             if ind==0:
                 self.logger.info(f'{nm} is invalid')
+
+        #if not self.check_1dim(dat):
+            #print('Check dim')
+            #raise Exception('cannot fill data that is not 1D')
 
     def load_namelist(self):
         if self.nml_name is None:
