@@ -84,7 +84,7 @@ class nc2imas(imas_connection, netcdf_connection):
                   return False
         return True
 
-    def sum_arrays(self, *arrs):
+    def sum_arrays(self, *arrays):
         res = []
         init = False
         try:
@@ -97,7 +97,7 @@ class nc2imas(imas_connection, netcdf_connection):
                     res = arr
                     init = True
         except:
-            self.logger.info(f' operate_arrays error')
+            self.logger.info(f' sum arrays error')
         return res
 
 

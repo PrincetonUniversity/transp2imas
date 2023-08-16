@@ -95,7 +95,15 @@ or, $ python convert.py -i <CDFname> -d <dir_path>
 
 To convert all CDF files in a directory and its subdirectories:
 $ python convert.py -i all -d <dir_path>
-The namelists in corresponding directories will be used if available.
+
+Examples
+$ python convert.py -i 38530P87  -d  <path>/
+$ python convert.py -i 38530P87_<text>.CDF  -d  <path>/
+The CDF file (extension is optional) can be a renamed one seperated by non-digit, e.g, an underscore.
+
+The namelists in corresponding directories will be used if available, in all cases.
+
+
 
 ```
 The above steps will create MDS+ backend if HDF is not opted for. A log file log.out is written including which variables were not found in the input CDF file, for each IDS written out. In the above command line arguments, the run number is the end part of MDS output file names, while occurrence can be selected only when the ids is accessed, or from VIZ. If an existing database is appended, the size of MDS+ ids_...datafile increases with the current run.

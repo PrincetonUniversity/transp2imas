@@ -254,7 +254,7 @@ def plot_equilibrium_2d(times, rgrid, zgrid, rinv, zinv, psirz, rz_range:bool=Tr
         print('rz_inv', rinv.shape, zinv.shape)
         if len(rinv)>1 and len(zinv)>1:
             rg, zg = rinv[t] , zinv[t]
-            plt.scatter(rg[60], zg[60], color='C0') #, 'ro')
+            plt.scatter(rg[30], zg[30], color='C0') #, 'ro')
         ax.grid()
 
     #name = f'psirz_{1+int(rz_range==True)}'
@@ -347,6 +347,8 @@ def plot_equilibrium_ids(eq, ni:int=0, pre:str=None, name='eq', save=False):
         except:
             pass
 
+        if i==0:
+         print('prof2d grid', eq.time_slice[i].profiles_2d[0].grid.dim1, eq.time_slice[i].profiles_2d[0].grid.dim2)
         if prof2d:
             rgrid[i] = eq.time_slice[i].profiles_2d[0].grid.dim1
             zgrid[i] = eq.time_slice[i].profiles_2d[0].grid.dim2
