@@ -281,16 +281,14 @@ class imas_equilibrium:
 
             dtheta = 2*pi/ntheta
             theta = np.array([it*dtheta for it in range(ntheta)])
-            self.im.fill_data(coord.grid.dim1, theta, name="grid_theta")
-            self.im.fill_data(coord.grid.dim2, coord_xb, name="gridr", ind=it)
+            self.im.fill_data(coord.grid.dim1, coord_xb, name="invgridr", ind=it)
+            self.im.fill_data(coord.grid.dim2, theta, name="invgrid_theta")
 
             ncoord_xb = coord_xb.shape[1]
-            rsurf = np.zeros(shape=(ntheta, ncoord_xb))
-            ysurf = np.zeros(shape=(ntheta, ncoord_xb))
-            rcos = np.zeros(shape=(nmoments+1, ncoord_xb))
-            rsin = np.zeros(shape=(nmoments+1, ncoord_xb))
-            ycos = np.zeros(shape=(nmoments+1, ncoord_xb))
-            ysin = np.zeros(shape=(nmoments+1, ncoord_xb))
+            rcos = np.zeros(shape=(nmoments, ncoord_xb))
+            rsin = np.zeros(shape=(nmoments, ncoord_xb))
+            ycos = np.zeros(shape=(nmoments, ncoord_xb))
+            ysin = np.zeros(shape=(nmoments, ncoord_xb))
 
             #RMC00(TIME3, XB); CM; 0TH ASYM R MOMENT
             rcos[0] = self.im.get_ncvar(f'RMC00', ind=it, scale=cm2m)
@@ -304,26 +302,48 @@ class imas_equilibrium:
                ycos[k] = self.im.get_ncvar(f'YMC{kn}', ind=it, scale=cm2m)
                ysin[k] = self.im.get_ncvar(f'YMS{kn}', ind=it, scale=cm2m)
 
-            for ith in range(ntheta):
-               th = ith*dtheta
-               for k in range(nmoments):
-                  rsurf[ith] += rcos[k]*(np.cos(k*th)) + rsin[k]*(np.sin(k*th))
-                  ysurf[ith] += ycos[k]*(np.cos(k*th)) + ysin[k]*(np.sin(k*th))
-            rsurf = rsurf.T
-            ysurf = ysurf.T
-
-
-            #check
             rsurf = np.zeros(shape=(ncoord_xb, ntheta))
             ysurf = np.zeros(shape=(ncoord_xb, ntheta))
+
+            '''
             for j in range(ncoord_xb):
                for ith in range(ntheta):
                   th = ith*dtheta
                   for k in range(nmoments):
-                     rsurf[j,ith] += rcos[k,j]*(np.cos(k*th)) + rsin[k,j]*(np.sin(k*th))
-                     ysurf[j,ith] += ycos[k,j]*(np.cos(k*th)) + ysin[k,j]*(np.sin(k*th))
-                     #if it==0 and j==0 and k<3:
-                     #   print('>>', j,ith,k,rcos[k,j],rsin[k,j], rsurf[j,ith], '== ', ysin[k,j], ycos[k,j], ysurf[j,ith])
+                     rsurf[j,ith] += rcos[k,j]*np.cos(k*th) + rsin[k,j]*np.sin(k*th)
+                     ysurf[j,ith] += ycos[k,j]*np.cos(k*th) + ysin[k,j]*np.sin(k*th)
+                  #if it==0 and j==50:
+                  #   print('>>', j,ith, rsurf[j,ith], ' == ', ysurf[j,ith])
+            '''
+
+
+            for j in range(ncoord_xb):
+               rsurfj = np.zeros(ntheta)
+               ysurfj = np.zeros(ntheta)
+               for ith in range(ntheta):
+                  th = ith*dtheta
+
+                  snthtk = np.zeros(nmoments)
+                  csthtk = np.zeros(nmoments)
+                  snthtk[0] = np.sin(th)
+                  csthtk[0] = np.cos(th)
+                  rsurfj[ith] = rcos[0,j]
+                  ysurfj[ith] = ycos[0,j]
+                  for k in range(1,nmoments):
+                     snthtk[k] = snthtk[k-1]*csthtk[0] + csthtk[k-1]*snthtk[0] #np.sin(k*th)
+                     csthtk[k] = csthtk[k-1]*csthtk[0] - snthtk[k-1]*snthtk[0] #np.cos(k*th)
+
+                     rsurfj[ith] = rsurfj[ith] + rcos[k,j]*csthtk[k] + rsin[k,j]*snthtk[k]
+                     ysurfj[ith] = ysurfj[ith] + ycos[k,j]*csthtk[k] + ysin[k,j]*snthtk[k]
+                     #if it==0 and j==0 and k==0:
+                     #   print(' ...', j,ith,k,th,  rcos[k,j],csthtk[k],  rsin[k,j], snthtk[k], rsurfj[ith] )
+
+                  #if it==0 and j==0:
+                  #   print('>>', j,ith, rsurfj[ith], ' == ', ysurfj[ith], snthtk[0], csthtk[0])
+
+               rsurf[j] = rsurfj
+               ysurf[j] = ysurfj
+
 
 
             #fill data

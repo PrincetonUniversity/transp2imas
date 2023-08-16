@@ -201,8 +201,8 @@ def plot_equilibrium_1d(times, psi, qpsi, pres, torflux_phi, rho_tor_norm,
     plt = plot_tslice_grid(nr, nc, times, fdp_dspi, pre, 'fdp_dspi', xtime)
     plt = plot_tslice_grid(nr, nc, times, dpressure_dpsi, pre, 'dpressure_dpsi', xtime)
 
-def plot_equilibrium_2d(times, rgrid, zgrid, psirz, rz_range:bool=True, save=True,
-     pre:str=None, ni:int=0, image2d:bool=False, ncontour:int=10):
+def plot_equilibrium_2d(times, rgrid, zgrid, rinv, zinv, psirz, rz_range:bool=True,
+      save=True, pre:str=None, ni:int=0, image2d:bool=False, ncontour:int=10):
 
     if len(rgrid.shape) ==1:
         print(f'{rgrid} is 1D')
@@ -213,9 +213,8 @@ def plot_equilibrium_2d(times, rgrid, zgrid, psirz, rz_range:bool=True, save=Tru
     image = image2d #plot image
     print('plotting eq 2d')
     #TODO use ni
-    nr = 1
-    nc = 3
-    print('psirz', psirz.shape)
+    nr, nc = find_nrows_cols(ni)
+    print('psirz', psirz.shape, rgrid.shape, zgrid.shape)
     if len(psirz.shape) == 2:
         print('psirz is single array of 2D')
         tplots = [0]
@@ -251,6 +250,11 @@ def plot_equilibrium_2d(times, rgrid, zgrid, psirz, rz_range:bool=True, save=Tru
             cbar = fig.colorbar(img, ax=ax, fraction=0.05, pad=0.05)
             cbar.add_lines(cont)
             img.format_cursor_data = format_cursor_data
+
+        print('rz_inv', rinv.shape, zinv.shape)
+        if len(rinv)>1 and len(zinv)>1:
+            rg, zg = rinv[t] , zinv[t]
+            plt.scatter(rg[60], zg[60], color='C0') #, 'ro')
         ax.grid()
 
     #name = f'psirz_{1+int(rz_range==True)}'
@@ -282,18 +286,32 @@ def plot_equilibrium_ids(eq, ni:int=0, pre:str=None, name='eq', save=False):
       triang_bot, jtor, fdp_dspi, dpressure_dpsi = declare_np_arrays(11, (nslices, npsi))
 
     prof2d = False
+    nr, nz = 1, 1
     try:
         nr = eq.time_slice[0].profiles_2d[0].grid.dim1.shape[0]
         nz = eq.time_slice[0].profiles_2d[0].grid.dim2.shape[0]
+        print(nr,nz)
     except:
         print('2d profile not found')
         pass
     else:
         prof2d = True
-        rgrid = np.zeros((nslices, nr), dtype=float)
-        zgrid = np.zeros((nslices, nz), dtype=float)
-        psirz = np.zeros((nslices, nr, nz), dtype=float)
-        print(psirz.shape)
+    rgrid = np.zeros((nslices, nr), dtype=float)
+    zgrid = np.zeros((nslices, nz), dtype=float)
+    psirz = np.zeros((nslices, nr, nz), dtype=float)
+
+    #inverse grid
+    nsi, nth = 1, 1
+    try:
+        sh = eq.time_slice[0].coordinate_system.r.shape
+        nsi, nth = sh[0], sh[1]
+    except:
+        print('2d inverse grid not found')
+        pass
+
+    rinv = np.zeros((nslices, nsi, nth), dtype=float)
+    zinv = np.zeros((nslices, nsi, nth), dtype=float)
+    print('psirz ', psirz.shape, 'rzinv_grid', rinv.shape)
 
     for i in range(nslices):
         currents[i] = eq.time_slice[i].global_quantities.ip
@@ -334,6 +352,9 @@ def plot_equilibrium_ids(eq, ni:int=0, pre:str=None, name='eq', save=False):
             zgrid[i] = eq.time_slice[i].profiles_2d[0].grid.dim2
             psirz[i] = eq.time_slice[i].profiles_2d[0].psi
 
+            rinv[i] = eq.time_slice[i].coordinate_system.r
+            zinv[i] = eq.time_slice[i].coordinate_system.z
+
     plot_Ip_vacBR_loopV(times, currents, vac_b0, vac_r0, pre=pre)
     plot_eq_global(times, rmaxis, zmaxis, b_field_tor, psi_axis,
        psi_bdry, q95, qaxis, li3, pre=pre)
@@ -341,11 +362,13 @@ def plot_equilibrium_ids(eq, ni:int=0, pre:str=None, name='eq', save=False):
     plot_equilibrium_1d(times, psi, qpsi, pres, torflux_phi, rho_tor_norm,
       elong, triang_top, triang_bot, jtor, fdp_dspi, dpressure_dpsi, pre=pre, ni=ni)
     if prof2d:
+        ni = 1
         image_clr = False #plot image on top of contour
         n_ctr = 20 #number of contour lines
-        plot_equilibrium_2d(times, rgrid, zgrid, psirz, pre=pre, ni=ni, image2d=image_clr, ncontour=n_ctr)
-        plot_equilibrium_2d(times, rgrid, zgrid, psirz, rz_range=True, pre=pre, ni=ni,
-          image2d=image_clr,ncontour=n_ctr)
+        plot_equilibrium_2d(times, rgrid, zgrid, rinv, zinv, psirz, pre=pre, ni=ni,
+            image2d=image_clr, ncontour=n_ctr)
+        plot_equilibrium_2d(times, rgrid, zgrid, rinv, zinv, psirz, rz_range=True,
+            pre=pre, ni=ni, image2d=image_clr,ncontour=n_ctr)
 
     fname = pre+'_'+name if pre else name
     finalize_plots(fname)
