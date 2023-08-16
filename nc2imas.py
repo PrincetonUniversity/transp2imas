@@ -208,7 +208,7 @@ class nc2imas(imas_connection, netcdf_connection):
             if (ind>= 0 and ind2>=0):
                dat = dat[ind:ind2]
             elif ind>= 0:
-               dat[ind]
+               dat = dat[ind]
 
             if chk>0 and not np.isscalar(dat) and len(dat)!=chk:
                if ind==0:

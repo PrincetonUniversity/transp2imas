@@ -7,7 +7,7 @@ from scipy.constants import physical_constants as scipy_phyc
 import imas
 
 class atom_base():
-    def __init__(self, symbTransp:str=None):
+    def __init__(self, symbTransp:str=None, ilab:str=''):
         self.a = 0.0
         self.z_n = 0.0
         self.atoms_n = 1
@@ -153,7 +153,7 @@ class atom_base():
                       }
 
 
-        self.fill_constants(symbTransp)
+        self.fill_constants(symbTransp, ilab)
 
     def fill_constants(self, symbTransp, ilab:str=''):
         lab = symbTransp

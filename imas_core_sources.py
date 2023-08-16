@@ -65,7 +65,7 @@ class imas_core_sources:
         bpti_glob = self.im.get_ncvar('BPST_D')
 
         #total= BPTI + BPTE + BPTH (BHEAT)
-        global_power_tot = bpti_glob + bpte_glob + bpth_glob
+        global_power_tot = self.im.sum_arrays(bpti_glob, bpte_glob, bpth_glob)
 
         #BSTH_D (TIME) N/SEC D BEAM THERMALIZATIONS
         gptcls += self.im.get_ncvar(f'BSTH_{sp}')
