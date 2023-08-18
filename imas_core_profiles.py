@@ -14,6 +14,10 @@ class ion_data(atom_base):
         self.z_ion_1d = []
         self.rotation_frequency_tor = []
 
+    def is_valid(self):
+        return (self.a>0. and self.atoms_n>0 and
+               self.z_ion>0 and len(self.dens)>0 )
+
 class neutrals_data(atom_base):
      def __init__(self, symb):
         super().__init__(symb)
@@ -60,7 +64,8 @@ class imas_core_profiles:
 
             if self.im.is_valid(ang_vel, rmaj):
                 ion.rotation_frequency_tor = ang_vel / rmaj
-            ions.append(ion)
+            if ion.is_valid():
+               ions.append(ion)
 
         #impurity = average in TRANSP, not only an element.
         symb = 'X'
@@ -92,8 +97,8 @@ class imas_core_profiles:
             ion.z_n = zn #zn.astype(float)
             ion.a = aa.astype(float)
             ion.z_ion = zion.astype(float)
-
-        ions.append(ion)
+        if ion.is_valid():
+            ions.append(ion)
         return ions
 
     #volume/wall neutral density
@@ -225,7 +230,7 @@ class imas_core_profiles:
             ti_ = self.im.np_multiply_sum(tion, gvol, axis=1)
             ti_ = self.im.operate_arrays(ti_, '/', pvol)
             ti0_ti = self.im.operate_arrays(ti0, '/', ti_)
-            self.im.fill_data(cp.global_quantities.t_i_average_peaking, ti0_ti)
+            self.im.fill_data(cp.global_quantities.t_i_average_peaking, ti0_ti, name='t_i_average_peak')
 
         #resistive_psi_losses
         #ejima
@@ -365,19 +370,20 @@ class imas_core_profiles:
               ion = ions[ij]
               if i==0:
                   self.logger.info(f'* filling ion {ion.label}')
+              cp.profiles_1d[i].ion[ij].element.resize(1)
+              cp.profiles_1d[i].ion[ij].element[0].a = ion.a
+              cp.profiles_1d[i].ion[ij].element[0].z_n = ion.z_n
+              cp.profiles_1d[i].ion[ij].element[0].atoms_n = ion.atoms_n
+              cp.profiles_1d[i].ion[ij].z_ion = ion.z_ion
               cp.profiles_1d[i].ion[ij].label = ion.label
-              if ion.a > 0. and ion.z_n > 0. and ion.atoms_n > 0:
-                  cp.profiles_1d[i].ion[ij].element.resize(1)
-                  cp.profiles_1d[i].ion[ij].element[0].a = ion.a
-                  cp.profiles_1d[i].ion[ij].element[0].z_n = ion.z_n
-                  cp.profiles_1d[i].ion[ij].element[0].atoms_n = ion.atoms_n
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].z_ion_1d, ion.z_ion_1d, None , i, 'z_ion_1d')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].temperature, ion.temp, None, i, 'temp')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].density, ion.dens, None, i, 'dens')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.radial, ion.vel_rad, None, i, 'vel_rad')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal, ion.vel_tor, None, i, 'vel_tor')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal, ion.vel_pol, None, i, 'vel_pol')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.parallel, ion.vel_par, None, i, 'vel_par')
+
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].z_ion_1d, ion.z_ion_1d, ind=i, name='z_ion_1d')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].temperature, ion.temp, ind=i, name='temp')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].density, ion.dens, ind=i, name='dens')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.radial, ion.vel_rad, ind=i, name='vel_rad')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal, ion.vel_tor, ind=i, name='vel_tor')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal, ion.vel_pol, ind=i, name='vel_pol')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.parallel, ion.vel_par, ind=i, name='vel_par')
 
           #neutrals
           n_neutrals = len(neutrals)
@@ -394,9 +400,10 @@ class imas_core_profiles:
                   cp.profiles_1d[i].neutral[ij].element[0].a = neut.a
                   cp.profiles_1d[i].neutral[ij].element[0].z_n = neut.z_n
                   cp.profiles_1d[i].neutral[ij].element[0].atoms_n = neut.atoms_n
-              self.im.fill_data(cp.profiles_1d[i].neutral[ij].density, neut.dens, None, i, 'dens')
+                  self.im.fill_data(cp.profiles_1d[i].neutral[ij].density, neut.dens, ind=i, name='dens')
 
           #
+          self.im.fill_data_nc(cp.profiles_1d[i].t_i_average, 'TI', ind=i)
           self.im.fill_data(cp.profiles_1d[i].q, qprof, ind=i)
           self.im.fill_data(cp.profiles_1d[i].zeff, zeff, ind=i)
           self.im.fill_data(cp.profiles_1d[i].n_i_total_over_n_e, n_i_total_over_n_e, ind=i)

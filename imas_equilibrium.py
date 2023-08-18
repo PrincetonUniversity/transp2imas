@@ -5,7 +5,106 @@ class imas_equilibrium:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
+        self.rmcb = []
+        self.rmsb = []
+        self.ymcb = []
+        self.ymsb = []
+        self.nmoments = 0
         self.create_ids()
+
+
+    #to be called per time frame
+    def convert_moments(self, ncoord_xb, ntheta:int, time:int):
+         #TODO check dimension of fill data
+         nmoments = self.im.get_var_names_re('RMC?', nd1=1, nd2=2, length=True)
+         rcos = np.zeros(shape=(nmoments, ncoord_xb))
+         rsin = np.zeros(shape=(nmoments, ncoord_xb))
+         ycos = np.zeros(shape=(nmoments, ncoord_xb))
+         ysin = np.zeros(shape=(nmoments, ncoord_xb))
+
+         cm2m = 0.01
+         #RMC00(TIME3, XB); CM; 0TH ASYM R MOMENT
+         rcos[0] = self.im.get_ncvar(f'RMC00', ind=time, scale=cm2m)
+         ycos[0] = self.im.get_ncvar(f'YMC00', ind=time, scale=cm2m)
+
+         dtheta = 2*self.im.pi/ntheta
+
+         for k in range(1, nmoments):
+            kn = f'0{k}' if k<10 else k
+            #RMCn(TIME3, XB); CM ; nth ASYM R COS MOMENT
+            rcos[k] = self.im.get_ncvar(f'RMC{kn}', ind=time, scale=cm2m)
+            rsin[k] = self.im.get_ncvar(f'RMS{kn}', ind=time, scale=cm2m)
+            ycos[k] = self.im.get_ncvar(f'YMC{kn}', ind=time, scale=cm2m)
+            ysin[k] = self.im.get_ncvar(f'YMS{kn}', ind=time, scale=cm2m)
+
+         rsurf = np.zeros(shape=(ncoord_xb, ntheta))
+         ysurf = np.zeros(shape=(ncoord_xb, ntheta))
+
+         inv_grid_theta = np.zeros(ntheta)
+
+         if nmoments>1:
+            for j in range(ncoord_xb):
+               rsurf[j,:] = rcos[0,j]
+               ysurf[j,:] = ysin[0,j]
+               for ith in range(ntheta):
+                  th = -self.im.pi + ith*dtheta #as in TRANSP
+                  inv_grid_theta[j] = th
+                  for k in range(1, nmoments):
+                     ct = np.cos(k*th)
+                     st = np.sin(k*th)
+                     rsurf[j,ith] += rcos[k,j]*ct + rsin[k,j]*st
+                     ysurf[j,ith] += ycos[k,j]*ct + ysin[k,j]*st
+         return rsurf, ysurf, inv_grid_theta
+
+
+    #to be called per time frame
+    def get_moments_bdry(self):
+         if self.im.is_valid(self.rmcb):
+            print('RMCB already filled')
+            return
+         ntimes = len(self.im.get_ncvar('TIME'))
+         nmoments = self.im.get_var_names_re('RMCB?', nd1=1, nd2=2, length=True)
+         self.nmoments = nmoments
+         self.rmcb = np.zeros(shape=(ntimes, nmoments))
+         self.rmsb = np.zeros(shape=(ntimes, nmoments))
+         self.ymcb = np.zeros(shape=(ntimes, nmoments))
+         self.ymsb = np.zeros(shape=(ntimes, nmoments))
+
+         cm2m = 0.01
+         for k in range(nmoments):
+            kn = k
+            #RMCBn(TIME); CM; nTH ASYM R BOUND MOMENT
+            self.rmcb[:, k] = self.im.get_ncvar(f'RMCB{kn}', scale=cm2m)
+            self.ymcb[:, k] = self.im.get_ncvar(f'YMCB{kn}', scale=cm2m)
+            if k>0:
+               self.rmsb[:, k] = self.im.get_ncvar(f'RMSB{kn}', scale=cm2m)
+               self.ymsb[:, k] = self.im.get_ncvar(f'YMSB{kn}', scale=cm2m)
+
+    #to be called per time frame
+    def convert_moments_bdry(self, ntheta:int, time:int):
+         if not self.im.is_valid(self.rmcb):
+            self.get_moments_bdry()
+
+         if ntheta<1 or time<0:
+            raise Exception(f'convert_moments_bdry: ntheta {ntheta} time {time}')
+         rsurf = np.zeros(ntheta)
+         ysurf = np.zeros(ntheta)
+
+         dtheta = 2*self.im.pi/ntheta
+         for ith in range(ntheta-1):
+            th = ith*dtheta
+            th = -self.im.pi + th
+            rsurf[ith] = self.rmcb[time,0]
+            ysurf[ith] = self.ymcb[time,0]
+            for k in range(1, self.nmoments):
+               ct = np.cos(k*th)
+               st = np.sin(k*th)
+               rsurf[ith] += self.rmcb[time,k]*ct + self.rmsb[time,k]*st
+               ysurf[ith] += self.ymcb[time,k]*ct + self.ymsb[time,k]*st
+
+         rsurf[ntheta-1] = rsurf[0]
+         ysurf[ntheta-1] = ysurf[0]
+         return rsurf, ysurf
 
 
     def create_ids(self):
@@ -131,19 +230,18 @@ class imas_equilibrium:
             pass
 
         #Normalised tor flux coord
-        rho_tor_norm = np.multiply(coord_x, coord_x)
+        rho_tor_norm = coord_x #np.multiply(coord_x, coord_x)
 
-        rgrid = self.im.get_ncvar('RGRID', cm2m)
-        zgrid = self.im.get_ncvar('ZGRID', cm2m)
-
-        #TODO check if RMC0's are included
-        nmoments = self.im.get_var_names_re('RMC?', nd1=1, nd2=2, length=True)
+        rgrid = self.im.get_ncvar('RGRID', scale=cm2m)
+        zgrid = self.im.get_ncvar('ZGRID', scale=cm2m)
 
         rsh = rgrid.shape
         zsh = zgrid.shape
         nr = rsh[1] if len(rsh)>1 else rsh[0]
         nz = zsh[1] if len(zsh)>1 else zsh[0]
         nrz = nr*nz
+
+        ncoord_xb = coord_xb.shape[1]
 
         if len(rsh)>1 and rsh[1]>0 and rgrid[0,rsh[1]-1]<0.2:
             print('Check RGRID unit:', rgrid[0])
@@ -205,11 +303,12 @@ class imas_equilibrium:
 
             #if len(rminor) > it:
             #    eqm.time_slice[it].boundary.minor_radius = rminor[it]
-            #if len(outline_r) >it:
-            #   eqm.time_slice[it].boundary.outline.r.resize(outline_r.shape[1])
-            #   eqm.time_slice[it].boundary.outline.z.resize(outline_z.shape[1])
-            #   eqm.time_slice[it].boundary.outline.r = outline_r[it]  #1D
-            #   eqm.time_slice[it].boundary.outline.z = outline_z[it]
+
+            ntheta = 300 #128 #TODO
+            rbound, ybound = self.convert_moments_bdry(ntheta, it)
+            self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
+            self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
+
             #if len(psi_sepx) >it:
             #    eqm.time_slice[it].boundary_separatrix.psi = psi_sepx[it]
 
@@ -251,7 +350,6 @@ class imas_equilibrium:
             self.im.fill_data(prof2.grid.dim1, rgrid, ind=it, name='rgrid')
             self.im.fill_data(prof2.grid.dim2, zgrid, ind=it, name='zgrid')
 
-
             psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
             if self.im.is_valid(rgrid, zgrid, ind=it, name='grid') and self.im.is_valid(psirz, name='prirz'):
                 prof2.psi.resize((nr, nz))
@@ -272,81 +370,17 @@ class imas_equilibrium:
             coord = eqm.time_slice[it].coordinate_system
 
 
-
-
-
             #201 ??
             ntheta = 201
+
             #TODO check dimension of fill data
-
-            dtheta = 2*pi/ntheta
-            theta = np.array([it*dtheta for it in range(ntheta)])
-            self.im.fill_data(coord.grid.dim1, coord_xb, name="invgridr", ind=it)
-            self.im.fill_data(coord.grid.dim2, theta, name="invgrid_theta")
-
-            ncoord_xb = coord_xb.shape[1]
-            rcos = np.zeros(shape=(nmoments, ncoord_xb))
-            rsin = np.zeros(shape=(nmoments, ncoord_xb))
-            ycos = np.zeros(shape=(nmoments, ncoord_xb))
-            ysin = np.zeros(shape=(nmoments, ncoord_xb))
-
-            #RMC00(TIME3, XB); CM; 0TH ASYM R MOMENT
-            rcos[0] = self.im.get_ncvar(f'RMC00', ind=it, scale=cm2m)
-            ycos[0] = self.im.get_ncvar(f'YMC00', ind=it, scale=cm2m)
-
-            for k in range(1, nmoments):
-               kn = f'0{k}' if k<10 else k
-               #RMCn(TIME3, XB); CM ; nth ASYM R COS MOMENT
-               rcos[k] = self.im.get_ncvar(f'RMC{kn}', ind=it, scale=cm2m)
-               rsin[k] = self.im.get_ncvar(f'RMS{kn}', ind=it, scale=cm2m)
-               ycos[k] = self.im.get_ncvar(f'YMC{kn}', ind=it, scale=cm2m)
-               ysin[k] = self.im.get_ncvar(f'YMS{kn}', ind=it, scale=cm2m)
-
-            rsurf = np.zeros(shape=(ncoord_xb, ntheta))
-            ysurf = np.zeros(shape=(ncoord_xb, ntheta))
-
-            '''
-            for j in range(ncoord_xb):
-               for ith in range(ntheta):
-                  th = ith*dtheta
-                  for k in range(nmoments):
-                     rsurf[j,ith] += rcos[k,j]*np.cos(k*th) + rsin[k,j]*np.sin(k*th)
-                     ysurf[j,ith] += ycos[k,j]*np.cos(k*th) + ysin[k,j]*np.sin(k*th)
-                  #if it==0 and j==50:
-                  #   print('>>', j,ith, rsurf[j,ith], ' == ', ysurf[j,ith])
-            '''
-
-
-            for j in range(ncoord_xb):
-               rsurfj = np.zeros(ntheta)
-               ysurfj = np.zeros(ntheta)
-               for ith in range(ntheta):
-                  th = ith*dtheta
-
-                  snthtk = np.zeros(nmoments)
-                  csthtk = np.zeros(nmoments)
-                  snthtk[0] = np.sin(th)
-                  csthtk[0] = np.cos(th)
-                  rsurfj[ith] = rcos[0,j]
-                  ysurfj[ith] = ycos[0,j]
-                  for k in range(1,nmoments):
-                     snthtk[k] = snthtk[k-1]*csthtk[0] + csthtk[k-1]*snthtk[0] #np.sin(k*th)
-                     csthtk[k] = csthtk[k-1]*csthtk[0] - snthtk[k-1]*snthtk[0] #np.cos(k*th)
-
-                     rsurfj[ith] = rsurfj[ith] + rcos[k,j]*csthtk[k] + rsin[k,j]*snthtk[k]
-                     ysurfj[ith] = ysurfj[ith] + ycos[k,j]*csthtk[k] + ysin[k,j]*snthtk[k]
-                     #if it==0 and j==0 and k==0:
-                     #   print(' ...', j,ith,k,th,  rcos[k,j],csthtk[k],  rsin[k,j], snthtk[k], rsurfj[ith] )
-
-                  #if it==0 and j==0:
-                  #   print('>>', j,ith, rsurfj[ith], ' == ', ysurfj[ith], snthtk[0], csthtk[0])
-
-               rsurf[j] = rsurfj
-               ysurf[j] = ysurfj
-
-
+            rsurf, ysurf, theta_grid = self.convert_moments(ncoord_xb, ntheta, it)
 
             #fill data
+            coord.grid_type.name = "inverse"
+            coord.grid_type.index = 2
+            self.im.fill_data(coord.grid.dim1, coord_xb, ind=it, name='grid_r')
+            self.im.fill_data(coord.grid.dim2, theta_grid, name='grid_theta')
             coord.r.resize(ncoord_xb, ntheta)
             if self.im.is_valid(rsurf):
                coord.r = rsurf
