@@ -69,12 +69,12 @@ class nc2imas(imas_connection, netcdf_connection):
               return False
           elif isinstance(var, np.ndarray):
               sh = var.shape
-              if sh[0]<ii or (len(sh)>1 and sh[1]==0):
+              if sh[0]<ii or (len(sh)>1 and sh[1]==0) or not np.any(var):
                   if ind==1:
                       self.logger.info(f'{name} shape {sh}')
                   return False
           elif isinstance(var, (list, tuple, set)):
-              if len(var)<ii:
+              if len(var)<ii or not any(var):
                   if ind==1:
                       self.logger.info(f'{name} len: {len(var)}')
                   return False
@@ -186,12 +186,11 @@ class nc2imas(imas_connection, netcdf_connection):
     def fill_data_nc(self, ids, var:str, mult:float=None, ind:int=-1, resize:bool=True):
         if not isinstance(var, str):
             raise ValueError(f'variable {var} is not string')
-        dat = self.get_ncvar(var, ind)
+        dat = self.get_ncvar(var, ind=ind)
         if not self.is_valid(dat):
             if ind==0:
                 self.logger.info(f'{var} not-found')
         else:
-            dat = dat[ind] if ind>= 0 else dat
             if resize:
                 ids.resize(len(dat), refcheck=False)
             if mult is not None:
