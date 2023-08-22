@@ -82,8 +82,10 @@ class imas_equilibrium:
 
     #to be called per time frame
     def convert_moments_bdry(self, ntheta:int, time:int):
-         if not self.im.is_valid(self.rmcb):
+         if not self.im.is_valid(self.rmcb, self.ymcb, ind=time):
             self.get_moments_bdry()
+         if not self.im.is_valid(self.rmcb, self.ymcb, ind=time):
+            return [], []
 
          if ntheta<1 or time<0:
             raise Exception(f'convert_moments_bdry: ntheta {ntheta} time {time}')
@@ -105,6 +107,20 @@ class imas_equilibrium:
          rsurf[ntheta-1] = rsurf[0]
          ysurf[ntheta-1] = ysurf[0]
          return rsurf, ysurf
+
+    def boundary_geom_minor(self, rsurf, ysurf):
+         minor = -1
+         geom_rz = [0,0]
+         try:
+            minr = np.min(rsurf)
+            maxr = np.max(rsurf)
+            minz = np.min(ysurf)
+            maxz = np.max(ysurf)
+            geom_rz = [(minr+maxr)/2.0, (minz+maxz)/2.0]
+            minor = (maxr-minr)/2.0
+         except:
+            self.im.logger.info('plasma boundary invalid')
+         return geom_rz, minor
 
 
     def create_ids(self):
@@ -301,16 +317,20 @@ class imas_equilibrium:
             if len(emhd) >it:
                 eqm.time_slice[it].global_quantities.energy_mhd = emhd[it].astype(float)
 
-            #if len(rminor) > it:
-            #    eqm.time_slice[it].boundary.minor_radius = rminor[it]
-
-            ntheta = 300 #128 #TODO
+            ntheta = 128 #TODO
             rbound, ybound = self.convert_moments_bdry(ntheta, it)
             self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
+            geom_rz, minor = self.boundary_geom_minor(rbound, ybound)
+            if minor > 0:
+               eqm.time_slice[it].boundary.geometric_axis.r = geom_rz[0]
+               eqm.time_slice[it].boundary.geometric_axis.z = geom_rz[1]
+               eqm.time_slice[it].boundary.minor_radius = minor
+
             #if len(psi_sepx) >it:
             #    eqm.time_slice[it].boundary_separatrix.psi = psi_sepx[it]
+
 
             if len(triangb) > it:
                 eqm.time_slice[it].boundary.triangularity = triangb[it].astype(float)

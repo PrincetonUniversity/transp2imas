@@ -16,7 +16,7 @@ class ion_data(atom_base):
 
     def is_valid(self):
         return (self.a>0. and self.atoms_n>0 and
-               self.z_ion>0 and len(self.dens)>0 )
+               self.z_n>0 and self.z_ion>0 and len(self.dens)>0 )
 
 class neutrals_data(atom_base):
      def __init__(self, symb):
@@ -99,6 +99,8 @@ class imas_core_profiles:
             ion.z_ion = zion.astype(float)
         if ion.is_valid():
             ions.append(ion)
+        else:
+            self.logger.info(f'impurity ion: {label}  => {symb} : Discarded')
         return ions
 
     #volume/wall neutral density
@@ -384,23 +386,6 @@ class imas_core_profiles:
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal, ion.vel_tor, ind=i, name='vel_tor')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal, ion.vel_pol, ind=i, name='vel_pol')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.parallel, ion.vel_par, ind=i, name='vel_par')
-
-          #neutrals
-          n_neutrals = len(neutrals)
-          cp.profiles_1d[i].neutral.resize(n_neutrals)
-          if i==0:
-              self.logger.info(f'number of neutrals {n_neutrals}')
-          for ij in range(n_neutrals):
-              neut = neutrals[ij]
-              if i==0:
-                  self.logger.info(f'* filling neutral {neut.label}')
-              cp.profiles_1d[i].neutral[ij].label = neut.label
-              if neut.a > 0. and neut.z_n > 0. and neut.atoms_n > 0:
-                  cp.profiles_1d[i].neutral[ij].element.resize(1)
-                  cp.profiles_1d[i].neutral[ij].element[0].a = neut.a
-                  cp.profiles_1d[i].neutral[ij].element[0].z_n = neut.z_n
-                  cp.profiles_1d[i].neutral[ij].element[0].atoms_n = neut.atoms_n
-                  self.im.fill_data(cp.profiles_1d[i].neutral[ij].density, neut.dens, ind=i, name='dens')
 
           #
           self.im.fill_data_nc(cp.profiles_1d[i].t_i_average, 'TI', ind=i)
