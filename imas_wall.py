@@ -11,8 +11,30 @@ class imas_wall:
     def valid(self, *vars_) -> bool:
         return self.im.is_valid(vars_)
 
+    #TODO add selection from unit
+    def remove_duplicates(self, limitr, limitz):
+      nr = len(limitr)
+      dinds = []
+      for i in range(nr):
+         ii = nr-1-i
+         xv = limitr[ii]
+         yv = limitz[ii]
+         for j in range(ii):
+            if (xv==limitr[j] and yv==limitz[j]):
+               dinds.append(ii)
+      limr = []
+      limz = []
+      for i in range(nr):
+         if i in dinds:
+            self.im.logger.info(f'removing duplicate: {i} {limitr[i]} {limitz[i]}')
+            continue
+         limr.append(limitr[i])
+         limz.append(limitz[i])
+      return limr, limz
+
 
     def split_limiters(self, limitr, limitz):
+        limitr, limitz = self.remove_duplicates(limitr, limitz)
         #split limiter into upper and lower parts
         #left to right, and clockwise.
         #2nd and 3rd elements are either in increasing or decreasing order
@@ -43,21 +65,21 @@ class imas_wall:
                 #exclude limitr[mid] and beyond
                 lim_ur = np.flip(limitr[:mid])
                 lim_uz = np.flip(limitz[:mid])
-                lim_lr = np.flip(limitr[mid:])
-                lim_lz = np.flip(limitz[mid:])
+                lim_lr = limitr[mid:]
+                lim_lz = limitz[mid:]
                 self.logger.info(f'counter clockwise limiters(start from right), split into units @ {mid}')
             elif l2r==-1 and zz==-1 and limitz[i]>0:
                 mid = i
                 lim_lr = limitr[:mid]
                 lim_lz = limitz[:mid]
                 lim_ur = limitr[mid:]
-                lim_uz = lmitz[mid:]
+                lim_uz = limitz[mid:]
                 self.logger.info(f'clockwise limiter(start from right), split into units @ {mid}')
             if mid>0:
                 break
         if mid<1 or len(lim_ur)<1 or len(lim_lr)<1:
             raise AssertionError(f'Limiters array couldnot be split')
-        return lim_ur, lim_uz, lim_lr, lim_lz
+        return np.array(lim_ur), np.array(lim_uz), np.array(lim_lr), np.array(lim_lz)
 
     def create_ids(self):
         self.im.logger.info('\nwall')
@@ -95,6 +117,9 @@ class imas_wall:
 
         #split limiter into upper and lower parts
         lim_ur, lim_uz, lim_lr, lim_lz = self.split_limiters(limitr, limitz)
+
+        print(lim_ur, lim_lr)
+        print(lim_uz, lim_lz)
         nwall_up = len(lim_ur)
         nwall_low = len(lim_lr)
         self.logger.info(f'times {ntimes} nlimiters {nwall_up} {nwall_low}')
