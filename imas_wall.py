@@ -67,14 +67,16 @@ class imas_wall:
         for i in range(0,len(xup),2):
             n = xup[i]
             m = xup[i+1]+1 if len(xup)>i+1 else len(limitr)
-            lim_ur = lim_ur + limitr[n:m]
-            lim_uz = lim_uz + limitz[n:m]
+            lim_ur = limitr[n:m] + lim_ur
+            lim_uz = limitz[n:m] + lim_uz
         for i in range(0,len(xlow),2):
             n = xlow[i]
             m = xlow[i+1]+1 if len(xlow)>i+1 else len(limitr)
             lim_lr = lim_lr + limitr[n:m]
             lim_lz = lim_lz + limitz[n:m]
-        return np.array(lim_ur), np.array(lim_uz), np.array(lim_lr), np.array(lim_lz)
+        lim_lr = np.flip(lim_lr)
+        lim_lz = np.flip(lim_lz)
+        return np.array(lim_ur), np.array(lim_uz), lim_lr, lim_lz
 
 
     def split_limiters_(self, limitr, limitz):
