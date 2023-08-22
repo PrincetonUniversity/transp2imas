@@ -52,14 +52,22 @@ python3 -m venv  python_venv
 (Now we can cd  to anywhere we want)
 source ~/python_venv/bin/activate
 pip install --upgrade pip
-pip install flake8 matplotlib netCDF4 f90nml numpy  PyYAML scipy utils
+pip install flake8 matplotlib netCDF4 f90nml numpy  PyYAML scipy
 ```
 
 To run convert script,
 
 ```
+git clone transp2imas from github (git@github.com:PrincetonUniversity/transp2imas.git).
+cd transp2imas
+dir=`pwd`
+#Add the repo path to PYTHONPATH.
+export PYTHONPATH=$PYTHONPATH:$dir
+cd <work_directory>
+
 source <python_venv>/bin/activate
 .   env_gcc.txt  (or . env_intel.txt)
+
 python convert.py  -i <runid> [ -b MDS/HDF -r <ids_run_num> -new ]
 # runid is TRANSP runid; MDS/HDF for backend
 #  <runid>.CDF is the CDF file required.

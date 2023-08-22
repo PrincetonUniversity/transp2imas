@@ -14,7 +14,7 @@ import logging
 from netcdf_class import netcdf_connection
 from imas_class import imas_connection
 from atoms_class import *
-from utils import *
+from utilities import *
 
 
 class LineNumber:
@@ -269,7 +269,7 @@ class nc2imas(imas_connection, netcdf_connection):
         self.load_namelist()
 
 
-    #TODO move to utils
+    #TODO move to utilities
     def parse_number(self, ss:str, tp):
         if not isinstance(ss, str):
             return tp(ss)

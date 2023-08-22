@@ -12,7 +12,7 @@ if same:
     raise Exception('please use python3 or activate venv')
 
 from nc2imas import nc2imas, get_args
-from utils import *
+from utilities import *
 from imas_summary import *
 from imas_equilibrium import *
 from imas_wall import *
