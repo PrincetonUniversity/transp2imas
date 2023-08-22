@@ -14,6 +14,10 @@ class imas_wall:
     #TODO add selection from unit
     def remove_duplicates(self, limitr, limitz):
       nr = len(limitr)
+      limr, limz = [], []
+      if nr<2:
+         self.im.logger.info(f'insufficient limiter segments: # {nr}')
+         return limr, limz
       dinds = []
       for i in range(nr):
          ii = nr-1-i
@@ -22,8 +26,7 @@ class imas_wall:
          for j in range(ii):
             if (xv==limitr[j] and yv==limitz[j]):
                dinds.append(ii)
-      limr = []
-      limz = []
+
       for i in range(nr):
          if i in dinds:
             self.im.logger.info(f'removing duplicate: {i} {limitr[i]} {limitz[i]}')
@@ -32,8 +35,49 @@ class imas_wall:
          limz.append(limitz[i])
       return limr, limz
 
-
     def split_limiters(self, limitr, limitz):
+        limitr, limitz = self.remove_duplicates(limitr, limitz)
+        nr = len(limitr)
+        lim_ur, lim_uz, lim_lr, lim_lz = [], [], [], []
+        if nr<2:
+            self.im.logger.info(f'insufficient limiter segments nr {nr}')
+            return lim_ur, lim_uz, lim_lr, lim_lz
+
+        xup = []
+        xlow = []
+        xz1 = limitz[0]
+        pz = 1 if xz1>0 else -1
+        if xz1>0:
+          xup.append(0)
+        else:
+          xlow.append(0)
+
+        for i in range(1, nr):
+            xr = limitr[i]
+            xz = limitz[i]
+            if pz>0 and xz<=0:
+               xup.append(i-1)
+               xlow.append(i)
+            if pz<0 and xz>0:
+               xlow.append(i-1)
+               xup.append(i)
+            pz = 1 if xz>0 else -1
+
+        #make upper and lower segments seperately
+        for i in range(0,len(xup),2):
+            n = xup[i]
+            m = xup[i+1]+1 if len(xup)>i+1 else len(limitr)
+            lim_ur = lim_ur + limitr[n:m]
+            lim_uz = lim_uz + limitz[n:m]
+        for i in range(0,len(xlow),2):
+            n = xlow[i]
+            m = xlow[i+1]+1 if len(xlow)>i+1 else len(limitr)
+            lim_lr = lim_lr + limitr[n:m]
+            lim_lz = lim_lz + limitz[n:m]
+        return np.array(lim_ur), np.array(lim_uz), np.array(lim_lr), np.array(lim_lz)
+
+
+    def split_limiters_(self, limitr, limitz):
         limitr, limitz = self.remove_duplicates(limitr, limitz)
         #split limiter into upper and lower parts
         #left to right, and clockwise.
@@ -103,10 +147,7 @@ class imas_wall:
         ilim = self.im.get_ncvar('ILIM')
 
         self.logger.info(f'limitr {len(limitr)} limitz {len(limitz)} ilim {len(ilim)}')
-        if self.im.is_valid(limitr, limitz, ilim):
-            self.logger.debug(f'limitr {limitr[0]}')
-            self.logger.debug(f'limitz {limitz[0]}')
-        else:
+        if not self.im.is_valid(limitr, limitz, ilim):
             self.logger.debug('Error writing Wall')
             return
 
@@ -117,11 +158,13 @@ class imas_wall:
 
         #split limiter into upper and lower parts
         lim_ur, lim_uz, lim_lr, lim_lz = self.split_limiters(limitr, limitz)
-
-        print(lim_ur, lim_lr)
-        print(lim_uz, lim_lz)
         nwall_up = len(lim_ur)
         nwall_low = len(lim_lr)
+
+        if nwall_up<2 or nwall_low<2:
+            self.logger.info(f'too few limiter segments: upper: {nwall_up} lower: {nwall_low}')
+            return
+
         self.logger.info(f'times {ntimes} nlimiters {nwall_up} {nwall_low}')
 
         wall.description_2d.resize(1)
