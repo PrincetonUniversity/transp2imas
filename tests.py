@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 import imas
 import MDSplus
 from plotter import *
-from utils import *
+from utilities import *
 
 
 
