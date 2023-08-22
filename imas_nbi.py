@@ -12,6 +12,7 @@ class imas_nbi:
         #scalar time
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)
+        # there are no profiles in this IDS. We do not need TIME3
         timesp = self.im.get_ncvar('TIME3')
         ntimep = len(timesc)
         self.im.checkErrExit(timesc, timesp)
@@ -67,12 +68,17 @@ class imas_nbi:
             #self.im.fill_data_nc(nbu.beam_power_fraction.data[1],
             #self.im.fill_data_nc(nbu.beam_power_fraction.data[2],
 
+            # TRANSP does not have this information. Remove these lines.
             #beam_current_fraction
             nbu.beam_current_fraction.data.resize((3, ntimes))
             self.im.fill_data(nbu.beam_current_fraction.time, timesc)
             #for j in range(3):
                 #self.im.fill_data_nc(nbu.beam_current_fraction.data[j],
 
+
+            # geometry should be defined in teh machine description
+            # it should not be taken from the TRANSP namelist
+            # remove code below this line
             #APERTURE
             nbu.aperture.resize(1)
             #beam aperture shape
@@ -83,6 +89,11 @@ class imas_nbi:
             #see: sharepoint.iter.org ... nbi.html
             # (x1,x2,x3)=(e1,e2,e3); e1(X,Y,Z) https://.. utilities/detector_aperture_coordinates.svg
 
+            # remove everything above this line
+            # fmp - we should not write the geometry of the beam from the namelist.
+            # These definitions are specific to NUBEAM and not to generic NBI geometry
+            # remove everything below this line ---------------------
+            
             #CENTER of 1st aperture ?
             #XRAPOFFA : horizontal offset of beam ctr rel. to ctr of aperture
             #dist of ctr of beam 1st aperture from midplane. Add  XRAPOFFA, XZAPOFFA ?
@@ -107,12 +118,19 @@ class imas_nbi:
             #nbu.aperture[0].x3_unit_vector.x
             #nbu.aperture[0].x3_unit_vector.y
             #nbu.aperture[0].x3_unit_vector.z
+
+            # remove everything above this line -------------------------------
+
+            # the following quantities should be taken from the machine database.
+            # There is no guarantee that TRANSP has the correct information.
+            # remove code below this line
             x1_width = self.im.get_namelist_var(f'RAPEDGA({ib})', float, cm2m)
             if x1_width is not None:
                 nbu.aperture[0].x1_width = x1_width
             x2_width = self.im.get_namelist_var(f'XZPEDGA({ib})', float, cm2m)
             if x2_width is not None:
                 nbu.aperture[0].x2_width = x2_width
+            # remove code above this line
 
         if nunits > 0:
             nbi = self.im.fill_properties(nbi)
