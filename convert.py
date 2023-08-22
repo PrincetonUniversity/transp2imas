@@ -4,13 +4,6 @@ import os
 import sys
 import numpy as np
 
-try:
-    same = (sys.prefix == sys.base_prefix)
-except:
-    same = 1
-if same:
-    raise Exception('please use python3 or activate venv')
-
 from nc2imas import nc2imas, get_args
 from utilities import *
 from imas_summary import *
