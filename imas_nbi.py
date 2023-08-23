@@ -23,8 +23,6 @@ class imas_nbi:
         except:
             self.im.logger.info(f'beam_power_fraction null: {stn} len(pinj) {len(pinj)}')
 
-
-        print(f'{stn} pdata:', pdata)
         return pdata
 
     def create_ids(self):
@@ -78,7 +76,7 @@ class imas_nbi:
             self.im.fill_data(nbu.power_launched.time, timesc)
 
             #beam_power_fraction
-            #PINJm_E{1,2,3} = EINJn_E{1,2,3} * PINJ/(EINJn_E1 + EINJn_E2 + EINJn_E3)
+            #PINJm_E{1,2,3} = EINJn_E{1,2,3} * PINJn/(EINJn_E1 + EINJn_E2 + EINJn_E3)
             pdata = self.get_beam_powerfrac(stn, ntimes)
             if self.im.is_valid(pdata):
                nbu.beam_power_fraction.data.resize(pdata.shape)
