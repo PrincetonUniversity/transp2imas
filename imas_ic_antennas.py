@@ -28,6 +28,8 @@ class imas_ic_antennas:
         ica.time = timesc
 
         #ref point to define the poloidal angle, e.g. geometrical centre of vacuum vessel
+        # this should come from the machine description.
+        # The values written here (RAXIS and YAXIS) are not the coordinates of the centre of the vacuum vessel. Please remove these lines
         raxis = self.im.get_ncvar('RAXIS', cm2m)
         zaxis = self.im.get_ncvar('YAXIS', cm2m)
         if self.im.is_valid(raxis, zaxis):
@@ -50,6 +52,8 @@ class imas_ic_antennas:
             si = 0 # only 1 strap
 
             # don't fill geometry from namelist
+            # remove all geometry: RGEOANT, RFARTR, RGEO, YGEO
+            # remove name and identifier. These need to come from the machine database
             if False:
               mod.strap.resize(1)
               #dist to Faraday shield
@@ -75,13 +79,18 @@ class imas_ic_antennas:
             self.im.fill_data(mod.frequency.time, timesc)
             self.im.fill_data_nc(mod.frequency.data, f'FREQA{sta}')
 
-            #power launced
+            #power launched
             self.im.fill_data(mod.power_launched.time, timesc)
             self.im.fill_data_nc(mod.power_launched.data, f'PICHA{sta}')
 
             #power_forward. Forward power arriving to the back of the antenna
-
-
+            # in TRANSP there is only launched power, but users fill the UFILES with the forward power.
+            # when TRANSP runs the IC code, it assumes that injected power is the forward power. 
+            # we should not fill the power_forward from the CDF file.
+            
+            # please, remove this. Reflected power and forward power come from probe measurements in front of the antenna. 
+            # The values of power absorbed that come from TRANSP are calculated from the IC code, under specific assumptions
+            # we should not fill the reflected power from TRANSP
             #power_reflected = launched - absorbed
             plaunch = self.im.get_ncvar(f'PICHA{sta}')
             pabs = self.im.get_ncvar(f'RFPWRAB{sta}')
@@ -89,11 +98,6 @@ class imas_ic_antennas:
                 prefl = plaunch - pabs
                 self.im.fill_data(ant.power_reflected.data, prefl)
                 self.im.fill_data(ant.power_reflected.time, timesc)
-
-
-            #surface_current on the antenna straps and on passive components, for every time slice
-
-            #module.  Set of antenna modules (each module is fed by a single transmission line)
 
 
         if nant > 0:
