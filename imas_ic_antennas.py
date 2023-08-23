@@ -11,7 +11,6 @@ class imas_ic_antennas:
     def create_ids(self):
         self.im.logger.info('\nic_antennas')
         ica = self.im.ids.ic_antennas
-        cm2m = 0.01
         sgn = -1 if self.im.iter_ else 1
 
         #scalar time
@@ -51,9 +50,11 @@ class imas_ic_antennas:
             #power_forward. Forward power arriving to the back of the antenna
             # in TRANSP there is only launched power, but users fill the UFILES with the forward power.
             # when TRANSP runs the IC code, it assumes that injected power is the forward power. 
-            # we should not fill the power_forward from the CDF file.
-            
+            self.im.fill_data(mod.power_forward.time, timesc)
+            self.im.fill_data_nc(mod.power_forward.data, f'PICHA{sta}')
+
             #power_reflected = launched - absorbed
+            # I recommend removing this code (see comments made to the LH power)
             plaunch = self.im.get_ncvar(f'PICHA{sta}')
             pabs = self.im.get_ncvar(f'RFPWRAB{sta}')
             if self.im.is_valid(plaunch, pabs):
