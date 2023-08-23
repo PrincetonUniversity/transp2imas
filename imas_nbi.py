@@ -56,23 +56,27 @@ class imas_nbi:
             self.im.fill_data_nc(nbu.power_launched.data, f'PINJ{stn}')
             self.im.fill_data(nbu.power_launched.time, timesc)
 
+
+            # please, ask Marina how this should be handled.
+            # TRANSP outputs the energy at full, half and 1/3 of energy
+            # It does not output the fraction of power
+            # the fraction can be indicated in teh TRANSP namelist, but some namelists do not have it setup.
+            # For example, the DIII-D namelists generated with OMFIT have FFULLA=0, FHALFA=0
+            # so the fraction must be taken as the default value in TRANSP (1.0 for full fraction)
+            # The namelists from JET have these setup
+            # For this reason, we cannot take the fraction from the namelist either.
+            # one way of doing this is to use the values in the namelist if they are >0
+            # and assume that all power is at full energy if the value of FFULLA=0
+            # please, note that the IDS wants a fraction value, not the actual power, 
+            # so I will need to change the trdat_ids.f90 subroutine to be consistent with what TRANSP expects 
+            # (whatever this is)
             #beam_power_fraction
             nbu.beam_power_fraction.data.resize((3, ntimes))
             self.im.fill_data(nbu.beam_power_fraction.time, timesc)
             self.im.fill_data_nc(nbu.beam_power_fraction.data[0], f'PINJ{stn}', resize=False)
 
-            #energy/duration.  nml(TBOFFA - TBONA) ?
             #self.im.fill_data_nc(nbu.beam_power_fraction.data[1],
             #self.im.fill_data_nc(nbu.beam_power_fraction.data[2],
-
-            # geometry should be defined in teh machine description
-            # it should not be taken from the TRANSP namelist
-
-            # fmp - we should not write the geometry of the beam from the namelist.
-            # These definitions are specific to NUBEAM and not to generic NBI geometry
-
-            # the following quantities should be taken from the machine database.
-            # There is no guarantee that TRANSP has the correct information.
 
         if nunits > 0:
             nbi = self.im.fill_properties(nbi)
