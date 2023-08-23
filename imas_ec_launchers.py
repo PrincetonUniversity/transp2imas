@@ -14,17 +14,6 @@ class imas_ec_launchers:
         ec = self.im.ids.ec_launchers
         cm2m = 0.01
 
-        # all geometry that is taken from the TRANSP namelist needs to be removed from this file.
-        # the geometry of the EC system should come from the machine description database
-        #get from namelist
-        #launching_position r. major radius of source. From namelist
-        src_r = self.im.get_namelist_vars('XECECH?', float, cm2m)
-        # height above midplane of source
-        src_z = self.im.get_namelist_vars('ZECECH?', float, cm2m)
-        #Phi location of source (degrees)
-        src_phi = self.im.get_namelist_vars('PHECECH?', float, constants.pi/180.0)
-        # remove code above this line (X, Z, phi)
-
         freq = self.im.get_namelist_vars('FREQECH?', float)
 
         #scalar time
@@ -57,19 +46,7 @@ class imas_ec_launchers:
             #O-mode ?
             ec.beam[i].mode = 1
 
-            # please, remove the geometry
-            #launching_position of source
-            if self.im.is_valid(src_r, src_z, src_phi, ind=i):
-                #r. major radius of source. XECECH in namelist
-                self.im.fill_data(ec.beam[i].launching_position.r, src_r[i])
-                # height above midplane of source. ZECECH
-                self.im.fill_data(ec.beam[i].launching_position.z, src_z[i])
-                #Phi location of source (degrees). PHECECH
-                self.im.fill_data(ec.beam[i].launching_position.phi, src_phi[i])
-
-            #ec.beam[i].launching_position.r_limit_min = r_limit_min
-            #ec.beam[i].launching_position.r_limit_max = r_limit_max
-
+            #ec.beam[i].launching_position.
 
             # fmp needs to check the code below for a number of cases with different B, I geometry
             #steering_angle_tor [rad]. Azimuthal launch angle
