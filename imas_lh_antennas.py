@@ -52,7 +52,7 @@ class imas_lh_antennas:
             self.im.fill_data(lha.antenna[i].power_forward.time, timesc)
             self.im.fill_data_nc(lha.antenna[i].power_forward.data, f'PLHANT{sta}')
 
-            #power_reflected = launched - absorbed
+            #power_reflected
             # TRANSP calculates this from the RF code. 
             # we need to be careful here. The reflected power (and the forward power) 
             # are actually measured in experiments with probes in front of the antenna. 
@@ -60,17 +60,7 @@ class imas_lh_antennas:
             # In fact, the definition of reflected power in TRANSP is incorrect, at least for the LH.
             # What TRANSP defines as reflected power, by taking the difference between injected and absorbed, 
             # is not the reflected power. It is what is left unabsorbed from the ray-tracing code. 
-            # I recommend to remove the code below
-            plaunch = self.im.get_ncvar(f'PLHANT{sta}')
-            self.logger.info(f'Ant: {ia} PLHABS{sta}')
-            pabs = self.im.get_ncvar(f'PLHABS{sta}')
-            if self.im.is_valid(plaunch, pabs):
-                prefl = plaunch - pabs
-                self.im.fill_data(lha.antenna[i].power_reflected.data, prefl)
-                self.im.fill_data(lha.antenna[i].power_reflected.time, timesc)
-            else:
-                self.logger.info(f'Ant: {ia} Error: power_reflected. invalid: plaunch or pabs')
-
+            # It is incorrect to fill: power_reflected = launched - absorbed
 
         if nant > 0:
             #power launched
