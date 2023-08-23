@@ -17,24 +17,13 @@ class imas_lh_antennas:
         #scalar time
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)
-        timep = self.im.get_ncvar('TIME3')
-        ntimep = len(timep)
-        self.im.checkErrExit(timesc, timep)
+        self.im.checkErrExit(timesc)
 
         lha = self.im.fill_properties(lha)
         self.im.fill_code_properties(lha)
         lha.ids_properties.homogeneous_time = 1
         lha.time.resize(ntimes)
         lha.time = timesc
-
-        # please, remove the R, Y below, which is incorrect. RAXIS and YAXIS define the magnetic axis,
-        # not the geometrical center of the vacuum vessel. This needs to be taken from the machine description database
-        #ref point to define the poloidal angle, e.g. geometrical centre of vacuum vessel
-        raxis = self.im.get_ncvar('RAXIS', cm2m)
-        zaxis = self.im.get_ncvar('YAXIS', cm2m)
-        if self.im.is_valid(raxis, zaxis):
-            lha.reference_point.r = raxis[0].astype(float)
-            lha.reference_point.z = zaxis[0].astype(float)
 
         nant = self.im.get_var_names_re('PLHANT?', nd1=1, nd2=2, length=True)
         self.logger.info(f'lh antenna {nant}')
@@ -43,20 +32,11 @@ class imas_lh_antennas:
         for i in range(nant):
             ia = i+1
             sta = f'{ia}'
-             # name and identifier of the LH antenna should come from the machine description.
-             # Please remove these fields
-
-            lha.antenna[i].name = f'LH Antenna{sta}'
-            lha.antenna[i].identifier = f'LH Antenna{sta}'
 
             #frequency
             freq = self.im.get_namelist_var('FREQLH', float, ind=ia-1)
             if self.im.is_valid(freq):
                 lha.antenna[i].frequency = freq
-
-            # this variable is specific for GENRAY. Please, remove it. The position should come from the machine description IDS.
-            #position
-            pos = self.im.get_namelist_var('RHOPSI0LH', float, ind=ia-1)
 
             #power launced
             self.logger.info(f'Ant: {ia} PLHANT{ia}')
