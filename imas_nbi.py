@@ -6,6 +6,27 @@ class imas_nbi:
         self.logger = ncimas.logger
         self.create_ids()
 
+    def get_beam_powerfrac(self, stn:str, ntimes:int):
+        #stn : beam number in string format
+        pdata = []
+        try:
+            pinj = self.im.get_ncvar(f'PINJ{stn}')
+            einjn = np.zeros(shape=(3, ntimes), dtype=float)
+            einjn[0] = self.im.get_ncvar(f'EINJ{stn}_E1')
+            einjn[1] = self.im.get_ncvar(f'EINJ{stn}_E2')
+            einjn[2] = self.im.get_ncvar(f'EINJ{stn}_E3')
+            einj = np.sum(einjn, axis=0)
+            pdata = np.zeros(shape=einjn.shape, dtype=float)
+            for i in range(3):
+               einjf = self.im.operate_arrays(einjn[i], '/', einj)
+               pdata[i] = self.im.operate_arrays(pinj, '*', einjf)
+        except:
+            self.im.logger.info(f'beam_power_fraction null: {stn} len(pinj) {len(pinj)}')
+
+
+        print(f'{stn} pdata:', pdata)
+        return pdata
+
     def create_ids(self):
         self.im.logger.info('\nnbi')
         nbi = self.im.ids.nbi
@@ -56,27 +77,13 @@ class imas_nbi:
             self.im.fill_data_nc(nbu.power_launched.data, f'PINJ{stn}')
             self.im.fill_data(nbu.power_launched.time, timesc)
 
-
-            # please, ask Marina how this should be handled.
-            # TRANSP outputs the energy at full, half and 1/3 of energy
-            # It does not output the fraction of power
-            # the fraction can be indicated in teh TRANSP namelist, but some namelists do not have it setup.
-            # For example, the DIII-D namelists generated with OMFIT have FFULLA=0, FHALFA=0
-            # so the fraction must be taken as the default value in TRANSP (1.0 for full fraction)
-            # The namelists from JET have these setup
-            # For this reason, we cannot take the fraction from the namelist either.
-            # one way of doing this is to use the values in the namelist if they are >0
-            # and assume that all power is at full energy if the value of FFULLA=0
-            # please, note that the IDS wants a fraction value, not the actual power, 
-            # so I will need to change the trdat_ids.f90 subroutine to be consistent with what TRANSP expects 
-            # (whatever this is)
             #beam_power_fraction
-            nbu.beam_power_fraction.data.resize((3, ntimes))
-            self.im.fill_data(nbu.beam_power_fraction.time, timesc)
-            self.im.fill_data_nc(nbu.beam_power_fraction.data[0], f'PINJ{stn}', resize=False)
-
-            #self.im.fill_data_nc(nbu.beam_power_fraction.data[1],
-            #self.im.fill_data_nc(nbu.beam_power_fraction.data[2],
+            #PINJm_E{1,2,3} = EINJn_E{1,2,3} * PINJ/(EINJn_E1 + EINJn_E2 + EINJn_E3)
+            pdata = self.get_beam_powerfrac(stn, ntimes)
+            if self.im.is_valid(pdata):
+               nbu.beam_power_fraction.data.resize(pdata.shape)
+               nbu.beam_power_fraction.data = pdata
+               self.im.fill_data(nbu.beam_power_fraction.time, timesc)
 
         if nunits > 0:
             nbi = self.im.fill_properties(nbi)
