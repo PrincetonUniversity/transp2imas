@@ -53,8 +53,6 @@ class imas_ic_antennas:
             self.im.fill_data(mod.power_forward.time, timesc)
             self.im.fill_data_nc(mod.power_forward.data, f'PICHA{sta}')
 
-            #power_reflected. Don't use launched - absorbed
-
         if nant > 0:
             #power launched
             self.im.fill_data(ica.power_launched.time, timesc)
