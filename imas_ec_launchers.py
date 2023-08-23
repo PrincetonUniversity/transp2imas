@@ -12,7 +12,6 @@ class imas_ec_launchers:
         self.im.logger.info('\nec_launchers')
 
         ec = self.im.ids.ec_launchers
-        cm2m = 0.01
 
         freq = self.im.get_namelist_vars('FREQECH?', float)
 
@@ -29,7 +28,6 @@ class imas_ec_launchers:
 
         nbeams = self.im.get_var_names_re('PECIN?', nd1=1, nd2=2, length=True)
         ec.beam.resize(nbeams)
-        #ec.latency =
 
         self.logger.info(f'#EC beams {nbeams}')
         for i in range(nbeams):
@@ -44,9 +42,7 @@ class imas_ec_launchers:
             self.im.fill_data(ec.beam[i].power_launched.time, timesc)
 
             #O-mode ?
-            ec.beam[i].mode = 1
-
-            #ec.beam[i].launching_position.
+#            ec.beam[i].mode = 1
 
             # fmp needs to check the code below for a number of cases with different B, I geometry
             #steering_angle_tor [rad]. Azimuthal launch angle
@@ -71,9 +67,6 @@ class imas_ec_launchers:
                 #angle = -(angle+90.0)*constants.pi/180.
                 self.im.fill_data(ec.beam[i].steering_angle_pol, angle)
 
-
-            #spot
-            #phase
         self.im.putdb_imas(ec)
 
 
