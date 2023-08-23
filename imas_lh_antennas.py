@@ -11,7 +11,6 @@ class imas_lh_antennas:
     def create_ids(self):
         self.im.logger.info('\nlh_antennas')
         lha = self.im.ids.lh_antennas
-        cm2m = 0.01
         sgn = -1 if self.im.iter_ else 1
 
         #scalar time
@@ -38,15 +37,27 @@ class imas_lh_antennas:
             if self.im.is_valid(freq):
                 lha.antenna[i].frequency = freq
 
-            #power launced
+            # TRANSP does not know the difference between launched and forward power.
+            # for consistency with what written in the CDF file documentation,
+            # What users give to TRANSP is usually the forward power,
+            # which TRANSP will interpret as generic input power
+            # we need to write the 'input' power that is in the CDF file to both the launched and forward power.
+            #power launched
             self.logger.info(f'Ant: {ia} PLHANT{ia}')
             self.im.fill_data(lha.antenna[i].power_launched.time, timesc)
             self.im.fill_data_nc(lha.antenna[i].power_launched.data, f'PLHANT{sta}')
 
             #power_forward. Forward power arriving to the back of the antenna
-
+            self.logger.info(f'Ant: {ia} PLHANT{ia}')
+            self.im.fill_data(lha.antenna[i].power_forward.time, timesc)
+            self.im.fill_data_nc(lha.antenna[i].power_forward.data, f'PLHANT{sta}')
 
             #power_reflected = launched - absorbed
+            # TRANSP calculates this from the RF code. 
+            # we need to be careful here. The reflected power (and the forward power) 
+            # are actually measured in experiments with probes in front of the antenna. 
+            # what we are writing here, calculated from RF codes, is inconsistent with what the IDS expect. 
+            # leaving this code here, for the time being, but I think it should be removed
             plaunch = self.im.get_ncvar(f'PLHANT{sta}')
             self.logger.info(f'Ant: {ia} PLHABS{sta}')
             pabs = self.im.get_ncvar(f'PLHABS{sta}')
@@ -56,10 +67,6 @@ class imas_lh_antennas:
                 self.im.fill_data(lha.antenna[i].power_reflected.time, timesc)
             else:
                 self.logger.info(f'Ant: {ia} Error: power_reflected. invalid: plaunch or pabs')
-
-            #surface_current on the antenna straps and on passive components, for every time slice
-
-            #module.  Set of antenna modules (each module is fed by a single transmission line)
 
 
         if nant > 0:
