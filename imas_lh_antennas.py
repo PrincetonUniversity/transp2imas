@@ -57,7 +57,10 @@ class imas_lh_antennas:
             # we need to be careful here. The reflected power (and the forward power) 
             # are actually measured in experiments with probes in front of the antenna. 
             # what we are writing here, calculated from RF codes, is inconsistent with what the IDS expect. 
-            # leaving this code here, for the time being, but I think it should be removed
+            # In fact, the definition of reflected power in TRANSP is incorrect, at least for the LH.
+            # What TRANSP defines as reflected power, by taking the difference between injected and absorbed, 
+            # is not the reflected power. It is what is left unabsorbed from the ray-tracing code. 
+            # I recommend to remove the code below
             plaunch = self.im.get_ncvar(f'PLHANT{sta}')
             self.logger.info(f'Ant: {ia} PLHABS{sta}')
             pabs = self.im.get_ncvar(f'PLHABS{sta}')
