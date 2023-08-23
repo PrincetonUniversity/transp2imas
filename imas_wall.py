@@ -54,6 +54,8 @@ class imas_wall:
         # we use only 1 units, because TRANSP stores coordinates of limiter as a closed contour.
         # TRANSP has duplicate first and last point, we do not write the last point in IDS
         wall.description_2d[0].limiter.unit[0].closed = 1
+        wall.description_2d[0].limiter.unit[0].outline.r.resize(nlim-1)
+        wall.description_2d[0].limiter.unit[0].outline.z.resize(nlim-1)
         wall.description_2d[0].limiter.unit[0].outline.r = limitr[0:nlim-1]
         wall.description_2d[0].limiter.unit[0].outline.z = limitz[0:nlim-1]
  
