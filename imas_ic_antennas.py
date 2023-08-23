@@ -53,15 +53,7 @@ class imas_ic_antennas:
             self.im.fill_data(mod.power_forward.time, timesc)
             self.im.fill_data_nc(mod.power_forward.data, f'PICHA{sta}')
 
-            #power_reflected = launched - absorbed
-            # I recommend removing this code (see comments made to the LH power)
-            plaunch = self.im.get_ncvar(f'PICHA{sta}')
-            pabs = self.im.get_ncvar(f'RFPWRAB{sta}')
-            if self.im.is_valid(plaunch, pabs):
-                prefl = plaunch - pabs
-                self.im.fill_data(ant.power_reflected.data, prefl)
-                self.im.fill_data(ant.power_reflected.time, timesc)
-
+            #power_reflected. Don't use launched - absorbed
 
         if nant > 0:
             #power launched
