@@ -113,7 +113,7 @@ class nc2imas(imas_connection, netcdf_connection):
             elif op == '+':
                 return arr1 - arr2
             elif op == '/':
-                return arr1/arr2
+                return np.divide(arr1, arr2, out=np.zeros_like(arr1), where=arr2!=0)
             elif op == '*':
                 return arr1 * arr2
             elif op == 'sqrt':
