@@ -88,9 +88,6 @@ class imas_ic_antennas:
             # when TRANSP runs the IC code, it assumes that injected power is the forward power. 
             # we should not fill the power_forward from the CDF file.
             
-            # please, remove this. Reflected power and forward power come from probe measurements in front of the antenna. 
-            # The values of power absorbed that come from TRANSP are calculated from the IC code, under specific assumptions
-            # we should not fill the reflected power from TRANSP
             #power_reflected = launched - absorbed
             plaunch = self.im.get_ncvar(f'PICHA{sta}')
             pabs = self.im.get_ncvar(f'RFPWRAB{sta}')
