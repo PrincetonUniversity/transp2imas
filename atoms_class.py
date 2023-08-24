@@ -18,7 +18,7 @@ class atom_base():
         #Transp : IDS
         self.atoms = {'H':'H', 'D':'D', 'T':'T', '3':'He3', '4':'He4'}
         self.nb2 = {'N':'Ne', 'A':'Ar', 'K':'Kr', 'X':'Xe', 'Z':'HI_Z'} #'High_Z or heavy ??
-        self.beams = {**self.atoms, **self.nb2} #self.atoms.copy()
+        self.beams = {**self.atoms, **self.nb2}
         self.ions = {**self.atoms, 'LITH':'Li', 'C':'C'} #some variables: 3=>HE3; 4=>HE4
         self.neutrals = {**self.atoms, 'LITH':'Li'}
         #  NEON, ARGON, KRYPTON, XENON
@@ -34,7 +34,6 @@ class atom_base():
                         'HE4' : ['He4',  4.002602,       2.0], #helium4
                         'LITH': ['Li',   6.015122,       3.0], #lithium #Li6
                         'LI7' : ['Li',   7.016004,       3.0], #lithium #Li7
-
                         'AC'  : ['Ac',  227.0000,     89.0], #Ac iostope average
                         'AG'  : ['Ag',  107.8680,     47.0], #Ag
                         'AL'  : ['Al',   26.9815,     13.0], #Al
@@ -141,7 +140,7 @@ class atom_base():
                         'TM'  : ['Tm',  168.9342,     69.0], #Tm
                         'U'   : ['U',   238.0290,     92.0], #U
                         'V'   : ['V',    50.9414,     23.0], #V
-                        'X'   : ['Xe',  131.300,      54.0], #Xenon
+                        'XE'  : ['Xe',  131.300,      54.0], #Xenon
                         'W'   : ['W',   183.5000,     74.0], #Tungston av
                         'Y'   : ['Y',    88.9059,     39.0], #Y
                         'YB'  : ['Yb',  173.0400,     70.0], #Yb
@@ -162,6 +161,18 @@ class atom_base():
         self.label = self.entries[lab][0] + ilab
         self.a = self.entries[lab][1]
         self.z_n = self.entries[lab][2]
+
+
+    def find_beam_species_data(self, bsymb:str):
+        #bsymb is keys in self.beams
+        if bsymb not in self.beams.keys():
+            return 0,0,''
+        symb = (self.beams[bsymb]).upper()
+        label = self.entries[symb][0]
+        a = self.entries[symb][1]
+        z_n = self.entries[symb][2]
+        return z_n, a, label
+
 
     #dct is one of self.atoms, beams, ions, or neutrals
     def find_species_label(self, sp_a:float, sp_zn:float, dct:dict)->str :

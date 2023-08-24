@@ -15,33 +15,29 @@ class imas_nbi:
         self.im.checkErrExit(timesc)
 
         nunits = self.im.get_var_names_re('PINJ?', nd1=1, nd2=2, length=True)
-        nbeams = self.im.get_namelist_var('NBEAM')
-        na = self.im.get_namelist_nvars('ABEAMA?')
-        self.logger.info(f'NBeams nunits {nunits} ABEAMA? {na} nbeam {nbeams}')
-        #if nunits != na:
-        #    self.logger.error(f'NBeams mismatch {nunits} != {na}')
-        #    raise AssertionError(f'NBeams mismatch {nunits} != {na}')
+        self.logger.info(f'NBeams nunits {nunits}')
 
+        #find species info
+        spec_list = self.im.get_var_names('PINJ_?', cut= 'PINJ_')
+        symb = '' if len(spec_list)==0 else spec_list[0]
         atomsDef = atom_base()
-        beams = atomsDef.beams
+        sp_zn, sp_a, sp_label = atomsDef.find_beam_species_data(symb)
 
-        #input power 
+        if len(spec_list)>1:
+            #beams numbers PINJ<n> are not matched for different species
+            raise Exception(f'Multiple species of NBI not handled: {spec_list}')
+        if (symb and nunits<1) or (nunits>0 and not symb):
+            raise Exception(f'NBI species/beams Error:: units:{nunits} species:{symb}')
+
 
         nbi.unit.resize(nunits)
         for i in range(nunits):
             nbu = nbi.unit[i]
             ib = i+1
             stn = f'0{ib}' if ib<=9 else f'{ib}'
-
             nbu.name = f"unit {ib}"
 
-            #find NBeam species info from namelist
-            sp_a = self.im.get_namelist_var(f'ABEAMA({ib})', float)
-            sp_zn = self.im.get_namelist_var(f'XZBEAMA({ib})', float)
-
-            self.logger.info(f' species: a {sp_a} zn {sp_zn} # {ib}' )
-            sp_label = atomsDef.find_species_label(sp_a, sp_zn, beams)
-            if self.im.is_valid(sp_a, sp_zn, sp_label):
+            if self.im.is_valid(sp_a, sp_zn):
                 nbu.species.a = sp_a
                 nbu.species.z_n = sp_zn
                 nbu.species.label = sp_label
