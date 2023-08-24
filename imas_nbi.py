@@ -50,8 +50,6 @@ class imas_nbi:
         for i in range(nunits):
             nbu = nbi.unit[i]
             ib = i+1
-#            cm2m = 0.01
-#            d2rad = constants.pi/180.0
             stn = f'0{ib}' if ib<=9 else f'{ib}'
 
             nbu.name = f"unit {ib}"
@@ -74,14 +72,6 @@ class imas_nbi:
             #injected power PINJ02
             self.im.fill_data_nc(nbu.power_launched.data, f'PINJ{stn}')
             self.im.fill_data(nbu.power_launched.time, timesc)
-
-            #beam_power_fraction
-            #PINJm_E{1,2,3} = EINJn_E{1,2,3} * PINJn/(EINJn_E1 + EINJn_E2 + EINJn_E3)
-#            pdata = self.get_beam_powerfrac(stn, ntimes)
-#            if self.im.is_valid(pdata):
-#               nbu.beam_power_fraction.data.resize(pdata.shape)
-#               nbu.beam_power_fraction.data = pdata
-#               self.im.fill_data(nbu.beam_power_fraction.time, timesc)
 
         if nunits > 0:
             nbi = self.im.fill_properties(nbi)
