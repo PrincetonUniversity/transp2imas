@@ -108,6 +108,8 @@ class imas_equilibrium:
          ysurf[ntheta-1] = ysurf[0]
          return rsurf, ysurf
 
+    # this seems incorrect. the value of geom_rz taken here is not the geometric center
+    # these values need to be defined differently
     def boundary_geom_minor(self, rsurf, ysurf):
          minor = -1
          geom_rz = [0,0]
@@ -323,6 +325,7 @@ class imas_equilibrium:
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
             geom_rz, minor = self.boundary_geom_minor(rbound, ybound)
+            # what is being written here is not the geometric axis
             if minor > 0:
                eqm.time_slice[it].boundary.geometric_axis.r = geom_rz[0]
                eqm.time_slice[it].boundary.geometric_axis.z = geom_rz[1]
