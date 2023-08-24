@@ -161,7 +161,7 @@ class imas_core_sources:
         #species
         self.fill_src_properties(sci, iname='ic', iind=5,
                     idesc="Sources from heating at the ion cyclotron range of frequencies",
-                    tname='unspecified', tind=0, tdesc='ICRF antenna')
+                    tname='unspecified', tind=0, tdesc='N/A')
 
         #PICHTOT(TIME) ; WATTS; TOTAL ICRF ANTENNA POWER
         #ant_power = self.im.get_ncvar('PICHTOT')
@@ -231,7 +231,7 @@ class imas_core_sources:
 
         self.fill_src_properties(sci, iname='ec', iind=3,
                     idesc="Sources from electron cyclotron heating and current drive",
-                    tname='unspecified', tind=0, tdesc='EC gyrotron')
+                    tname='unspecified', tind=0, tdesc='N/A')
 
         #PECHT(TIME) ; WATTS; ECRF ELECTRON HEATING
         power_glob = self.im.get_ncvar('PECHT')
@@ -268,7 +268,7 @@ class imas_core_sources:
 
         self.fill_src_properties(sci, iname='lh', iind=4,
                     idesc="Sources from lower hybrid heating and current drive",
-                    tname='unspecified', tind=0, tdesc='LH antenna')
+                    tname='unspecified', tind=0, tdesc='N/A')
 
         #PELH(TIME3, X) WATTS/CM3;  LH ELECTRON HEATING
         el_heat_prof = self.im.get_ncvar('PELH', self.im.vol_inv)
@@ -310,7 +310,7 @@ class imas_core_sources:
 
         self.fill_src_properties(sci, iname='fusion', iind=6,
                     idesc="Sources from fusion reactions, e.g. alpha particle heating",
-                    tname='unspecified', tind=0, tdesc='fusion')
+                    tname='unspecified', tind=0, tdesc='N/A')
 
         #self.fill_element_data(sci.species.ion, sp)
 
@@ -385,7 +385,7 @@ class imas_core_sources:
         nprof = coord_x.shape[1]
 
         self.fill_src_properties(sci, iname='ohmic', iind=7, idesc="Source from ohmic heating",
-                    tname='unspecified', tind=0, tdesc='Ohmic Coil')
+                    tname='unspecified', tind=0, tdesc='N/A')
 
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
@@ -459,7 +459,7 @@ class imas_core_sources:
 
         self.fill_src_properties(sci, iname='bremsstrahlung', iind=8,
             idesc="Source from  bremsstrahlung; radiation losses are negative",
-                    tname='electron', tind=1, tdesc='Electron')
+                    tname='electron', tind=1, tdesc='N/A')
 
         #self.fill_element_data(sci.species.ion, sp)
 
@@ -494,7 +494,7 @@ class imas_core_sources:
 
         self.fill_src_properties(sci, iname='impurity_radiation', iind=203,
             idesc="Line radiation and Bremsstrahlung source; radiation losses are negative",
-                    tname='unspecified', tind=0, tdesc='unspecified')
+                    tname='unspecified', tind=0, tdesc='N/A')
 
         #self.fill_element_data(sci.species.ion, sp)
 
@@ -530,7 +530,7 @@ class imas_core_sources:
 
         self.fill_src_properties(sci, iname='line_radiation', iind=10,
             idesc="Source from  line_radiation; radiation losses are negative sources",
-                    tname='unspecified', tind=0, tdesc='unspecified')
+                    tname='unspecified', tind=0, tdesc='N/A')
 
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
@@ -642,7 +642,7 @@ class imas_core_sources:
         nprof = coord_x.shape[1]
 
         self.fill_src_properties(sci, iname='gas_puff', iind=108, idesc="Gas puff",
-                    tname='neutral', tind=4, tdesc=r'Neutral species in a single/average state')
+                    tname='neutral', tind=4, tdesc='Neutral species in a single/average state')
         sp = ''
         #self.fill_element_data(sci.species.ion, sp)
 
@@ -693,7 +693,7 @@ class imas_core_sources:
         coord_xb = self.im.get_ncvar('XB')
 
         self.fill_src_properties(sci, iname='total', iind=1, idesc="Total source; combines all sources",
-                    tname='unspecified', tind=0, tdesc=r'unspecified')
+                    tname='unspecified', tind=0, tdesc='unspecified')
 
         #DVOL(TIME3, X) CM**3  ZONE VOLUME
         gvol = self.im.get_ncvar('DVOL', self.im.vconv)
