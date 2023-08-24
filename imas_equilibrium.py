@@ -48,7 +48,7 @@ class imas_equilibrium:
                ysurf[j,:] = ysin[0,j]
                for ith in range(ntheta):
                   th = -self.im.pi + ith*dtheta #as in TRANSP
-                  inv_grid_theta[j] = th
+                  inv_grid_theta[ith] = th
                   for k in range(1, nmoments):
                      ct = np.cos(k*th)
                      st = np.sin(k*th)
