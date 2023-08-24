@@ -6,25 +6,6 @@ class imas_nbi:
         self.logger = ncimas.logger
         self.create_ids()
 
-    def get_beam_powerfrac(self, stn:str, ntimes:int):
-        #stn : beam number in string format
-        pdata = []
-        try:
-            pinj = self.im.get_ncvar(f'PINJ{stn}')
-            einjn = np.zeros(shape=(3, ntimes), dtype=float)
-            einjn[0] = self.im.get_ncvar(f'EINJ{stn}_E1')
-            einjn[1] = self.im.get_ncvar(f'EINJ{stn}_E2')
-            einjn[2] = self.im.get_ncvar(f'EINJ{stn}_E3')
-            einj = np.sum(einjn, axis=0)
-            pdata = np.zeros(shape=einjn.shape, dtype=float)
-            for i in range(3):
-               einjf = self.im.operate_arrays(einjn[i], '/', einj)
-               pdata[i] = self.im.operate_arrays(pinj, '*', einjf)
-        except:
-            self.im.logger.info(f'beam_power_fraction null: {stn} len(pinj) {len(pinj)}')
-
-        return pdata
-
     def create_ids(self):
         self.im.logger.info('\nnbi')
         nbi = self.im.ids.nbi
@@ -44,7 +25,7 @@ class imas_nbi:
         atomsDef = atom_base()
         beams = atomsDef.beams
 
-        #D3D: input power, geometry, energy fractions
+        #input power 
 
         nbi.unit.resize(nunits)
         for i in range(nunits):
