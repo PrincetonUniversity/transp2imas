@@ -373,6 +373,8 @@ class imas_equilibrium:
             self.im.fill_data(prof2.grid.dim1, rgrid, ind=it, name='rgrid')
             self.im.fill_data(prof2.grid.dim2, zgrid, ind=it, name='zgrid')
 
+            # FMP - check size of grid. The translator is not recognizing that the size could be rectangular (nz>nr)
+            # Please, check this and use the ITER cases that I provided (see issue 38 for the path to CDF file and namelists to be used with IMAS)
             psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
             if self.im.is_valid(rgrid, zgrid, ind=it, name='grid') and self.im.is_valid(psirz, name='prirz'):
                 prof2.psi.resize((nr, nz))
