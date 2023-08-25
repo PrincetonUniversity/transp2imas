@@ -28,20 +28,12 @@ class imas_pf_active:
         pfc.time.resize(ntimes)
         pfc.time = timesc
 
-        # fmp -the names can be taken from the TRANSP namelist OR from parsing the name of the variables in the CDF file. 
-        # we should not assume that the coils are named _PF and/or _OH
-        # fmp - the coding below is incorrect, it does not find the coils because it is looking for the wrong names.
         #coil names from VV_PF1AU(PF_ + PF1AU)
-        coils_pf = self.im.get_var_names_re('VV_PF?', cut='VV_', nd=1, nch1=1, nch2=2)
-
-        # fmp - the coding below is incorrect, it does not find the coils because it is looking for the wrong names.
-        #coil names from VV_OH
-        coils_oh = self.im.get_var_names_re('VV_OH?', cut='VV_', nd=0, nch=0)
+        coils = self.im.get_var_names('VV_?', cut='VV_')
 
         # not needed - we can parse the name from the names in the CDF file.
         # please, use this case for testing: /p/transpusers/fpoli/current/transp2imas_tests/ITER/38265R95/
 
-        coils = coils_pf + coils_oh
         ncoils = len(coils)
         self.logger.info(f'ncoils {ncoils}')
 
