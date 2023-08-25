@@ -108,21 +108,14 @@ class imas_equilibrium:
          ysurf[ntheta-1] = ysurf[0]
          return rsurf, ysurf
 
-    # this seems incorrect. the value of geom_rz taken here is not the geometric center
-    # these values need to be defined differently
-    def boundary_geom_minor(self, rsurf, ysurf):
+
+    def boundary_minor(self, rsurf):
          minor = -1
-         geom_rz = [0,0]
          try:
-            minr = np.min(rsurf)
-            maxr = np.max(rsurf)
-            minz = np.min(ysurf)
-            maxz = np.max(ysurf)
-            geom_rz = [(minr+maxr)/2.0, (minz+maxz)/2.0]
-            minor = (maxr-minr)/2.0
+            minor = (np.max(rsurf) - np.min(rsurf))/2.0
          except:
-            self.im.logger.info('plasma boundary invalid')
-         return geom_rz, minor
+            self.im.logger.info('minor_axis: plasma boundary invalid')
+         return minor
 
 
     def create_ids(self):
@@ -324,12 +317,16 @@ class imas_equilibrium:
             self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
-            geom_rz, minor = self.boundary_geom_minor(rbound, ybound)
-            # what is being written here is not the geometric axis
+            minor = self.boundary_minor(rbound)
             if minor > 0:
+               eqm.time_slice[it].boundary.minor_radius = minor
+
+            # what is being written here is not the geometric axis
+            geom_rz = []    #TODO
+            if len(geom_rz)>1 and geom_rz[0]>0:
                eqm.time_slice[it].boundary.geometric_axis.r = geom_rz[0]
                eqm.time_slice[it].boundary.geometric_axis.z = geom_rz[1]
-               eqm.time_slice[it].boundary.minor_radius = minor
+
 
             #if len(psi_sepx) >it:
             #    eqm.time_slice[it].boundary_separatrix.psi = psi_sepx[it]
@@ -373,12 +370,11 @@ class imas_equilibrium:
             self.im.fill_data(prof2.grid.dim1, rgrid, ind=it, name='rgrid')
             self.im.fill_data(prof2.grid.dim2, zgrid, ind=it, name='zgrid')
 
-            # FMP - check size of grid. The translator is not recognizing that the size could be rectangular (nz>nr)
-            # Please, check this and use the ITER cases that I provided (see issue 38 for the path to CDF file and namelists to be used with IMAS)
             psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
+
             if self.im.is_valid(rgrid, zgrid, ind=it, name='grid') and self.im.is_valid(psirz, name='prirz'):
                 prof2.psi.resize((nr, nz))
-                prof2.psi = np.reshape(psirz, (nr, nz)).T
+                prof2.psi = np.reshape(psirz, (nz, nr)).T
 
                 if it==ntimes-1:
                     self.logger.info(f't {it}: wrote 2d profile : rgrid {nr}, zgrid {nz} psi {prof2.psi.shape}')
@@ -393,7 +389,6 @@ class imas_equilibrium:
 
             #inverse equilibrium
             coord = eqm.time_slice[it].coordinate_system
-
 
             #201 ??
             ntheta = 201
