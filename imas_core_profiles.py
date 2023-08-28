@@ -58,8 +58,8 @@ class imas_core_profiles:
             self.logger.info(f'{symb} vel_pol {len(ion.vel_pol)}')
             ion.vel_tor = self.im.get_ncvar(f'VTOR{short}_NC', 0.01)
             self.logger.info(f'{symb} vel_tor {len(ion.vel_tor)}')
-            ion.vel_par = [] #UPLLHATI/(BZXR/RAXIS)*1.0D-2
-            ion.z_ion_1d = []
+            #ion.vel_par = [] #UPLLHATI/(BZXR/RAXIS)*1.0D-2
+            #ion.z_ion_1d = []
             ang_vel = self.im.get_ncvar(f'OMG_{short}') #CMG_H CMG_D
 
             if self.im.is_valid(ang_vel, rmaj):
@@ -84,8 +84,8 @@ class imas_core_profiles:
         self.logger.info(f'{symb} vel_pol {len(ion.vel_pol)}')
         ion.vel_tor = self.im.get_ncvar(f'VTORX_NC', 0.01)       # VTORX  VTORX_NC
         self.logger.info(f'{symb} vel_tor {len(ion.vel_tor)}')
-        ion.vel_par = []
-        ion.z_ion_1d = []
+        #ion.vel_par = []
+        #ion.z_ion_1d = []
         ang_vel = self.im.get_ncvar('OMGX') # OMGX CMGX
         if self.im.is_valid(ang_vel, rmaj):
             ion.rotation_frequency_tor = ang_vel/rmaj
@@ -146,6 +146,17 @@ class imas_core_profiles:
         cp.time.resize(ntimes)
         cp.time = timesc
 
+        # Geometry related quantities
+        # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
+        grid_area = self.im.get_ncvar('DAREA', aconv)
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        gvol = self.im.get_ncvar('DVOL', vconv)
+        #Surface area of the toroidal flux surface
+        #FLUX SURFACE AREA (TIME3,X) cm^2
+        surface = self.im.get_ncvar('SURF', aconv)
+        # PAREA(TIME) - plasma CS area[cm^2]
+        parea = self.im.get_ncvar('PAREA', aconv)
+
         #vacuum toroidal field
         self.im.fill_vac_tor_field(cp)
 
@@ -153,18 +164,15 @@ class imas_core_profiles:
         #------------------------------------------------------------------
         self.im.fill_data_nc(cp.global_quantities.ip, 'PCURC', mult=sgn)
 
-        #current_non_inductive
-        # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
-        grid_area = self.im.get_ncvar('DAREA', aconv)
-
         # current_non_inductive. Toroidal component.
         # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
         cur_tot = self.im.get_ncvar('CUR', aconv)
+        currents = self.im.get_ncvar('PCURC') 
         j_ohmic = self.im.get_ncvar('CUROH', aconv)
         if self.im.is_valid(cur_tot, j_ohmic, grid_area):
-            curt = self.im.operate_arrays(cur_tot, '-', j_ohmic)
-            j_nonind =  self.im.np_multiply_sum(curt, grid_area, axis=1)
-            self.im.fill_data(cp.global_quantities.current_non_inductive, j_nonind, mult=sgn)
+            j_nonind = self.im.operate_arrays(cur_tot, '-', j_ohmic)
+            curt =  self.im.np_multiply_sum(j_nonind, grid_area, axis=1)
+            self.im.fill_data(cp.global_quantities.current_non_inductive, curt, mult=sgn)
 
         #Bootstrap current (toroidal component). CURBS(TIME3, X) AMPS/CM2
         # check surface integration
@@ -184,10 +192,7 @@ class imas_core_profiles:
 
         #beta_tor_norm
         bz = self.im.get_ncvar('BZ') #(TIME) T. BZ outside plasma
-        currents = self.im.get_ncvar('PCURC') #(TIME)
         btor = self.im.get_ncvar('BTEQ') #toroidal beta
-        # PAREA(TIME) - plasma CS area[cm^2]
-        parea = self.im.get_ncvar('PAREA', aconv)
         beta_tor_norm = []
         try:
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
@@ -199,9 +204,6 @@ class imas_core_profiles:
         #beta_pol BETAT(TIME)
         self.im.fill_data_nc(cp.global_quantities.beta_pol, 'BETAT')
 
-        #DVOL(TIME3, X) CM**3  ZONE VOLUME
-        gvol = self.im.get_ncvar('DVOL', vconv)
-
         #Plasma diamagnetic energy content = 3/2*integral over the plasma volume of
         #  the total perpendicular pressure [J].
         #PPLAS(TIME3, X) PASCALS PLASMA PRESSURE
@@ -209,8 +211,6 @@ class imas_core_profiles:
         if len(pplas)> 0:
             edia = self.im.np_multiply_sum(pplas, gvol, axis=1, scale=1.5)
             self.im.fill_data(cp.global_quantities.energy_diamagnetic, edia)
-
-        #z_eff_resistive
 
         #t_e_peaking
         te0 = self.im.get_ncvar('TE0') #magnetic axis
@@ -253,14 +253,14 @@ class imas_core_profiles:
         #which ion ??
         #t_i_volume_average
         if len(tiv) >0:
-          self.im.fill_data(cp.global_quantities.t_e_volume_average, tiv)
+          self.im.fill_data(cp.global_quantities.t_i_volume_average, tiv)
 
         #n_i_volume_average
         nion = self.im.get_ncvar('NI')
         if len(nion) >0:
           ni_ = self.im.np_multiply_sum(nion, gvol, axis=1)
           ni_ = self.im.operate_arrays( ni_, '/', pvol)
-          self.im.fill_data(cp.global_quantities.n_e_volume_average, ni_)
+          self.im.fill_data(cp.global_quantities.n_i_volume_average, ni_)
 
         #ion_time_slice
         # ----------end of global -----------------------------------------
@@ -281,10 +281,6 @@ class imas_core_profiles:
         psi = self.im.get_ncvar('PLFLX2PI')
         if not self.im.is_valid:
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
-
-        #Surface area of the toroidal flux surface
-        #FLUX SURFACE AREA (TIME3,X) cm^2
-        surface = self.im.get_ncvar('SURF', 1.0e-4)
 
         psi_axis = self.im.get_ncvar('PSI0_TR') # Wb/rad
         #Normalised poloidal flux coordinate
@@ -307,36 +303,15 @@ class imas_core_profiles:
 
         n_i_total_over_n_e = []
         if self.im.is_valid(nion, nel):
-          n_i_total_over_n_e = nion/nel
+            n_i_total_over_n_e = nion/nel
 
         neutrals = [] #self.get_neutral_data()
 
         #ZEFFP(TIME3, X) PLASMA COMPOSITION ZEFF PROFILE
         zeff = self.im.get_ncvar('ZEFFP')
-
+        
+        # Q profile
         qprof = self.im.get_ncvar('Q')
-        curbs = self.im.get_ncvar('CURBS', 1.e4)
-
-        # SUMCUR Summed toroidal currents
-        pcureq = self.im.get_ncvar('PCUREQ')
-        jpfc = self.im.get_ncvar('CURSUM_PFC_MHD')
-        jpassive = self.im.get_ncvar('CURSUM_PASS_MHD')
-        j_tor = []
-        if self.im.is_valid(pcureq, jpfc, jpassive):
-          try :
-            j_tor = pcureq + jpfc + jpassive
-            #TODO convert to density
-          except :
-            self.logger.info(f'pcureq {len(pcureq)} jpfc {len(jpfc)} jpassive {len(jpassive)}')
-
-
-        #CUROH(TIME3, X)AMPS/CM2
-        j_ohmic = self.im.get_ncvar('CUROH', 1.0e4)
-
-        # current_non_inductive. Toroidal component.
-        # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
-        cur_tot = self.im.get_ncvar('CUR', 1.0e4)
-        j_nonind = cur_tot - j_ohmic
 
         self.logger.info(f'Filling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(ntimep)
@@ -379,13 +354,13 @@ class imas_core_profiles:
               cp.profiles_1d[i].ion[ij].z_ion = ion.z_ion
               cp.profiles_1d[i].ion[ij].label = ion.label
 
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].z_ion_1d, ion.z_ion_1d, ind=i, name='z_ion_1d')
+              #self.im.fill_data(cp.profiles_1d[i].ion[ij].z_ion_1d, ion.z_ion_1d, ind=i, name='z_ion_1d')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].temperature, ion.temp, ind=i, name='temp')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].density, ion.dens, ind=i, name='dens')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.radial, ion.vel_rad, ind=i, name='vel_rad')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal, ion.vel_tor, ind=i, name='vel_tor')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal, ion.vel_pol, ind=i, name='vel_pol')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.parallel, ion.vel_par, ind=i, name='vel_par')
+              #self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.parallel, ion.vel_par, ind=i, name='vel_par')
 
           #
           self.im.fill_data_nc(cp.profiles_1d[i].t_i_average, 'TI', ind=i)
