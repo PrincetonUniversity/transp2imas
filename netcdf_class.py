@@ -173,9 +173,12 @@ class netcdf_connection:
 
     def get_ncvar(self, var:str, scale:float=1., ind:int=-1) -> np.array:
         try:
-            res = np.array(self.nc.variables[var][:])
+            res = None
             if ind>=0:
-                res = res[ind]
+               res = np.array(self.nc.variables[var][:][ind])
+            else:
+               res = np.array(self.nc.variables[var][:])
+
             if scale < 1. or scale > 1.:
                 return scale*res
             else:

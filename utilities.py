@@ -66,6 +66,38 @@ def find_runid_shot_code(runid):
             'code:', rid, 'runid:', runid)
     return run, shot, rid
 
+
+def print_progress(tot, at):
+    bar = 50
+    progr = int(at*bar/tot)
+    comp = str(int(at*100/tot)) + '%'
+    if at==tot:
+      sys.stdout.write("\033[K")
+    else:
+      print('[', chr(9618)*progr,' ',comp, '.'*(bar-progr), '] ',
+         'time:' + str(at)+'/'+str(tot), sep='', end='\r', flush=True)
+
+
+import cProfile
+import functools
+import pstats
+
+def profile_it(funct):
+    @functools.wraps(funct)
+    def func(*args, **kwargs):
+        prof = cProfile.Profile()
+        prof.enable()
+        try:
+            res = funct(*args, **kwargs)
+        finally:
+            prof.disable()
+            with open('prof_out.txt', 'w') as pfile:
+                pst = pstats.Stats(prof, stream=pfile)
+                pst.sort_stats('cumulative').print_stats(50)
+        return res
+    return func
+
+
 def get_args(argv=None):
     desc = f' (To run all CDF files in <dir_path> and its subdirs: -i all -d <dir_path>)'
     parser = argparse.ArgumentParser(description='Convert TRANSP output CDF to IMAS IDS' + desc)
