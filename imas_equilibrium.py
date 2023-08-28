@@ -1,5 +1,7 @@
 
 from nc2imas import *
+from multiprocessing import Pool
+from datetime import datetime
 
 class imas_equilibrium:
     def __init__(self, ncimas:nc2imas):
@@ -10,8 +12,14 @@ class imas_equilibrium:
         self.ymcb = []
         self.ymsb = []
         self.nmoments = 0
+        self.coskth = None
+        self.sinkth = None
+        self.dtheta = None
+        self.inv_grid_theta = None
+        time1 = datetime.now()
         self.create_ids()
-
+        elapsed = (datetime.now() - time1).seconds/60.0
+        print(f'took:{elapsed:.2f} m')
 
     #to be called per time frame
     def convert_moments(self, ncoord_xb, ntheta:int, time:int):
@@ -27,7 +35,7 @@ class imas_equilibrium:
          rcos[0] = self.im.get_ncvar(f'RMC00', ind=time, scale=cm2m)
          ycos[0] = self.im.get_ncvar(f'YMC00', ind=time, scale=cm2m)
 
-         dtheta = 2*self.im.pi/ntheta
+         pi = self.im.pi
 
          for k in range(1, nmoments):
             kn = f'0{k}' if k<10 else k
@@ -37,24 +45,28 @@ class imas_equilibrium:
             ycos[k] = self.im.get_ncvar(f'YMC{kn}', ind=time, scale=cm2m)
             ysin[k] = self.im.get_ncvar(f'YMS{kn}', ind=time, scale=cm2m)
 
+         #store cos, sin
+         if self.coskth is None or self.sinkth is None:
+            self.coskth = np.zeros(shape=(ntheta, nmoments))
+            self.sinkth = np.zeros(shape=(ntheta, nmoments))
+            for ith in range(ntheta):
+               th = -self.im.pi + ith*self.dtheta
+            self.coskth[ith] = [np.cos(k*th) for k in range(nmoments)]
+            self.sinkth[ith] = [np.sin(k*th) for k in range(nmoments)]
+
+         rcos = rcos.T
+         rsin = rsin.T
+         ycos = ycos.T
+         ysin = ysin.T
+
          rsurf = np.zeros(shape=(ncoord_xb, ntheta))
          ysurf = np.zeros(shape=(ncoord_xb, ntheta))
-
-         inv_grid_theta = np.zeros(ntheta)
-
          if nmoments>1:
             for j in range(ncoord_xb):
-               rsurf[j,:] = rcos[0,j]
-               ysurf[j,:] = ysin[0,j]
-               for ith in range(ntheta):
-                  th = -self.im.pi + ith*dtheta #as in TRANSP
-                  inv_grid_theta[ith] = th
-                  for k in range(1, nmoments):
-                     ct = np.cos(k*th)
-                     st = np.sin(k*th)
-                     rsurf[j,ith] += rcos[k,j]*ct + rsin[k,j]*st
-                     ysurf[j,ith] += ycos[k,j]*ct + ysin[k,j]*st
-         return rsurf, ysurf, inv_grid_theta
+               rsurf[j] = [np.sum(rcos[j]*self.coskth[ith] + rsin[j]*self.sinkth[ith]) for ith in range(ntheta)]
+               ysurf[j] = [np.sum(ycos[j]*self.coskth[ith] + ysin[j]*self.sinkth[ith]) for ith in range(ntheta)]
+         return np.array(rsurf), np.array(ysurf)
+
 
 
     #to be called per time frame
@@ -92,9 +104,8 @@ class imas_equilibrium:
          rsurf = np.zeros(ntheta)
          ysurf = np.zeros(ntheta)
 
-         dtheta = 2*self.im.pi/ntheta
          for ith in range(ntheta-1):
-            th = ith*dtheta
+            th = ith*self.dtheta
             th = -self.im.pi + th
             rsurf[ith] = self.rmcb[time,0]
             ysurf[ith] = self.ymcb[time,0]
@@ -260,7 +271,11 @@ class imas_equilibrium:
         self.logger.info(f'rgrid {rgrid.shape}')
 
         #RSURF - flux surface R locations
-        #rsurf, ysurf
+        ntheta = 201
+        self.dtheta = 2*pi/ntheta
+
+        if self.inv_grid_theta is None:
+           self.inv_grid_theta = [-self.im.pi + ith*self.dtheta for ith in range(ntheta)]
 
         eqm = self.im.fill_properties(eqm)
         self.im.fill_code_properties(eqm)
@@ -271,6 +286,7 @@ class imas_equilibrium:
 
         self.logger.info(f'equilibrium #time slices {ntimes}')
         for it in range(ntimes):
+            print_progress(ntimes-1, it)
             if it==0 or it==ntimes-1:
                 self.logger.info(f'time slice: {it}')
             #global
@@ -312,8 +328,8 @@ class imas_equilibrium:
             if len(emhd) >it:
                 eqm.time_slice[it].global_quantities.energy_mhd = emhd[it].astype(float)
 
-            ntheta = 128 #TODO
-            rbound, ybound = self.convert_moments_bdry(ntheta, it)
+            nthetab = 128 #TODO
+            rbound, ybound = self.convert_moments_bdry(nthetab, it)
             self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
@@ -390,17 +406,14 @@ class imas_equilibrium:
             #inverse equilibrium
             coord = eqm.time_slice[it].coordinate_system
 
-            #201 ??
-            ntheta = 201
-
             #TODO check dimension of fill data
-            rsurf, ysurf, theta_grid = self.convert_moments(ncoord_xb, ntheta, it)
+            rsurf, ysurf = self.convert_moments(ncoord_xb, ntheta, it)
 
             #fill data
             coord.grid_type.name = "inverse"
             coord.grid_type.index = 2
             self.im.fill_data(coord.grid.dim1, coord_xb, ind=it, name='grid_r')
-            self.im.fill_data(coord.grid.dim2, theta_grid, name='grid_theta')
+            self.im.fill_data(coord.grid.dim2, self.inv_grid_theta, name='grid_theta')
             coord.r.resize(ncoord_xb, ntheta)
             if self.im.is_valid(rsurf):
                coord.r = rsurf
