@@ -160,15 +160,67 @@ class netcdf_connection:
             matches = [str(s.split(st,1)[1]) for s in matches if len(s.split(st,1))>1]
         return matches
 
-    def get_species_names(self, name:str, cut:str) -> list[str]:
+    def get_species_names(self, name:str, cut:str=None, prep_HE=True) -> list[str]:
         #characters after 1st position of '?' returned
         ind = name.find('?') #only 1st position of '?' replaced
         if ind < 0:
             raise Exception(f'Error in search of array variables {name}')
         name = name[:ind]
+        if cut and not (cut in name):
+            #name is shorter than cut string.
+            return []
         sps = self.get_var_names_re_(name, cut)
-        sps = ['HE' + s if (s=='3' or s=='4') else s for s in sps]
+        if prep_HE:
+            sps = ['HE' + s if (s=='3' or s=='4') else s for s in sps]
         return sps
+
+
+    def get_species_data(self, name:str, cut:str='') -> list|list:
+         r'''
+         NIMP_BE_? for finding NIMP_BE_4. Returns two lists: [str,..],[1,..]
+         #z value as string; and corresponding number of +charges
+         '''
+         lst = self.get_species_names(name, cut=cut, prep_HE=False) #NIMP_BE_?
+         if len(lst)<1:
+            return [], []
+         ncs = []
+         for chz in lst:
+            st = cut + chz
+            lname = self.get_ncattr(f'{st}:long_name').strip()
+            nc = len([i for i,ch in enumerate(lname) if ch=='+'])
+            ncs.append(nc)
+         return lst, ncs
+
+    def get_species_data_rec(self, name:str) ->dict:
+         r'''
+         NIMP_?_? for finding NIMP_BE_4. Returns dict: {'BE':[['4',..],[1,..]],  }
+         #dict value is list of two lists: [Z,..], [ch,...]
+         '''
+         inds = [i for i, ch in enumerate(name) if ch=='?']
+         if len(inds)<2:
+            raise Exception(f"requires two '?'s. For {name} use get_species_names")
+         #keep seperator between two '?', usually _
+         sep = name[inds[0]+1:inds[1]]
+         pre = name[:inds[0]]
+         #all from first '?' to the end
+         names = self.get_species_names(name, cut=pre, prep_HE=False)
+         #inds are invalid at this point
+         specs = {}
+         for nm in names:
+            #nm eg: BE_4
+            #index of sep in return names
+            ind = nm.find(sep)  #find '_' in BE_4
+            #seperator shouldn't be the first
+            if ind<1:
+               #unwanted name
+               continue
+            ss = nm[:ind] #BE
+            pat = pre + ss + sep # NIMP_ + BE + _
+            splst, ncs = self.get_species_data(f'{pat}?', cut=pat)
+            if len(splst)<1:
+               continue
+            specs[ss] = [splst, ncs]
+         return specs
 
 
     def get_ncvar(self, var:str, scale:float=1., ind:int=-1) -> np.array:

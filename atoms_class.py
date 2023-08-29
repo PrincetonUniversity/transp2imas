@@ -23,6 +23,7 @@ class atom_base():
         self.neutrals = {**self.atoms, 'LITH':'Li'}
         #  NEON, ARGON, KRYPTON, XENON
         self.fusion_ions = {'P':'H', 'P14':'H', 'T':'T', '3':'He3', '4':'He4'}
+        self.impurities = {'BE':'Be', 'W':'W', 'NE':'Ne', 'AR':'Ar'} # not used
 
         #Transp symbol : [IDS label, a, z_n] # from transp periodic_table.f90
         self.entries = {'P'   : ['H',    1.007276466812, 1.0], #proton

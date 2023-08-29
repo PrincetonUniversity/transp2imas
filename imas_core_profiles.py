@@ -14,6 +14,7 @@ class ion_data(atom_base):
         self.z_ion_1d = []
         self.rotation_frequency_tor = []
 
+
     def is_valid(self):
         return (self.a>0. and self.atoms_n>0 and
                self.z_n>0 and self.z_ion>0 and len(self.dens)>0 )
@@ -35,7 +36,8 @@ class imas_core_profiles:
 
     #ions data
     def get_ion_data(self) -> list:
-        ionDict = atom_base('').ions
+        atomsDef = atom_base('')
+        ionDict = atomsDef.ions
         ions = []
         rmaj = np.average(self.im.get_ncvar('RMJSYM'))  # RMJSYM RMJM
 
@@ -67,6 +69,35 @@ class imas_core_profiles:
             if ion.is_valid():
                ions.append(ion)
 
+        #impurities
+        #NIMPS_ total for all charge states, per species
+        imp_atoms = self.im.get_species_names('NIMPS_?', cut='NIMPS_')
+        for symb in imp_atoms:
+            st = f'NIMP_{symb}_'
+            #eg: search z and charge from NIMPS_BE_4
+            spz, ncs = self.im.get_species_data(f'{st}?', cut=st)
+            #lookup NIMP_BE_4 shouldn't return >1
+            if len(spz)>1:
+               print(f'species lookup: multiple entries for{st}')
+            charge = ncs[0]
+            label = symb
+            dens = self.im.get_ncvar(f'NIMPS_{symb}', 1.0e6)
+            if len(dens)==0:
+               continue
+            self.logger.info(f'ion: {symb} => {label}')
+
+            ion = ion_data(symb)
+            if ion.z_n != float(spz[0]):
+               self.im.logger.info(f'{st} lookup error: {ion.z_n} != {spz[0]}')
+            #reset default
+            #ZIMPS_BE(TIME3, X) Be Avg. Mult. Impurity Z
+            #zprof = self.im.get_ncvar(f'ZIMPS_{symb}')
+            #a is from definition in atoms_class
+            ion.z_ion = float(charge)
+            ion.dens = dens
+            if ion.is_valid():
+               ions.append(ion)
+
         #impurity = average in TRANSP, not only an element.
         symb = 'X'
         label = 'X'
@@ -89,14 +120,15 @@ class imas_core_profiles:
         ang_vel = self.im.get_ncvar('OMGX') # OMGX CMGX
         if self.im.is_valid(ang_vel, rmaj):
             ion.rotation_frequency_tor = ang_vel/rmaj
-        #AZIMP
-        zn = -1.0 #not filled in IDS #TODO
-        aa = np.average(self.im.get_ncvar('AIMP'))
-        zion = np.average(self.im.get_ncvar('XZIMP'))   #XSIMP XZIMPD
-        if self.im.is_valid(aa, zion, zn):
-            ion.z_n = zn #zn.astype(float)
-            ion.a = aa.astype(float)
-            ion.z_ion = zion.astype(float)
+        ion.z_ion = 1.0 # for + ?
+        aa = self.im.get_ncvar('AIMP')
+        zz = self.im.get_ncvar('XZIMP')   #XSIMP XZIMPD
+        #ZXIMPJ profile
+
+        #not used
+        if self.im.is_valid(aa, zz):
+            ion.z_n = np.average(zz).astype(float)
+            ion.a = np.average(aa).astype(float)
         if ion.is_valid():
             ions.append(ion)
         else:
@@ -251,16 +283,17 @@ class imas_core_profiles:
 
         #IONS
         #which ion ??
-        #t_i_volume_average
-        if len(tiv) >0:
-          self.im.fill_data(cp.global_quantities.t_i_volume_average, tiv)
-
         #n_i_volume_average
         nion = self.im.get_ncvar('NI')
-        if len(nion) >0:
-          ni_ = self.im.np_multiply_sum(nion, gvol, axis=1)
-          ni_ = self.im.operate_arrays( ni_, '/', pvol)
-          self.im.fill_data(cp.global_quantities.n_i_volume_average, ni_)
+        if False: #TODO fill per ion
+           #t_i_volume_average
+           if len(tiv) >0:
+             self.im.fill_data(cp.global_quantities.t_i_volume_average, tiv)
+
+           if len(nion) >0:
+             ni_ = self.im.np_multiply_sum(nion, gvol, axis=1)
+             ni_ = self.im.operate_arrays( ni_, '/', pvol)
+             self.im.fill_data(cp.global_quantities.n_i_volume_average, ni_)
 
         #ion_time_slice
         # ----------end of global -----------------------------------------
@@ -372,7 +405,7 @@ class imas_core_profiles:
           self.im.fill_data(cp.profiles_1d[i].j_ohmic, j_ohmic, ind=i)
           self.im.fill_data(cp.profiles_1d[i].j_total, cur_tot, ind=i)
           self.im.fill_data(cp.profiles_1d[i].j_non_inductive, j_nonind, ind=i)
-          self.im.fill_data(cp.profiles_1d[i].j_tor, j_tor, ind=i)
+          #self.im.fill_data(cp.profiles_1d[i].j_tor, j_tor, ind=i)
 
         self.im.putdb_imas(cp)
         self.logger.info('Done core_profiles')
