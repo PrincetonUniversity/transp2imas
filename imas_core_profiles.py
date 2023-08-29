@@ -262,8 +262,8 @@ class imas_core_profiles:
         tiv = []
         if self.im.is_valid(ti0, tion, pvol):
             ti_ = self.im.np_multiply_sum(tion, gvol, axis=1)
-            ti_ = self.im.operate_arrays(ti_, '/', pvol)
-            ti0_ti = self.im.operate_arrays(ti0, '/', ti_)
+            tiv = self.im.operate_arrays(ti_, '/', pvol)
+            ti0_ti = self.im.operate_arrays(ti0, '/', tiv)
             self.im.fill_data(cp.global_quantities.t_i_average_peaking, ti0_ti, name='t_i_average_peak')
 
         #resistive_psi_losses
@@ -282,18 +282,16 @@ class imas_core_profiles:
           self.im.fill_data(cp.global_quantities.n_e_volume_average, ne_)
 
         #IONS
-        #which ion ??
-        #n_i_volume_average
         nion = self.im.get_ncvar('NI')
-        if False: #TODO fill per ion
-           #t_i_volume_average
-           if len(tiv) >0:
-             self.im.fill_data(cp.global_quantities.t_i_volume_average, tiv)
+        cp.global_quantities.ion.resize(1)
+        #t_i_volume_average
+        if len(tiv) >0:
+          self.im.fill_data(cp.global_quantities.ion[0].t_i_volume_average, tiv, name='tiv')
 
-           if len(nion) >0:
-             ni_ = self.im.np_multiply_sum(nion, gvol, axis=1)
-             ni_ = self.im.operate_arrays( ni_, '/', pvol)
-             self.im.fill_data(cp.global_quantities.n_i_volume_average, ni_)
+        if len(nion) >0:
+          ni_ = self.im.np_multiply_sum(nion, gvol, axis=1)
+          ni_ = self.im.operate_arrays( ni_, '/', pvol)
+          self.im.fill_data(cp.global_quantities.ion[0].n_i_volume_average, ni_, name='niv')
 
         #ion_time_slice
         # ----------end of global -----------------------------------------
