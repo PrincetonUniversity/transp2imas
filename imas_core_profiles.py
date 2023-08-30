@@ -129,6 +129,8 @@ class imas_core_profiles:
         if self.im.is_valid(aa, zz):
             ion.z_n = np.average(zz).astype(float)
             ion.a = np.average(aa).astype(float)
+            ion.z_ion = ion.z_n
+
         if ion.is_valid():
             ions.append(ion)
         else:
@@ -192,6 +194,10 @@ class imas_core_profiles:
         #vacuum toroidal field
         self.im.fill_vac_tor_field(cp)
 
+        #ions for profiles_1d. Also need in global_quantities
+        ions = self.get_ion_data()
+        ion_glob = self.get_ion_data_global(ions)
+
         #global_quantities
         #------------------------------------------------------------------
         self.im.fill_data_nc(cp.global_quantities.ip, 'PCURC', mult=sgn)
@@ -217,7 +223,7 @@ class imas_core_profiles:
         self.im.fill_data_nc(cp.global_quantities.v_loop, 'VSURC')
 
         #li  LI_3(TIME)
-        self.im.fill_data_nc(cp.global_quantities.li, 'LI_3')
+        self.im.fill_data_nc(cp.global_quantities.li_3, 'LI_3')
 
         #beta_tor BTEQ(TIME) EQUILIBRIUM BETA(TOROIDAL)
         self.im.fill_data_nc(cp.global_quantities.beta_tor, 'BTEQ')
@@ -328,9 +334,6 @@ class imas_core_profiles:
 
         self.logger.info(f'ntimep {ntimep} nrho {nrho}')
         self.logger.info(f'bz {len(bz)} rho_tor {len(rho_tor)} bflux_tor {len(bflux_tor)}')
-
-        #ions
-        ions = self.get_ion_data()
 
         n_i_total_over_n_e = []
         if self.im.is_valid(nion, nel):
