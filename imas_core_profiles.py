@@ -13,13 +13,18 @@ class ion_data(atom_base):
         self.vel_par = []
         self.z_ion_1d = []
         self.rotation_frequency_tor = []
+        self.aas = []
+        self.zns = []
+        self.zions = []
         #same as z_n
         self.z_ion = self.z_n
 
 
     def is_valid(self):
-        return (self.a>0. and self.atoms_n>0 and
-               self.z_n>0 and self.z_ion>0 and len(self.dens)>0 )
+        check1 = self.a>0 and self.z_n>0 and self.z_ion>0
+        check2 = len(self.aas)>0 and len(self.zns)>0 and len(self.zions)>0
+        check3 = self.atoms_n>0 and len(self.dens)>0
+        return check3 and (check1 or check2)
 
 class neutrals_data(atom_base):
      def __init__(self, symb):
@@ -121,15 +126,15 @@ class imas_core_profiles:
         ang_vel = self.im.get_ncvar('OMGX') # OMGX CMGX
         if self.im.is_valid(ang_vel, rmaj):
             ion.rotation_frequency_tor = ang_vel/rmaj
-        aa = self.im.get_ncvar('AIMP')
-        zz = self.im.get_ncvar('XZIMP')   #XSIMP XZIMPD
-        #ZXIMPJ profile
 
-        #not used
-        if self.im.is_valid(aa, zz):
-            ion.z_n = np.average(zz).astype(float)
-            ion.a = np.average(aa).astype(float)
-            ion.z_ion = ion.z_n
+        ion.aas = self.im.get_ncvar('AIMP')
+        ion.zns = self.im.get_ncvar('XZIMP')   #XSIMP XZIMPD
+        ion.zions = ion.zns
+        #ZXIMPJ profile
+        #reset default
+        ion.z_n = -1
+        ion.a = -1
+        ion.z_ion = -1
 
         if ion.is_valid():
             ions.append(ion)
@@ -196,7 +201,7 @@ class imas_core_profiles:
 
         #ions for profiles_1d. Also need in global_quantities
         ions = self.get_ion_data()
-        ion_glob = self.get_ion_data_global(ions)
+        #ion_glob = self.get_ion_data_global(ions)
 
         #global_quantities
         #------------------------------------------------------------------
@@ -382,11 +387,15 @@ class imas_core_profiles:
               if i==0:
                   self.logger.info(f'* filling ion {ion.label}')
               cp.profiles_1d[i].ion[ij].element.resize(1)
-              cp.profiles_1d[i].ion[ij].element[0].a = ion.a
-              cp.profiles_1d[i].ion[ij].element[0].z_n = ion.z_n
               cp.profiles_1d[i].ion[ij].element[0].atoms_n = ion.atoms_n
-              cp.profiles_1d[i].ion[ij].z_ion = ion.z_ion
               cp.profiles_1d[i].ion[ij].label = ion.label
+              arr = len(ion.aas)>i and len(ion.zns)>i and len(ion.zions)>i
+              aa = ion.aas[i].astype(float) if arr else ion.a
+              z_n = ion.zns[i].astype(float) if arr else ion.z_n
+              zion = ion.zions[i].astype(float) if arr else ion.z_ion
+              cp.profiles_1d[i].ion[ij].z_ion = zion
+              cp.profiles_1d[i].ion[ij].element[0].a = aa
+              cp.profiles_1d[i].ion[ij].element[0].z_n = z_n
 
               #self.im.fill_data(cp.profiles_1d[i].ion[ij].z_ion_1d, ion.z_ion_1d, ind=i, name='z_ion_1d')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].temperature, ion.temp, ind=i, name='temp')
