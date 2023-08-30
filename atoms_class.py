@@ -12,7 +12,7 @@ class atom_base():
         self.z_n = 0.0
         self.atoms_n = 1
         self.neutral_index = 0
-        self.z_ion = 1.0 #ion charge; ionization state
+        self.z_ion = 1.0 #ion charge; same as atomic number if only 1 element
         self.label = 'dummy'
 
         #Transp : IDS
