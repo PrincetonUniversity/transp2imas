@@ -13,6 +13,8 @@ class ion_data(atom_base):
         self.vel_par = []
         self.z_ion_1d = []
         self.rotation_frequency_tor = []
+        #same as z_n
+        self.z_ion = self.z_n
 
 
     def is_valid(self):
@@ -93,7 +95,6 @@ class imas_core_profiles:
             #ZIMPS_BE(TIME3, X) Be Avg. Mult. Impurity Z
             #zprof = self.im.get_ncvar(f'ZIMPS_{symb}')
             #a is from definition in atoms_class
-            ion.z_ion = float(charge)
             ion.dens = dens
             if ion.is_valid():
                ions.append(ion)
@@ -120,7 +121,6 @@ class imas_core_profiles:
         ang_vel = self.im.get_ncvar('OMGX') # OMGX CMGX
         if self.im.is_valid(ang_vel, rmaj):
             ion.rotation_frequency_tor = ang_vel/rmaj
-        ion.z_ion = 1.0 # for + ?
         aa = self.im.get_ncvar('AIMP')
         zz = self.im.get_ncvar('XZIMP')   #XSIMP XZIMPD
         #ZXIMPJ profile
