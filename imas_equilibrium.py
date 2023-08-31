@@ -443,7 +443,7 @@ class imas_equilibrium:
             coord = eqm.time_slice[it].coordinate_system
 
             #TODO check dimension of fill data
-            rsurf, ysurf = [],[] #self.convert_moments(ncoord_xb, ntheta, it)
+            rsurf, ysurf = self.convert_moments(ncoord_xb, ntheta, it)
 
             #fill data
             coord.grid_type.name = "inverse"
