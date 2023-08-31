@@ -13,14 +13,14 @@ from pathlib import Path
 from netCDF4 import Dataset
 
 class netcdf_connection:
-    def __init__(self, ncfile:str):
+    def __init__(self, ncfile:str, machine:str):
         self.nc = None
         self.vars_ = []
         self.ncfile = ncfile
         self.device = None
         self.shot = 0
         self.open_ncfile()
-        self.set_machine_runid()
+        self.set_machine_runid(machine)
 
     def __del__(self):
         self.close_ncfile()
@@ -291,11 +291,17 @@ class netcdf_connection:
                 for ncattr in self.nc.variables[key].ncattrs():
                     print(f'\t{ncattr} :  {repr(self.nc.variables[key].getncattr(ncattr))}' )
             except KeyError:
-                print(f"\tWARNING: variable attribute not found: {key}")
+                pass
 
 
-    def set_machine_runid(self):
-        self.device = self.get_ncattr('device').strip()
+    def set_machine_runid(self, machine:str):
+        dev = self.get_ncattr('device')
+        if machine is not None:
+            self.device = machine
+        elif dev is not None:
+            self.device = dev.strip()
+        else:
+            raise Exception(f'machine is not found in CDF header. Pass it using -m')
         self.shot = int(self.get_ncattr('shot'))
 
         try:
