@@ -184,12 +184,14 @@ class netcdf_connection:
          if len(lst)<1:
             return [], []
          ncs = []
+         names = []
          for chz in lst:
             st = cut + chz
             lname = self.get_ncattr(f'{st}:long_name').strip()
             nc = len([i for i,ch in enumerate(lname) if ch=='+'])
             ncs.append(nc)
-         return lst, ncs
+            names.append(st)
+         return names, lst, ncs
 
     def get_species_data_rec(self, name:str) ->dict:
          r'''
