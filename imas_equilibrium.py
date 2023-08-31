@@ -2,6 +2,7 @@
 from nc2imas import *
 from multiprocessing import Pool
 from datetime import datetime
+import matplotlib.pyplot as plt #boundary trace
 
 class imas_equilibrium:
     def __init__(self, ncimas:nc2imas):
@@ -118,6 +119,30 @@ class imas_equilibrium:
          rsurf[ntheta-1] = rsurf[0]
          ysurf[ntheta-1] = ysurf[0]
          return rsurf, ysurf
+
+
+    def trace_boundary(self, psirz, rgrid, zgrid, time, nr, nz):
+         #psirz is 1D, to be reshaped
+         rbdy = []
+         zbdy = []
+         plt.figure()
+         psib = self.im.get_ncvar('PBPMHD', scale=2.*self.im.pi, ind=time)
+         #psi2d = np.reshape(psirz, (nz, nr)).T
+         psi2d = np.reshape(psirz, (nr, nz))
+
+         #try:
+         contour = plt.contour(rgrid, zgrid, psi2d, levels=[psib])
+         dat = contour.allsegs[0][0]
+         rbdy, zbdy = dat[:,0], dat[:,1]
+
+         contours = plt.contour(rgrid, zgrid, psi2d)
+         plt.clabel(contour, colors='k', inline=1, fontsize=20)
+         plt.clabel(contours, inline=1, fontsize=10)
+         plt.show()
+         #except:
+         #   print('Error tracing boundary')
+         #   pass
+         return rbdy, zbdy
 
 
     def boundary_minor(self, rsurf):
@@ -328,8 +353,12 @@ class imas_equilibrium:
             if len(emhd) >it:
                 eqm.time_slice[it].global_quantities.energy_mhd = emhd[it].astype(float)
 
+            #2D psi
+            psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
+
             nthetab = 128 #TODO
             rbound, ybound = self.convert_moments_bdry(nthetab, it)
+            #rbound, ybound = self.trace_boundary(psirz, rgrid[it], zgrid[it], it, nr, nz)
             self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
@@ -343,10 +372,8 @@ class imas_equilibrium:
                eqm.time_slice[it].boundary.geometric_axis.r = geom_rz[0]
                eqm.time_slice[it].boundary.geometric_axis.z = geom_rz[1]
 
-
             #if len(psi_sepx) >it:
             #    eqm.time_slice[it].boundary_separatrix.psi = psi_sepx[it]
-
 
             if len(triangb) > it:
                 eqm.time_slice[it].boundary.triangularity = triangb[it].astype(float)
@@ -386,8 +413,6 @@ class imas_equilibrium:
             self.im.fill_data(prof2.grid.dim1, rgrid, ind=it, name='rgrid')
             self.im.fill_data(prof2.grid.dim2, zgrid, ind=it, name='zgrid')
 
-            psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
-
             if self.im.is_valid(rgrid, zgrid, ind=it, name='grid') and self.im.is_valid(psirz, name='prirz'):
                 prof2.psi.resize((nr, nz))
                 prof2.psi = np.reshape(psirz, (nz, nr)).T
@@ -407,7 +432,7 @@ class imas_equilibrium:
             coord = eqm.time_slice[it].coordinate_system
 
             #TODO check dimension of fill data
-            rsurf, ysurf = self.convert_moments(ncoord_xb, ntheta, it)
+            rsurf, ysurf = [],[] #self.convert_moments(ncoord_xb, ntheta, it)
 
             #fill data
             coord.grid_type.name = "inverse"
