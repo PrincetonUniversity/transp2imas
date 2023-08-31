@@ -39,10 +39,10 @@ def do_convert(argvs):
     #get arguments from command line
     #if -i all -d <dir> ;instead of CDF file name, then search for all CDF files in that dir,
     #and run in a loop
-    backend, run, occur, user, newdb, ncfile, nml, log = get_args(argvs) #(sys.argv)
+    backend, run, occur, user, machine, newdb, ncfile, nml, log = get_args(argvs) #(sys.argv)
 
     nci = nc2imas(backend=backend, run=run, occur=occur, user=user,
-              new_db=newdb, ncfile=ncfile, nml_file=nml, log=log)
+         machine=machine, new_db=newdb, ncfile=ncfile, nml_file=nml, log=log)
     nci.logger.info(f'{"-"*30} \n{ncfile}, {nml}')
 
     #test using 97781K31 different profile size

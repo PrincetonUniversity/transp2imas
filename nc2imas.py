@@ -30,11 +30,10 @@ def getVarName(var):
 
 
 class nc2imas(imas_connection, netcdf_connection):
-    def __init__(self, run, backend, occur, user, new_db, ncfile,
+    def __init__(self, run, backend, occur, user, machine, new_db, ncfile,
          nml_file:str=None, log:str='error'):
-        netcdf_connection.__init__(self, ncfile)
+        netcdf_connection.__init__(self, ncfile, machine)
         imas_connection.__init__(self, self.device, self.shot, run, backend, occur, user, new_db)
-
         self.nml_name = nml_file
         self.logger = None
         #namelist contents dict
