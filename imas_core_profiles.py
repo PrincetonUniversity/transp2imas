@@ -1,6 +1,12 @@
 
 from nc2imas import *
 
+class ion_states:
+    def __init__(self, sdens, label=''):
+        #arrays for all times
+        self.sdens = sdens
+        self.label = label
+
 class ion_data(atom_base):
     def __init__(self, symb):
         super().__init__(symb)
@@ -18,6 +24,7 @@ class ion_data(atom_base):
         self.zions = []
         #same as z_n
         self.z_ion = self.z_n
+        self.states = []
 
 
     def is_valid(self):
@@ -80,27 +87,36 @@ class imas_core_profiles:
         #NIMPS_ total for all charge states, per species
         imp_atoms = self.im.get_species_names('NIMPS_?', cut='NIMPS_')
         for symb in imp_atoms:
-            st = f'NIMP_{symb}_'
-            #eg: search z and charge from NIMPS_BE_4
-            spz, ncs = self.im.get_species_data(f'{st}?', cut=st)
-            #lookup NIMP_BE_4 shouldn't return >1
-            if len(spz)>1:
-               print(f'species lookup: multiple entries for{st}')
-            charge = ncs[0]
             label = symb
-            dens = self.im.get_ncvar(f'NIMPS_{symb}', 1.0e6)
-            if len(dens)==0:
+            den = self.im.get_ncvar(f'NIMPS_{symb}', scale=1.0e6)
+            if len(den)==0:
                continue
             self.logger.info(f'ion: {symb} => {label}')
 
+            dstr = f'NIMP_{symb}_'
+            #eg: search z and charge from NIMP_BE_4
+            dnames, spz, ncs = self.im.get_species_data(f'{dstr}?', cut=dstr)
+            #names ?. lookup NIMP_BE_4 shouldn't return >1  ?
+            if len(spz)>1:
+               print(f'species lookup: multiple entries for {dnames}')
+            ncharge = ncs[0]
+
             ion = ion_data(symb)
             if ion.z_n != float(spz[0]):
-               self.im.logger.info(f'{st} lookup error: {ion.z_n} != {spz[0]}')
+               self.im.logger.info(f'{dstr} lookup error: {ion.z_n} != {spz[0]}')
             #reset default
             #ZIMPS_BE(TIME3, X) Be Avg. Mult. Impurity Z
-            #zprof = self.im.get_ncvar(f'ZIMPS_{symb}')
+            zprof = self.im.get_ncvar(f'ZIMPS_{symb}')
+            ion.z_ion_1d = zprof
             #a is from definition in atoms_class
-            ion.dens = dens
+            ion.dens = den
+
+            #charge states. eg:NIMP_BE_4
+            for dname in dnames:
+               sdens = self.im.get_ncvar(dname, scale=1.0e6)
+               istate = ion_states(sdens, f'{symb}+{ncharge}')
+               ion.states.append(istate)
+
             if ion.is_valid():
                ions.append(ion)
 
@@ -141,6 +157,12 @@ class imas_core_profiles:
         else:
             self.logger.info(f'impurity ion: {label}  => {symb} : Discarded')
         return ions
+
+    def get_ion_data_global(ions:ion_data) ->ion_data:
+        iong = []
+        #for ion in ions:
+
+
 
     #volume/wall neutral density
     def get_neutral_data(self, wall:str=None):
@@ -404,6 +426,13 @@ class imas_core_profiles:
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal, ion.vel_tor, ind=i, name='vel_tor')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal, ion.vel_pol, ind=i, name='vel_pol')
               #self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.parallel, ion.vel_par, ind=i, name='vel_par')
+
+              #states
+              nstates = len(ion.states)
+              cp.profiles_1d[i].ion[ij].state.resize(nstates)
+              for ist, istate in enumerate(ion.states):
+                  self.im.fill_data(cp.profiles_1d[i].ion[ij].state[ist].density, istate.sdens, ind=i, name='sdens')
+                  cp.profiles_1d[i].ion[ij].state[ist].label = istate.label
 
           #
           self.im.fill_data_nc(cp.profiles_1d[i].t_i_average, 'TI', ind=i)
