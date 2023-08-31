@@ -18,6 +18,7 @@ class imas_equilibrium:
         self.dtheta = None
         self.inv_grid_theta = None
         time1 = datetime.now()
+        self.bound_error = 0
         self.create_ids()
         elapsed = (datetime.now() - time1).seconds/60.0
         print(f'took:{elapsed:.2f} m')
@@ -126,22 +127,51 @@ class imas_equilibrium:
          rbdy = []
          zbdy = []
          plt.figure()
-         psib = self.im.get_ncvar('PBPMHD', scale=2.*self.im.pi, ind=time)
-         #psi2d = np.reshape(psirz, (nz, nr)).T
-         psi2d = np.reshape(psirz, (nr, nz))
+         #PBPMHD , PLCFSMHD
+         psib = self.im.get_ncvar('PLFLXA', scale=2.*self.im.pi, ind=time)
+         psi0 = self.im.get_ncvar('PSI0_TR', scale=2.*self.im.pi, ind=time)
+         if psi0>0:
+            psib = psib + psi0
+         psi2d = np.reshape(psirz, (nz, nr)) #.T
+         #psi2d = np.reshape(psirz, (nr, nz))
 
+         eps = 0.01
          #try:
-         contour = plt.contour(rgrid, zgrid, psi2d, levels=[psib])
-         dat = contour.allsegs[0][0]
-         rbdy, zbdy = dat[:,0], dat[:,1]
+         contour = plt.contour(rgrid, zgrid, psi2d, levels=[psib, psib+0.1])
+         for cont in contour.allsegs[0]:
+            if time==0 or time==100:
+               print('contourPSI', psib, psi0,len(cont), len(cont[0]))
 
-         contours = plt.contour(rgrid, zgrid, psi2d)
-         plt.clabel(contour, colors='k', inline=1, fontsize=20)
-         plt.clabel(contours, inline=1, fontsize=10)
-         plt.show()
+            #TODO check if axis is included in this bounded contour
+            rb, zb = cont[:,0], cont[:,1]
+            if abs(cont[:,0][0]-cont[:,0][-1])<eps and abs(cont[:,1][0]-cont[:,1][-1])<eps:
+            #if abs(rb[0]-rb[-1])<eps and abs(zb[0]-zb[-1])<eps:
+               rbdy, zbdy = rb, zb
+               rbdy[0] = rbdy[-1]
+               zbdy[0] = zbdy[-1]
+               break
          #except:
-         #   print('Error tracing boundary')
+         #   self.bound_err += 1
+         #   print(f'Error tracing boundary for PSI= {psib}')
          #   pass
+
+         if time==0 or time==100:
+            #contours = plt.contourf(rgrid, zgrid, psi2d, levels=30)
+            #plt.clabel(contours, inline=1, fontsize=10)
+
+            limitr = self.im.get_ncvar('RLIM', 0.01)
+            limitz = self.im.get_ncvar('YLIM', 0.01)
+            #plt.clf()
+            #plt.figure()
+            plt.plot(rbdy, zbdy, 'r-')
+            plt.plot(limitr[0],limitz[0], 'b-')
+            plt.show()
+            #plt.show(block=False)
+            #plt.pause(1)
+            #plt.close()
+            #for i in range(len(rbdy)):
+            #   print(rbdy[i], zbdy[i])
+         plt.close('all')
          return rbdy, zbdy
 
 
@@ -357,8 +387,8 @@ class imas_equilibrium:
             psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
 
             nthetab = 128 #TODO
-            rbound, ybound = self.convert_moments_bdry(nthetab, it)
-            #rbound, ybound = self.trace_boundary(psirz, rgrid[it], zgrid[it], it, nr, nz)
+            #rbound, ybound = self.convert_moments_bdry(nthetab, it)
+            rbound, ybound = self.trace_boundary(psirz, rgrid[it], zgrid[it], it, nr, nz)
             self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
