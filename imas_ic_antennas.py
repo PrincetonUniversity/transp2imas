@@ -11,7 +11,6 @@ class imas_ic_antennas:
     def create_ids(self):
         self.im.logger.info('\nic_antennas')
         ica = self.im.ids.ic_antennas
-        sgn = -1 if self.im.iter_ else 1
 
         #scalar time
         timesc = self.im.get_ncvar('TIME')
@@ -35,23 +34,19 @@ class imas_ic_antennas:
             ia = i+1
             sta = f'{ia}'
 
-            ant.module.resize(1)
-            mod = ant.module[0]
-            si = 0 # only 1 strap
-
             #frequency
-            self.im.fill_data(mod.frequency.time, timesc)
-            self.im.fill_data_nc(mod.frequency.data, f'FREQA{sta}')
+            self.im.fill_data(ant.frequency.time, timesc)
+            self.im.fill_data_nc(ant.frequency.data, f'FREQA{sta}')
 
             #power launched
-            self.im.fill_data(mod.power_launched.time, timesc)
-            self.im.fill_data_nc(mod.power_launched.data, f'PICHA{sta}')
+            self.im.fill_data(ant.power_launched.time, timesc)
+            self.im.fill_data_nc(ant.power_launched.data, f'PICHA{sta}')
 
             #power_forward. Forward power arriving to the back of the antenna
             # in TRANSP there is only launched power, but users fill the UFILES with the forward power.
             # when TRANSP runs the IC code, it assumes that injected power is the forward power. 
-            self.im.fill_data(mod.power_forward.time, timesc)
-            self.im.fill_data_nc(mod.power_forward.data, f'PICHA{sta}')
+            self.im.fill_data(ant.power_forward.time, timesc)
+            self.im.fill_data_nc(ant.power_forward.data, f'PICHA{sta}')
 
         if nant > 0:
             #power launched
