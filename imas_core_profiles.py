@@ -120,42 +120,6 @@ class imas_core_profiles:
             if ion.is_valid():
                ions.append(ion)
 
-        #impurity = average in TRANSP, not only an element.
-        symb = 'X'
-        label = 'X'
-        dens = self.im.get_ncvar('NIMP', 1.0e6) #XDENS.  NIMP or NIMP_NC
-        if len(dens) == 0:
-           return ions
-        self.logger.info(f'impurity ion: {label}  => {symb}')
-        ion = ion_data(symb)
-        ion.dens = dens
-        ion.temp = self.im.get_ncvar(f'TXNC')                   # TX  TXNC
-        self.logger.info(f'{symb} temp {len(ion.temp)}')
-        ion.vel_rad = self.im.get_ncvar('VELIM', 0.01)          # VELIM
-        self.logger.info(f'{symb} vel_rad {len(ion.vel_rad)}')
-        ion.vel_pol = self.im.get_ncvar('VPOLX_NC', 0.01)        # VPOLX_NC
-        self.logger.info(f'{symb} vel_pol {len(ion.vel_pol)}')
-        ion.vel_tor = self.im.get_ncvar(f'VTORX_NC', 0.01)       # VTORX  VTORX_NC
-        self.logger.info(f'{symb} vel_tor {len(ion.vel_tor)}')
-        #ion.vel_par = []
-        #ion.z_ion_1d = []
-        ang_vel = self.im.get_ncvar('OMGX') # OMGX CMGX
-        if self.im.is_valid(ang_vel, rmaj):
-            ion.rotation_frequency_tor = ang_vel/rmaj
-
-        ion.aas = self.im.get_ncvar('AIMP')
-        ion.zns = self.im.get_ncvar('XZIMP')   #XSIMP XZIMPD
-        ion.zions = ion.zns
-        #ZXIMPJ profile
-        #reset default
-        ion.z_n = -1
-        ion.a = -1
-        ion.z_ion = -1
-
-        if ion.is_valid():
-            ions.append(ion)
-        else:
-            self.logger.info(f'impurity ion: {label}  => {symb} : Discarded')
         return ions
 
     def get_ion_data_global(ions:ion_data) ->ion_data:
