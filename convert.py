@@ -60,9 +60,8 @@ def do_convert(argvs):
 
 # everything below this line needs to be verified
 
-         # to be fixed: remove modules
-#        print('ic_antenna') 
-#        imas_ic_antennas(nci)
+        print('ic_antenna') 
+        imas_ic_antennas(nci)
 
 
         # to be fixed: everything
