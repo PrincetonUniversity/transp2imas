@@ -54,14 +54,15 @@ def do_convert(argvs):
         print('lh_antenna') 
         imas_lh_antennas(nci)
 
+        print('ic_antenna') 
+        imas_ic_antennas(nci)
+
+        # to be fixed: since homogeneous time is 1, all 1D waveform must have the same time base
         # to be fixed in pf_active: currents are COCOS-dependent
         print('pf_active') 
         imas_pf_active(nci)
 
 # everything below this line needs to be verified
-
-        print('ic_antenna') 
-        imas_ic_antennas(nci)
 
 
         # to be fixed: everything

@@ -35,22 +35,18 @@ class imas_ic_antennas:
             sta = f'{ia}'
 
             #frequency
-            self.im.fill_data(ant.frequency.time, timesc)
             self.im.fill_data_nc(ant.frequency.data, f'FREQA{sta}')
 
             #power launched
-            self.im.fill_data(ant.power_launched.time, timesc)
             self.im.fill_data_nc(ant.power_launched.data, f'PICHA{sta}')
 
             #power_forward. Forward power arriving to the back of the antenna
             # in TRANSP there is only launched power, but users fill the UFILES with the forward power.
             # when TRANSP runs the IC code, it assumes that injected power is the forward power. 
-            self.im.fill_data(ant.power_forward.time, timesc)
             self.im.fill_data_nc(ant.power_forward.data, f'PICHA{sta}')
 
         if nant > 0:
             #power launched
-            self.im.fill_data(ica.power_launched.time, timesc)
             self.im.fill_data_nc(ica.power_launched.data, 'PICHTOT')
 
             self.im.putdb_imas(ica)
