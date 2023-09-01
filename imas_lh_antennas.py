@@ -44,17 +44,14 @@ class imas_lh_antennas:
             # we need to write the 'input' power that is in the CDF file to both the launched and forward power.
             #power launched
             self.logger.info(f'Ant: {ia} PLHANT{ia}')
-            self.im.fill_data(lha.antenna[i].power_launched.time, timesc)
             self.im.fill_data_nc(lha.antenna[i].power_launched.data, f'PLHANT{sta}')
 
             #power_forward. Forward power arriving to the back of the antenna
             self.logger.info(f'Ant: {ia} PLHANT{ia}')
-            self.im.fill_data(lha.antenna[i].power_forward.time, timesc)
             self.im.fill_data_nc(lha.antenna[i].power_forward.data, f'PLHANT{sta}')
 
         if nant > 0:
             #power launched
-            self.im.fill_data(lha.power_launched.time, timesc)
             self.im.fill_data_nc(lha.power_launched.data, 'PLH')
 
             self.im.putdb_imas(lha)
