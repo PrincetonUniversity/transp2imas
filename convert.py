@@ -51,7 +51,6 @@ def do_convert(argvs):
         print('wall')
         imas_wall(nci)
 
-        # to be fixed: total input power
         print('lh_antenna') 
         imas_lh_antennas(nci)
 
@@ -60,6 +59,10 @@ def do_convert(argvs):
         imas_pf_active(nci)
 
 # everything below this line needs to be verified
+
+         # to be fixed: remove modules
+#        print('ic_antenna') 
+#        imas_ic_antennas(nci)
 
 
         # to be fixed: everything
@@ -83,9 +86,6 @@ def do_convert(argvs):
          # to be fixed: steering angles/definition/consistency
 #        print('ec_launchers')
 #        imas_ec_launchers(nci)
-
-#        print('ic_antenna') 
-#        imas_ic_antennas(nci)
 
 #        print('nbi') # 175286T57.CDF
 #        imas_nbi(nci)
