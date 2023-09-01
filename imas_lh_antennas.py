@@ -54,8 +54,11 @@ class imas_lh_antennas:
 
         if nant > 0:
             #power launched
-            self.im.fill_data(lha.power_launched.time, timesc)
-            self.im.fill_data_nc(lha.power_launched.data, 'PLH')
+            # @Gopan
+            # the 2 lines below are incorrect. PLH is a 2D profile and represents the power absorbed, not the power launched. 
+            # the quantity that needs to be stored in lha.power_launched is the sum of PLHANT{sta}
+            #self.im.fill_data(lha.power_launched.time, timesc)
+            #self.im.fill_data_nc(lha.power_launched.data, 'PLH')
 
             self.im.putdb_imas(lha)
             self.logger.info('Done')
