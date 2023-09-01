@@ -98,7 +98,7 @@ class imas_core_profiles:
             dnames, spz, ncs = self.im.get_species_data(f'{dstr}?', cut=dstr)
             #names ?. lookup NIMP_BE_4 shouldn't return >1  ?
             if len(spz)>1:
-               print(f'species lookup: multiple entries for {dnames}')
+               print(f'multiple charge states present for {symb}')
             ncharge = ncs[0]
 
             ion = ion_data(symb)
