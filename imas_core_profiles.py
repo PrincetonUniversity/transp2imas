@@ -91,28 +91,19 @@ class imas_core_profiles:
             den = self.im.get_ncvar(f'NIMPS_{symb}', scale=1.0e6)
             if len(den)==0:
                continue
-            self.logger.info(f'ion: {symb} => {label}')
-
-            dstr = f'NIMP_{symb}_'
-            #eg: search z and charge from NIMP_BE_4
-            dnames, spz, ncs = self.im.get_species_data(f'{dstr}?', cut=dstr)
-            #names ?. lookup NIMP_BE_4 shouldn't return >1  ?
-            if len(spz)>1:
-               print(f'species lookup: multiple entries for {dnames}')
-            ncharge = ncs[0]
-
             ion = ion_data(symb)
-            if ion.z_n != float(spz[0]):
-               self.im.logger.info(f'{dstr} lookup error: {ion.z_n} != {spz[0]}')
-            #reset default
             #ZIMPS_BE(TIME3, X) Be Avg. Mult. Impurity Z
             zprof = self.im.get_ncvar(f'ZIMPS_{symb}')
             ion.z_ion_1d = zprof
             #a is from definition in atoms_class
             ion.dens = den
 
-            #charge states. eg:NIMP_BE_4
-            for dname in dnames:
+            #charge states.
+            self.logger.info(f'ion: {symb} => {label}')
+            dstr = f'NIMP_{symb}_'
+            #charges from NIMP_BE_<n>; n can be 1..z
+            dnames, ncs = self.im.get_species_data(f'{dstr}?', cut=dstr)
+            for dname, ncharge in zip(dnames, ncs):
                sdens = self.im.get_ncvar(dname, scale=1.0e6)
                istate = ion_states(sdens, f'{symb}+{ncharge}')
                ion.states.append(istate)
