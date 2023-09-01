@@ -48,44 +48,64 @@ def do_convert(argvs):
     #test using 97781K31 different profile size
 
     if all_:
-        print('radiation') #33618Y19.CDF  38530P94
-        imas_radiation(nci)
-
-        print('summary')
-        imas_summary(nci)
-
-        print('equilibrium') #142202U01.CDF
-        imas_equilibrium(nci)
-
-        print('core_profiles')
-        imas_core_profiles(nci)
-
-        print('ec_launchers')
-        imas_ec_launchers(nci)
-
-        print('ic_antenna') # 97781K31, 89846.CDF
-        imas_ic_antennas(nci)
-
-        print('lh_antenna') #33618Y19.CDF
-        imas_lh_antennas(nci)
-
-        print('nbi') # 175286T57.CDF
-        imas_nbi(nci)
-
-        print('pf_active') # 142202U01 NSTX
-        imas_pf_active(nci)
-
-        print('pf_passive')
-        imas_pf_passive(nci)
-
         print('wall')
         imas_wall(nci)
 
-        print('imas_core_sources') # 112989Z09(NSTX), 175286T57
-        imas_core_sources(nci)
+        # to be fixed: total input power
+        print('lh_antenna') 
+        imas_lh_antennas(nci)
 
-        print('imas_waves')
-        imas_waves(nci)
+        # to be fixed in pf_active: currents are COCOS-dependent
+        print('pf_active') 
+        imas_pf_active(nci)
+
+# everything below this line needs to be verified
+
+
+        # to be fixed: everything
+#        print('radiation') #33618Y19.CDF  38530P94
+#        imas_radiation(nci)
+
+#        print('summary')
+#        imas_summary(nci)
+
+         # to be fixed: remove moment calculations
+         # all global quantities
+         # RBZ (and Ro, Bo)
+         # boundary
+         # handling of size of arrays
+         # transpose/not transpose
+         # COCOS transform
+         # grids
+#        print('equilibrium') #142202U01.CDF
+#        imas_equilibrium(nci)
+
+         # to be fixed: steering angles/definition/consistency
+#        print('ec_launchers')
+#        imas_ec_launchers(nci)
+
+#        print('ic_antenna') 
+#        imas_ic_antennas(nci)
+
+#        print('nbi') # 175286T57.CDF
+#        imas_nbi(nci)
+
+        # to be fixed: charge states for impurities
+        # ion and impurity temperature
+        print('core_profiles')
+        imas_core_profiles(nci)
+
+        # to be fixed: everything
+#        print('pf_passive')
+#        imas_pf_passive(nci)
+
+        # to be fixed: everything
+#        print('imas_core_sources') # 112989Z09(NSTX), 175286T57
+#        imas_core_sources(nci)
+
+        # to be fixed: everything
+#        print('imas_waves')
+#        imas_waves(nci)
 
 
         #print('core transport') #89846.CDF
