@@ -35,11 +35,11 @@ class imas_ec_launchers:
             #frequency
             if self.im.is_valid(freq, ind=i):
                 self.im.fill_data(ec.beam[i].frequency.data, freq[i])
-                self.im.fill_data(ec.beam[i].frequency.time, timesc)
+#                self.im.fill_data(ec.beam[i].frequency.time, timesc)
 
             #PECIN+1..n(TIME)
             self.im.fill_data_nc(ec.beam[i].power_launched.data, 'PECIN'+str(ib))
-            self.im.fill_data(ec.beam[i].power_launched.time, timesc)
+#            self.im.fill_data(ec.beam[i].power_launched.time, timesc)
 
             #O-mode ?
 #            ec.beam[i].mode = 1
@@ -48,7 +48,16 @@ class imas_ec_launchers:
             #steering_angle_tor [rad]. Azimuthal launch angle
             #PHAIECHn(TIME) DEGREES; Toroidal aiming, GYROTRON n
             #TRANSP defines angles in the laboratory frame +R to -R. 90 deg along +Phi
-            #IDS defines angles in the EC frame ?? increasing towards the positive phi axis.
+            #IDS defines angles in the EC frame, increasing towards the positive phi axis.
+            # the formula for conversion can be found in the paper by Prater, Eq. 
+            # theta => THETECH
+            # phi   => PHAIECH
+            # alpha => poloidal steering angle
+            # beta  => toroidal steering angle
+            # output from TRANSP is in degrees, IDS uses radians
+            # in the formula below, all angles are in radians
+            # theta=pi-acos(cos(beta)*sin(alpha));phi=pi+asin(sin(beta)/sin(theta))
+            # replace code below for both angles with the formula above (which needs to be inverted)
             angle = self.im.get_ncvar('PHAIECH'+str(i+1))
             if angle is not None:
                 angle = (angle-180.0)*constants.pi/180.
@@ -64,10 +73,11 @@ class imas_ec_launchers:
             angle = self.im.get_ncvar('THETECH'+str(i+1))
             if angle is not None:
                 angle = (angle-90.0)*constants.pi/180.
-                #angle = -(angle+90.0)*constants.pi/180.
                 self.im.fill_data(ec.beam[i].steering_angle_pol, angle)
 
-        self.im.putdb_imas(ec)
+
+            self.im.putdb_imas(ec)
+            self.logger.info('Done')
 
 
 if __name__ == '__main__':
