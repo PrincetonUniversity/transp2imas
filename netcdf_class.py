@@ -229,9 +229,9 @@ class netcdf_connection:
         try:
             res = None
             if ind>=0:
-               res = np.array(self.nc.variables[var][:][ind])
+               res = np.array(self.nc.variables[var][ind])
             else:
-               res = np.array(self.nc.variables[var][:])
+               res = np.array(self.nc.variables[var])
 
             if scale < 1. or scale > 1.:
                 return scale*res
