@@ -62,7 +62,50 @@ def do_convert(argvs):
         print('pf_active') 
         imas_pf_active(nci)
 
+#  O H I O => Only Handle It Once ...
+
+# PRIORITY
+
+        # COCOS consistency
+        #  TRANSP uses COCOS=5 
+        # for the time being I suggest to do the following for the Milestone of FY23: 
+        # - since TRANSP is COCOS=5 => write the CDF output as is
+        # - add a comment where relevant that the IDS has been written assuming COCOS=5 (used by TRANSP)
+
+        # write q profile => need to convert from zone boundary to zone center
+        # fill/fix vacuum_toroidal_field => this is COCOS dependent
+        # check global quantities: ip and b0 are COCOS dependent
+        # check radial grids => psi is COCOS dependent
+        # check units Weber vs Weber/rad
+        # check values of psi at center and at boundary
+        # focus on electrons, ignore ions for now
+        # need to check the size of the 1D and 2D time vector.
+        # if the size is different, homogeneous_time should be 0, not 1  
+        # and the arrays need to be filled consistently
+        print('core_profiles')
+        imas_core_profiles(nci)
+
+        # need to write TF IDS => only r0 and b_field_tor_vacuum_r => COCOS dependent    
+
+
+         # to be fixed: consistency with homogenous_time
+#        print('nbi') # 175286T57.CDF
+#        imas_nbi(nci)
+
+         # to be fixed: steering angles/definition/consistency
+         # consistency with homogenous_time
+#        print('ec_launchers')
+#        imas_ec_launchers(nci)
+
+
+# IGNORE EVERYTHING LISTED BELOW THIS LINE. NEED TO COMPLETE EVERYTHING ABOVE THIS LINE FIRST
+
+
 # everything below this line needs to be verified
+
+        # to be fixed: everything
+#        print('pf_passive')
+#        imas_pf_passive(nci)
 
 
         # to be fixed: everything
@@ -79,25 +122,22 @@ def do_convert(argvs):
          # handling of size of arrays
          # transpose/not transpose
          # COCOS transform
-         # grids
+         # grids: chec consistency
+         # rho_tor_norm is incorrect
+         # psi is COCOS dependent (both 1D and 2D)
 #        print('equilibrium') #142202U01.CDF
 #        imas_equilibrium(nci)
 
-         # to be fixed: steering angles/definition/consistency
-#        print('ec_launchers')
-#        imas_ec_launchers(nci)
+        # write q profile => need to convert from zone boundary to zone center
+        # fill/fix vacuum_toroidal_field => this is COCOS dependent
+        # check global quantities: ip and b0 are COCOS dependent
+        # check radial grids => psi is COCOS dependent
+        # check units Weber vs Weber/rad
+        # check values of psi at center and at boundary
+#        print('core_profiles')
+#        imas_core_profiles(nci)
 
-#        print('nbi') # 175286T57.CDF
-#        imas_nbi(nci)
-
-        # to be fixed: charge states for impurities
-        # ion and impurity temperature
-        print('core_profiles')
-        imas_core_profiles(nci)
-
-        # to be fixed: everything
-#        print('pf_passive')
-#        imas_pf_passive(nci)
+        # need to write TF IDS => only r0 and b_field_tor_vacuum_r => COCOS dependent    
 
         # to be fixed: everything
 #        print('imas_core_sources') # 112989Z09(NSTX), 175286T57
