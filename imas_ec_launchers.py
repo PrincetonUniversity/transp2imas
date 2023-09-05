@@ -13,6 +13,7 @@ class imas_ec_launchers:
 
         ec = self.im.ids.ec_launchers
 
+        pi = self.im.pi
         freq = self.im.get_namelist_vars('FREQECH?', float)
 
         #scalar time
@@ -46,35 +47,21 @@ class imas_ec_launchers:
 
             # fmp needs to check the code below for a number of cases with different B, I geometry
             #steering_angle_tor [rad]. Azimuthal launch angle
-            #PHAIECHn(TIME) DEGREES; Toroidal aiming, GYROTRON n
             #TRANSP defines angles in the laboratory frame +R to -R. 90 deg along +Phi
             #IDS defines angles in the EC frame, increasing towards the positive phi axis.
             # the formula for conversion can be found in the paper by Prater, Eq. 
-            # theta => THETECH
-            # phi   => PHAIECH
-            # alpha => poloidal steering angle
-            # beta  => toroidal steering angle
-            # output from TRANSP is in degrees, IDS uses radians
-            # in the formula below, all angles are in radians
             # theta=pi-acos(cos(beta)*sin(alpha));phi=pi+asin(sin(beta)/sin(theta))
-            # replace code below for both angles with the formula above (which needs to be inverted)
-            angle = self.im.get_ncvar('PHAIECH'+str(i+1))
-            if angle is not None:
-                angle = (angle-180.0)*constants.pi/180.
-                self.im.fill_data(ec.beam[i].steering_angle_tor, angle)
-            #If angle-180.0 then inconsistency between tr_imas_mod.f90:468, 470
-            #deg2rad*phaiech_use(iant), deg2rad*thetech_use(iant)
 
-            #steering_angle_pol [rad]
-            #THETECHn(TIME) DEGREES Poloidal aiming, GYROTRON n
-            #TRANSP: calculated with respect to the positive Z axis. THETECH=90.0 points horizontally,
-            # THETECH=180.0 points downwards.
-            #IMAS: in the R,Z plane (from the -R axis towards the -Z axis). Not in detector_aperture_coordinates
-            angle = self.im.get_ncvar('THETECH'+str(i+1))
-            if angle is not None:
-                angle = (angle-90.0)*constants.pi/180.
-                self.im.fill_data(ec.beam[i].steering_angle_pol, angle)
-
+            eps = 1.0e-10
+            #PHAIECHn(TIME) DEGREES; Toroidal aiming, GYROTRON n
+            phi = self.im.get_ncvar('PHAIECH'+str(i+1), scale=pi/180.0)
+            theta = self.im.get_ncvar('THETECH'+str(i+1), scale=pi/180.0)
+            if phi is not None and theta is not None:
+               beta = np.arcsin(np.sin(theta)*np.sin(phi-pi))
+               cosbeta = np.cos(beta)
+               alpha = np.where(abs(cosbeta)>eps, np.arcsin(np.cos(pi-theta)/cosbeta), 0)
+               self.im.fill_data(ec.beam[i].steering_angle_tor, beta)
+               self.im.fill_data(ec.beam[i].steering_angle_pol, alpha)
 
             self.im.putdb_imas(ec)
             self.logger.info('Done')
