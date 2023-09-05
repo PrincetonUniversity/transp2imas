@@ -14,6 +14,7 @@ from imas_ec_launchers import *
 from imas_lh_antennas import *
 from imas_ic_antennas import *
 from imas_nbi import *
+from imas_tf import imas_tf
 from imas_pf_active import *
 from imas_pf_passive import *
 from imas_edge_sources import *
@@ -86,7 +87,8 @@ def do_convert(argvs):
         imas_core_profiles(nci)
 
         # need to write TF IDS => only r0 and b_field_tor_vacuum_r => COCOS dependent    
-
+        print('tf')
+        imas_tf(nci)
 
          # to be fixed: consistency with homogenous_time
 #        print('nbi') # 175286T57.CDF
