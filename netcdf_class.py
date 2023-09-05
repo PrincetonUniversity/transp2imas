@@ -182,9 +182,16 @@ class netcdf_connection:
          '''
          lst = self.get_species_names(name, cut=cut, prep_HE=False) #NIMP_BE_?
          if len(lst)<1:
-            return [], []
-         names = [cut+ch for ch in lst]
-         return names, lst
+            return [], [], []
+         ncs = []
+         names = []
+         for chz in lst:
+            st = cut + chz
+            lname = self.get_ncattr(f'{st}:long_name').strip()
+            nc = len([i for i,ch in enumerate(lname) if ch=='+'])
+            ncs.append(nc)
+            names.append(st)
+         return names, lst, ncs
 
     def get_species_data_rec(self, name:str) ->dict:
          r'''
@@ -222,9 +229,9 @@ class netcdf_connection:
         try:
             res = None
             if ind>=0:
-               res = np.array(self.nc.variables[var][:][ind])
+               res = np.array(self.nc.variables[var][ind])
             else:
-               res = np.array(self.nc.variables[var][:])
+               res = np.array(self.nc.variables[var])
 
             if scale < 1. or scale > 1.:
                 return scale*res
@@ -320,7 +327,7 @@ class netcdf_connection:
             if name in self.nc.variables[key].ncattrs():
                 return repr(self.nc.variables[key].getncattr(name))
         except KeyError:
-            print(f"\tWARNING: netcdf attribute not found: {key}")
+            print(f"\tWARNING: attribute not found: {key}")
 
         return None
 

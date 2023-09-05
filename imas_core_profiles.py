@@ -91,19 +91,25 @@ class imas_core_profiles:
             den = self.im.get_ncvar(f'NIMPS_{symb}', scale=1.0e6)
             if len(den)==0:
                continue
+            self.logger.info(f'ion: {symb} => {label}')
+
+            dstr = f'NIMP_{symb}_'
+            #eg: search z and charge from NIMP_BE_4
+            dnames, spz, ncs = self.im.get_species_data(f'{dstr}?', cut=dstr)
+            #names ?. lookup NIMP_BE_4 shouldn't return >1  ?
+            if len(spz)>1:
+               self.im.logger.info(f'multiple charge states present for {symb}')
             ion = ion_data(symb)
+            #reset default
             #ZIMPS_BE(TIME3, X) Be Avg. Mult. Impurity Z
             zprof = self.im.get_ncvar(f'ZIMPS_{symb}')
             ion.z_ion_1d = zprof
             #a is from definition in atoms_class
             ion.dens = den
 
-            #charge states.
-            self.logger.info(f'ion: {symb} => {label}')
-            dstr = f'NIMP_{symb}_'
-            #charges from NIMP_BE_<n>; n can be 1..z
-            dnames, ncs = self.im.get_species_data(f'{dstr}?', cut=dstr)
-            for dname, ncharge in zip(dnames, ncs):
+            #charge states. eg:NIMP_BE_4
+            for dname in dnames:
+               ncharge = ncs[0]
                sdens = self.im.get_ncvar(dname, scale=1.0e6)
                istate = ion_states(sdens, f'{symb}+{ncharge}')
                ion.states.append(istate)
@@ -111,42 +117,6 @@ class imas_core_profiles:
             if ion.is_valid():
                ions.append(ion)
 
-        #impurity = average in TRANSP, not only an element.
-        symb = 'X'
-        label = 'X'
-        dens = self.im.get_ncvar('NIMP', 1.0e6) #XDENS.  NIMP or NIMP_NC
-        if len(dens) == 0:
-           return ions
-        self.logger.info(f'impurity ion: {label}  => {symb}')
-        ion = ion_data(symb)
-        ion.dens = dens
-        ion.temp = self.im.get_ncvar(f'TXNC')                   # TX  TXNC
-        self.logger.info(f'{symb} temp {len(ion.temp)}')
-        ion.vel_rad = self.im.get_ncvar('VELIM', 0.01)          # VELIM
-        self.logger.info(f'{symb} vel_rad {len(ion.vel_rad)}')
-        ion.vel_pol = self.im.get_ncvar('VPOLX_NC', 0.01)        # VPOLX_NC
-        self.logger.info(f'{symb} vel_pol {len(ion.vel_pol)}')
-        ion.vel_tor = self.im.get_ncvar(f'VTORX_NC', 0.01)       # VTORX  VTORX_NC
-        self.logger.info(f'{symb} vel_tor {len(ion.vel_tor)}')
-        #ion.vel_par = []
-        #ion.z_ion_1d = []
-        ang_vel = self.im.get_ncvar('OMGX') # OMGX CMGX
-        if self.im.is_valid(ang_vel, rmaj):
-            ion.rotation_frequency_tor = ang_vel/rmaj
-
-        ion.aas = self.im.get_ncvar('AIMP')
-        ion.zns = self.im.get_ncvar('XZIMP')   #XSIMP XZIMPD
-        ion.zions = ion.zns
-        #ZXIMPJ profile
-        #reset default
-        ion.z_n = -1
-        ion.a = -1
-        ion.z_ion = -1
-
-        if ion.is_valid():
-            ions.append(ion)
-        else:
-            self.logger.info(f'impurity ion: {label}  => {symb} : Discarded')
         return ions
 
     def get_ion_data_global(ions:ion_data) ->ion_data:
