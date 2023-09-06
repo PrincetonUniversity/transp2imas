@@ -48,12 +48,10 @@ class imas_pf_active:
             #Current fed in the coil (for 1 turn)
             #KK_PF1AU(TIME) Current in PF1AU circuit; CC_PF.. from equil ; PF_PF1AU zeros
             self.im.fill_data_nc(pfc.coil[i].current.data, 'KK_'+coil, mult=sgn)
-            self.im.fill_data(pfc.coil[i].current.time, timesc)
 
             #Voltage on the coil terminals
             #VV_PF1AU(TIME) Coil terminal voltage for pf1au
             self.im.fill_data_nc(pfc.coil[i].voltage.data, 'VV_'+coil)
-            self.im.fill_data(pfc.coil[i].voltage.time, timesc)
 
 
         #supply
@@ -66,12 +64,10 @@ class imas_pf_active:
             #Current at the supply output
             #KT_PF2U(TIME) Target current in pf2u circuit. VS_PF2U is desired current
             self.im.fill_data_nc(pfc.supply[i].voltage.data, 'KT_'+coil)
-            self.im.fill_data(pfc.supply[i].voltage.time, timesc)
 
             #Voltage at the supply output
             #VS_PF1AU(TIME) Coil source voltage for pf1au
             self.im.fill_data_nc(pfc.supply[i].voltage.data, 'VS_'+coil)
-            self.im.fill_data(pfc.supply[i].voltage.time, timesc)
 
 
         if ncoils > 0:
