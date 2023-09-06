@@ -52,8 +52,6 @@ class imas_pf_passive:
 
             #self.im.fill_data_nc(pfc.loop[i].resistance, '??_'+nst)
 
-            self.im.fill_data(pfc.loop[i].time, timesc)
-
             nel = 0
             pfc.loop[i].element.resize(nel)
 
