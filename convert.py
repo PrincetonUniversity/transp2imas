@@ -104,8 +104,8 @@ def do_convert(argvs):
 # everything below this line needs to be verified
 
         # to be fixed: everything
-#        print('pf_passive')
-#        imas_pf_passive(nci)
+        print('pf_passive')
+        imas_pf_passive(nci)
 
 
         # to be fixed: everything
