@@ -122,8 +122,11 @@ class imas_equilibrium:
          return rsurf, ysurf
 
 
+    #rgrid, zgrid are for all times (time, grid)
     def trace_boundary(self, psirz, rgrid, zgrid, time, nr, nz):
          #psirz is 1D, to be reshaped
+         if len(rgrid)<time or len(zgrid)<time:
+            return [],[]
          rbdy = []
          zbdy = []
          plt.figure()
@@ -136,7 +139,7 @@ class imas_equilibrium:
 
          eps = 0.01
          try:
-            contour = plt.contour(rgrid, zgrid, psi2d, levels=[psib])
+            contour = plt.contour(rgrid[time], zgrid[time], psi2d, levels=[psib])
 
             for cont in contour.allsegs[0]:
                #TODO check if axis is included in this bounded contour
@@ -147,8 +150,7 @@ class imas_equilibrium:
                   zbdy[0] = zbdy[-1]
                   break
          except:
-            self.bound_err += 1
-            if self.bound_err % 500 ==0:
+            if time ==0:
                print(f'Error tracing boundary for PSI= {psib}')
             pass
 
@@ -369,13 +371,14 @@ class imas_equilibrium:
 
             nthetab = 128 #TODO
             #rbound, ybound = self.convert_moments_bdry(nthetab, it)
-            rbound, ybound = self.trace_boundary(psirz, rgrid[it], zgrid[it], it, nr, nz)
+            rbound, ybound = self.trace_boundary(psirz, rgrid, zgrid, it, nr, nz)
             self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
             minor = self.boundary_minor(rbound)
             if minor > 0:
                eqm.time_slice[it].boundary.minor_radius = minor
+
 
             # what is being written here is not the geometric axis
             geom_rz = []    #TODO
