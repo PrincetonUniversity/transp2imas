@@ -182,7 +182,7 @@ class netcdf_connection:
          '''
          lst = self.get_species_names(name, cut=cut, prep_HE=False) #NIMP_BE_?
          if len(lst)<1:
-            return [], []
+            return [], [], []
          ncs = []
          names = []
          for chz in lst:

@@ -1,4 +1,4 @@
-
+import numpy
 from nc2imas import *
 
 class ion_states:
@@ -94,7 +94,6 @@ class imas_core_profiles:
             self.logger.info(f'ion: {symb} => {label}')
 
             dstr = f'NIMP_{symb}_'
-            #eg: search z and charge from NIMP_BE_4
             dnames, spz, ncs = self.im.get_species_data(f'{dstr}?', cut=dstr)
             #names ?. lookup NIMP_BE_4 shouldn't return >1  ?
             if len(spz)>1:
@@ -339,7 +338,7 @@ class imas_core_profiles:
         qtmp = self.im.get_ncvar('Q') 
         qprof = []
         for i in range(ntimep):
-            qprof.append(numpy.interp(coord_x, coord_xb, qtmp[i]))
+            qprof.append(numpy.interp(coord_x[i], coord_xb[i], qtmp[i]))
 
         self.logger.info(f'Filling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(ntimep)
