@@ -268,27 +268,27 @@ class imas_core_profiles:
 
         #t_e_volume_average
         if len(tev) >0:
-          self.im.fill_data(cp.global_quantities.t_e_volume_average, tev)
+            self.im.fill_data(cp.global_quantities.t_e_volume_average, tev)
 
         #n_e_volume_average
         #NE(TIME3, X) N/CM3
         nel = self.im.get_ncvar('NE', self.im.vol_inv)
         if len(nel) >0:
-          ne_ = self.im.np_multiply_sum(nel, gvol, axis=1)
-          ne_ = self.im.operate_arrays(ne_, '/', pvol)
-          self.im.fill_data(cp.global_quantities.n_e_volume_average, ne_)
+            ne_ = self.im.np_multiply_sum(nel, gvol, axis=1)
+            ne_ = self.im.operate_arrays(ne_, '/', pvol)
+            self.im.fill_data(cp.global_quantities.n_e_volume_average, ne_)
 
         #IONS
         nion = self.im.get_ncvar('NI')
         cp.global_quantities.ion.resize(1)
         #t_i_volume_average
         if len(tiv) >0:
-          self.im.fill_data(cp.global_quantities.ion[0].t_i_volume_average, tiv, name='tiv')
+            self.im.fill_data(cp.global_quantities.ion[0].t_i_volume_average, tiv, name='tiv')
 
         if len(nion) >0:
-          ni_ = self.im.np_multiply_sum(nion, gvol, axis=1)
-          ni_ = self.im.operate_arrays( ni_, '/', pvol)
-          self.im.fill_data(cp.global_quantities.ion[0].n_i_volume_average, ni_, name='niv')
+            ni_ = self.im.np_multiply_sum(nion, gvol, axis=1)
+            ni_ = self.im.operate_arrays( ni_, '/', pvol)
+            self.im.fill_data(cp.global_quantities.ion[0].n_i_volume_average, ni_, name='niv')
 
         #ion_time_slice
         # ----------end of global -----------------------------------------
@@ -335,8 +335,11 @@ class imas_core_profiles:
         #ZEFFP(TIME3, X) PLASMA COMPOSITION ZEFF PROFILE
         zeff = self.im.get_ncvar('ZEFFP')
         
-        # Q profile
-        qprof = self.im.get_ncvar('Q')
+        # Q profile at XB
+        qtmp = self.im.get_ncvar('Q') 
+        qprof = []
+        for i in range(ntimep):
+            qprof.append(numpy.interp(coord_x, coord_xb, qtmp[i]))
 
         self.logger.info(f'Filling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(ntimep)
