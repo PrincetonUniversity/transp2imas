@@ -109,7 +109,15 @@ class imas_core_profiles:
             #ZIMPS_TOK or ZIMPS_<symb>(TIME3, X) <symb> Avg. Mult. Impurity Z
             zprof = self.im.get_ncvar(f'ZIMPS_{symb}')
             ion.z_ion_1d = zprof
-            #a is from definition in atoms_class
+            #a,z_n from definition in atoms_class, except for TOK
+
+            if symb=='TOK':
+               #a
+               ion.aas = self.im.get_ncvar(f'AIMP')
+               #z_n
+               ion.zns = self.im.get_ncvar(f'XZIMP')
+               #z_ion
+               ion.zions = ion.zns #ion charge, fully ionized ?
 
             self.logger.info(f'\tdens-names: {dnames} ch: {ncs} ZIMPS_{symb} {dens}')
             #charge states. eg:NIMP_BE_4
