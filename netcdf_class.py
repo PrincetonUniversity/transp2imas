@@ -182,16 +182,12 @@ class netcdf_connection:
          '''
          lst = self.get_species_names(name, cut=cut, prep_HE=False) #NIMP_BE_?
          if len(lst)<1:
-            return [], [], []
-         ncs = []
+            return [], []
          names = []
          for chz in lst:
             st = cut + chz
-            lname = self.get_ncattr(f'{st}:long_name').strip()
-            nc = len([i for i,ch in enumerate(lname) if ch=='+'])
-            ncs.append(nc)
             names.append(st)
-         return names, lst, ncs
+         return names, lst
 
     def get_species_data_rec(self, name:str) ->dict:
          r'''

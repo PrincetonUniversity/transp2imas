@@ -68,7 +68,7 @@ class nc2imas(imas_connection, netcdf_connection):
               return False
           elif isinstance(var, np.ndarray):
               sh = var.shape
-              if sh[0]<ii or (len(sh)>1 and sh[1]==0) or not np.any(var):
+              if sh[0]<ii or (len(sh)>1 and sh[1]==0):
                   if ind==1:
                       self.logger.info(f'{name} shape {sh}')
                   return False

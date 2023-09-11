@@ -86,32 +86,35 @@ class imas_core_profiles:
         #impurities
         #NIMPS_ total for all charge states, per species
         imp_atoms = self.im.get_species_names('NIMPS_?', cut='NIMPS_')
+        self.im.logger.info(f'impurities: NIMPS_{imp_atoms}')
+
+        #multiple species if not TOK
         for symb in imp_atoms:
             label = symb
-            den = self.im.get_ncvar(f'NIMPS_{symb}', scale=1.0e6)
+
+            #total
+            dens = 'NIMP' if symb=='TOK' else f'NIMPS_{symb}'
+            # (TIME3, X) N/CM3 ;TOTAL IMPURITY DENSITY
+            den = self.im.get_ncvar(dens, scale=1.0e6)
             if len(den)==0:
                continue
-            self.logger.info(f'ion: {symb} => {label}')
-
-            dstr = f'NIMP_{symb}_'
-            dnames, spz, ncs = self.im.get_species_data(f'{dstr}?', cut=dstr)
-            #names ?. lookup NIMP_BE_4 shouldn't return >1  ?
-            if len(spz)>1:
-               print(f'multiple charge states present for {symb}')
-            ncharge = ncs[0]
-
+            self.logger.info(f'\tion: {symb} => {label}')
             ion = ion_data(symb)
-            if ion.z_n != float(spz[0]):
-               self.im.logger.info(f'{dstr} lookup error: {ion.z_n} != {spz[0]}')
-            #reset default
-            #ZIMPS_BE(TIME3, X) Be Avg. Mult. Impurity Z
+            ion.dens = den
+
+            #charge states. Only if NIMP_symb_n is present
+            dstr = f'NIMP_{symb}_'
+            dnames, ncs = self.im.get_species_data(f'{dstr}?', cut=dstr)
+
+            #ZIMPS_TOK or ZIMPS_<symb>(TIME3, X) <symb> Avg. Mult. Impurity Z
             zprof = self.im.get_ncvar(f'ZIMPS_{symb}')
             ion.z_ion_1d = zprof
             #a is from definition in atoms_class
-            ion.dens = den
 
+            self.logger.info(f'\tdens-names: {dnames} ch: {ncs} ZIMPS_{symb} {dens}')
             #charge states. eg:NIMP_BE_4
             for dname in dnames:
+               ncharge = ncs[0]
                sdens = self.im.get_ncvar(dname, scale=1.0e6)
                istate = ion_states(sdens, f'{symb}+{ncharge}')
                ion.states.append(istate)
