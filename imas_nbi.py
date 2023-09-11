@@ -14,24 +14,32 @@ class imas_nbi:
         ntimes = len(timesc)
         self.im.checkErrExit(timesc)
 
-        nunits = self.im.get_var_names_re('PINJ?', nd1=1, nd2=2, length=True)
-        self.logger.info(f'NBeams nunits {nunits}')
+        slist = self.im.get_var_names_re('PINJ?', nd1=1, nd2=2)
+        nunits = len(slist)
+        nlines = nunits
 
         #find species info
         spec_list = self.im.get_var_names('PINJ_?', cut= 'PINJ_')
-        symb = '' if len(spec_list)==0 else spec_list[0]
-        atomsDef = atom_base()
-        sp_zn, sp_a, sp_label = atomsDef.find_beam_species_data(symb)
+        nspec_list = len(spec_list)
 
-        if len(spec_list)>1:
+        if nunits==0 and nspec_list>0:
+            nunits = nspec_list
+        self.logger.info(f'NBeams nunits {nunits}; PINJ {slist}; species: {spec_list}')
+        if nspec_list>1 and nlines>0:
             #beams numbers PINJ<n> are not matched for different species
-            raise Exception(f'Multiple species of NBI not handled: {spec_list}')
-        if (symb and nunits<1) or (nunits>0 and not symb):
-            raise Exception(f'NBI species/beams Error:: units:{nunits} species:{symb}')
-
+            self.logger.info(f'Warning: {spec_list} not matched to {nlines} lines')
 
         nbi.unit.resize(nunits)
         for i in range(nunits):
+            symb = spec_list[0]
+            sname = symb
+            if nspec_list>i:
+                symb = spec_list[i]
+                sname = spec_list[i]
+
+            atomsDef = atom_base()
+            sp_zn, sp_a, sp_label = atomsDef.find_beam_species_data(symb)
+
             nbu = nbi.unit[i]
             ib = i+1
             stn = f'0{ib}' if ib<=9 else f'{ib}'
@@ -42,13 +50,20 @@ class imas_nbi:
                 nbu.species.z_n = sp_zn
                 nbu.species.label = sp_label
 
-            #energy EINJ02_E1
-            self.im.fill_data_nc(nbu.energy.data, f'EINJ{stn}_E1')
-            self.im.fill_data(nbu.energy.time, timesc)
+            if nlines>0:
+               #energy EINJ02_E1
+               self.im.fill_data_nc(nbu.energy.data, f'EINJ{stn}_E1')
+            else:
+               #EINJ(TIME)EV; MAX INITIAL BEAM ENERGY
+               self.im.fill_data_nc(nbu.energy.data, 'EINJ')
+            #self.im.fill_data(nbu.energy.time, timesc)
 
-            #injected power PINJ02
-            self.im.fill_data_nc(nbu.power_launched.data, f'PINJ{stn}')
-            self.im.fill_data(nbu.power_launched.time, timesc)
+            if nlines>0:
+               #injected power PINJ02
+               self.im.fill_data_nc(nbu.power_launched.data, f'PINJ{stn}')
+            else:
+               self.im.fill_data_nc(nbu.power_launched.data, f'PINJ_{sname}')
+            #self.im.fill_data(nbu.power_launched.time, timesc)
 
         if nunits > 0:
             nbi = self.im.fill_properties(nbi)
