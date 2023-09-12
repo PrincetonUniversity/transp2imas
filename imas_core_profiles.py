@@ -88,14 +88,17 @@ class imas_core_profiles:
         imp_atoms = self.im.get_species_names('NIMPS_?', cut='NIMPS_')
         self.im.logger.info(f'impurities: NIMPS_{imp_atoms}')
 
-        #multiple species if not TOK
+        # species
         for symb in imp_atoms:
+            # NIMPS_ include TOK, which is not needed
+            if symb in ['TOK']:
+               continue
             label = symb
 
             #total
-            dens = 'NIMP' if symb=='TOK' else f'NIMPS_{symb}'
+            denstr = f'NIMPS_{symb}'
             # (TIME3, X) N/CM3 ;TOTAL IMPURITY DENSITY
-            den = self.im.get_ncvar(dens, scale=1.0e6)
+            den = self.im.get_ncvar(denstr, scale=1.0e6)
             if len(den)==0:
                continue
             self.logger.info(f'\tion: {symb} => {label}')
@@ -106,20 +109,12 @@ class imas_core_profiles:
             dstr = f'NIMP_{symb}_'
             dnames, ncs = self.im.get_species_data(f'{dstr}?', cut=dstr)
 
-            #ZIMPS_TOK or ZIMPS_<symb>(TIME3, X) <symb> Avg. Mult. Impurity Z
+            #ZIMPS_<symb>(TIME3, X) <symb> Avg. Mult. Impurity Z
             zprof = self.im.get_ncvar(f'ZIMPS_{symb}')
             ion.z_ion_1d = zprof
-            #a,z_n from definition in atoms_class, except for TOK
+            #a,z_n from definition in atoms_class
 
-            if symb=='TOK':
-               #a
-               ion.aas = self.im.get_ncvar(f'AIMP')
-               #z_n
-               ion.zns = self.im.get_ncvar(f'XZIMP')
-               #z_ion
-               ion.zions = ion.zns #ion charge, fully ionized ?
-
-            self.logger.info(f'\tdens-names: {dnames} ch: {ncs} ZIMPS_{symb} {dens}')
+            self.logger.info(f'\tdens-names: {dnames} ch: {ncs} ZIMPS_{symb}')
             #charge states. eg:NIMP_BE_4
             for dname in dnames:
                ncharge = ncs[0]
