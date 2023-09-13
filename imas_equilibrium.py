@@ -3,6 +3,7 @@ from nc2imas import *
 from multiprocessing import Pool
 from datetime import datetime
 import matplotlib.pyplot as plt #boundary trace
+from matplotlib import path
 
 class imas_equilibrium:
     def __init__(self, ncimas:nc2imas):
@@ -135,19 +136,25 @@ class imas_equilibrium:
          plt.figure()
          #PBPMHD , PLCFSMHD
          psib = self.im.get_ncvar('PLFLXA', scale=2.*self.im.pi, ind=time)
-         psib = 0.99*psib
+         if np.isscalar(psib):
+            psib = 0.99*psib
 
          psi2d = np.reshape(psirz, (nz, nr)) #.T
          #psi2d = np.reshape(psirz, (nr, nz))
 
+         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=time)
+         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=time)
+
          eps = 0.01
          try:
             contour = plt.contour(rgrid[time], zgrid[time], psi2d, levels=[psib])
-
             for cont in contour.allsegs[0]:
-               #TODO check if axis is included in this bounded contour
                rb, zb = cont[:,0], cont[:,1]
-               if abs(cont[:,0][0]-cont[:,0][-1])<eps and abs(cont[:,1][0]-cont[:,1][-1])<eps:
+               #check if axis is included in this bounded contour
+               p = path.Path(cont)
+               has_axis = p.contains_point((raxis,yaxis))
+               closed = abs(cont[:,0][0]-cont[:,0][-1])<eps and abs(cont[:,1][0]-cont[:,1][-1])<eps
+               if has_axis and closed:
                   rbdy, zbdy = rb, zb
                   rbdy[0] = rbdy[-1]
                   zbdy[0] = zbdy[-1]
@@ -156,6 +163,16 @@ class imas_equilibrium:
             if time ==0:
                print(f'Error tracing boundary for PSI= {psib}')
             pass
+
+         #to debug
+         if False and (time<2 or time%100==0):
+            cts = plt.contour(rgrid[time], zgrid[time], psi2d, levels=30)
+            plt.clabel(cts, inline=1, fontsize=10)
+            plt.plot(rbdy, zbdy, 'r-')
+            limitr = self.im.get_ncvar('RLIM', scale=0.01, ind=time)
+            limitz = self.im.get_ncvar('YLIM', scale=0.01, ind=time)
+            plt.plot(limitr, limitz)
+            plt.show()
 
          plt.close('all')
          return rbdy, zbdy
@@ -457,7 +474,7 @@ class imas_equilibrium:
             #inverse equilibrium
             coord = eqm.time_slice[it].coordinate_system
 
-            #TODO check dimension of fill data
+            #inverse coordinates
             rsurf, ysurf = [],[] #self.convert_moments(ncoord_xb, ntheta, it)
 
             #fill data
@@ -471,8 +488,6 @@ class imas_equilibrium:
             coord.z.resize(ncoord_xb, ntheta)
             if self.im.is_valid(ysurf):
                coord.z = ysurf
-
-            #self.outdb.put_slice(eq, occur)
 
         self.logger.info('writing ids')
         self.im.putdb_imas(eqm)
