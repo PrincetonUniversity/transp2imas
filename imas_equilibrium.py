@@ -149,13 +149,12 @@ class imas_equilibrium:
          try:
             contour = plt.contour(rgrid[time], zgrid[time], psi2d, levels=[psib])
             for cont in contour.allsegs[0]:
-               rb, zb = cont[:,0], cont[:,1]
                #check if axis is included in this bounded contour
                p = path.Path(cont)
                has_axis = p.contains_point((raxis,yaxis))
                closed = abs(cont[:,0][0]-cont[:,0][-1])<eps and abs(cont[:,1][0]-cont[:,1][-1])<eps
                if has_axis and closed:
-                  rbdy, zbdy = rb, zb
+                  rbdy, zbdy = cont[:,0], cont[:,1]
                   rbdy[0] = rbdy[-1]
                   zbdy[0] = zbdy[-1]
                   break
@@ -164,7 +163,7 @@ class imas_equilibrium:
                print(f'Error tracing boundary for PSI= {psib}')
             pass
 
-         #to debug
+         #to debug, change to True
          if False and (time<2 or time%100==0):
             cts = plt.contour(rgrid[time], zgrid[time], psi2d, levels=30)
             plt.clabel(cts, inline=1, fontsize=10)
