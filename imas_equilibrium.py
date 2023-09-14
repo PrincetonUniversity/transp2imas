@@ -225,11 +225,6 @@ class imas_equilibrium:
         emhd = self.im.np_multiply_sum(pmhd, gvol, axis=1, scale=1.5)
 
         self.logger.info(f'ntimesc {ntimes} nprof {nprof} raxis {raxis.shape}')
-        #
-        #PBPMHD
-
-        #boundary_separatrix
-        #psi_sepx = self.im.get_ncvar('
 
         #TOTAL BETA TOROIDAL.
         # 2 mu0 integral(p dV) / V / B0^2   ??
@@ -278,6 +273,7 @@ class imas_equilibrium:
         triang_lob = np.interp(timesc, timep, triang_lo[:,-1])
         triang_upb = np.interp(timesc, timep, triang_up[:,-1])
 
+        bdry_sepx_psi = self.im.get_ncvar('PBPMHD', 2.0*pi)
         psi = self.im.get_ncvar('PLFLX2PI')
         if not self.im.is_valid:
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
@@ -400,15 +396,14 @@ class imas_equilibrium:
             if minor > 0:
                eqm.time_slice[it].boundary.minor_radius = minor
 
-
             # what is being written here is not the geometric axis
             geom_rz = []    #TODO
             if len(geom_rz)>1 and geom_rz[0]>0:
                eqm.time_slice[it].boundary.geometric_axis.r = geom_rz[0]
                eqm.time_slice[it].boundary.geometric_axis.z = geom_rz[1]
 
-            #if len(psi_sepx) >it:
-            #    eqm.time_slice[it].boundary_separatrix.psi = psi_sepx[it]
+            if len(bdry_sepx_psi) >it:
+                eqm.time_slice[it].boundary_separatrix.psi = bdry_sepx_psi[it]
 
             if len(triangb) > it:
                 eqm.time_slice[it].boundary.triangularity = triangb[it].astype(float)
