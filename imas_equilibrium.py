@@ -126,7 +126,7 @@ class imas_equilibrium:
     #rgrid, zgrid are for all times (time, grid)
     def trace_boundary(self, psirz, rgrid, zgrid, time, nr, nz):
          #psirz is 1D, to be reshaped
-         if len(rgrid)<time or len(zgrid)<time:
+         if nr==0 or nz==0 or nr<time or nz<time or len(psirz)==0:
             return [],[]
          rbdy = []
          zbdy = []
@@ -174,12 +174,13 @@ class imas_equilibrium:
          return rbdy, zbdy
 
 
-    def boundary_minor(self, rsurf):
+    def boundary_minor(self, rsurf, time):
          minor = -1
          try:
             minor = (np.max(rsurf) - np.min(rsurf))/2.0
          except:
-            self.im.logger.info('minor_axis: plasma boundary invalid')
+            if time==0:
+               self.im.logger.info('minor_axis: plasma boundary invalid')
          return minor
 
 
@@ -387,7 +388,7 @@ class imas_equilibrium:
             self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
-            minor = self.boundary_minor(rbound)
+            minor = self.boundary_minor(rbound, it)
             if minor > 0:
                eqm.time_slice[it].boundary.minor_radius = minor
 
