@@ -337,6 +337,11 @@ class imas_equilibrium:
 
         self.logger.info(f'equilibrium #time slices {ntimes}')
         for it in range(ntimes):
+            if it>5:
+               break
+
+
+
             print_progress(ntimes-1, it)
             if it==0 or it==ntimes-1:
                 self.logger.info(f'time slice: {it}')
@@ -399,7 +404,7 @@ class imas_equilibrium:
                eqm.time_slice[it].boundary.geometric_axis.z = geom_rz[1]
 
             if len(bdry_sepx_psi) >it:
-                eqm.time_slice[it].boundary_separatrix.psi = bdry_sepx_psi[it]
+                eqm.time_slice[it].boundary_separatrix.psi = bdry_sepx_psi[it].astype(float)
 
             if len(triangb) > it:
                 eqm.time_slice[it].boundary.triangularity = triangb[it].astype(float)
