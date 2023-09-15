@@ -53,7 +53,8 @@ class imas_core_profiles:
         atomsDef = atom_base('')
         ionDict = atomsDef.ions
         ions = []
-        rmaj = np.average(self.im.get_ncvar('RMJSYM'))  # RMJSYM RMJM
+        rmaj_ = self.im.get_ncvar('RMJSYM')  # RMJSYM RMJM
+        rmaj = np.average(rmaj_) if self.im.is_valid(rmaj_) else 0
 
         for short, label in ionDict.items():
             symb = 'HE' + short if short in ['3', '4'] else short
@@ -78,7 +79,7 @@ class imas_core_profiles:
             #ion.z_ion_1d = []
             ang_vel = self.im.get_ncvar(f'OMG_{short}') #CMG_H CMG_D
 
-            if self.im.is_valid(ang_vel, rmaj):
+            if self.im.is_valid(ang_vel) and rmaj>0:
                 ion.rotation_frequency_tor = ang_vel / rmaj
             if ion.is_valid():
                ions.append(ion)
@@ -173,7 +174,8 @@ class imas_core_profiles:
         ntimep = len(timep)
         coord_x = self.im.get_ncvar('X')
         coord_xb = self.im.get_ncvar('XB')
-        self.im.checkErrExit(timesc, timep)
+        self.im.checkErrExit(timesc, timep, name='time')
+        self.im.checkErrExit(coord_x, coord_xb, name=r'coord_x/xb')
 
         cp = self.im.fill_properties(cp)
         self.im.fill_code_properties(cp)
@@ -208,6 +210,7 @@ class imas_core_profiles:
         cur_tot = self.im.get_ncvar('CUR', aconv)
         currents = self.im.get_ncvar('PCURC') 
         j_ohmic = self.im.get_ncvar('CUROH', aconv)
+        j_nonind = []
         if self.im.is_valid(cur_tot, j_ohmic, grid_area):
             j_nonind = self.im.operate_arrays(cur_tot, '-', j_ohmic)
             curt =  self.im.np_multiply_sum(j_nonind, grid_area, axis=1)
@@ -305,7 +308,7 @@ class imas_core_profiles:
 
         #profiles_1d
         # X(TIME3,X) is sqrt(norm. toroidal flux)
-        rho_tor_norm = coord_x #np.multiply(coord_x, coord_x)
+        rho_tor_norm = coord_x
 
         #TRFLX(TIME3, XB)
         bflux_tor = self.im.get_ncvar('TRFLX')
@@ -317,21 +320,21 @@ class imas_core_profiles:
 
         #(TIME3, XB)
         psi = self.im.get_ncvar('PLFLX2PI')
-        if not self.im.is_valid:
+        if not self.im.is_valid(psi):
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
 
         psi_axis = self.im.get_ncvar('PSI0_TR') # Wb/rad
         #Normalised poloidal flux coordinate
         # = sqrt((psi(rho)-psi(magnetic_axis)) / (psi(LCFS)-psi(magnetic_axis)))
         #rho_pol_norm
-        plflx = self.im.get_ncvar('PLFLX') #(TIME3, XB)
+        plflx = psi
         rho_pol_norm = []
         try:
             rho_pol_norm = np.sqrt(abs((psi - psi[0])/(psi[-1]-psi[0])))
         except:
             pass
 
-        nrho = rho_tor_norm.shape[1]
+        nrho = rho_tor_norm.shape[0]
 
         self.logger.info(f'ntimep {ntimep} nrho {nrho}')
         self.logger.info(f'bz {len(bz)} rho_tor {len(rho_tor)} bflux_tor {len(bflux_tor)}')

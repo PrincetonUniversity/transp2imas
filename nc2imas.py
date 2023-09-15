@@ -66,6 +66,9 @@ class nc2imas(imas_connection, netcdf_connection):
                   self.logger.info(f'{name} is None')
               return False
           elif isinstance(var, np.ndarray):
+              #ndim=0; eg:np.array(5)
+              if var.ndim==0:
+                  return False
               sh = var.shape
               if sh[0]<ii or (len(sh)>1 and sh[1]==0):
                   if ind==1:
@@ -145,8 +148,22 @@ class nc2imas(imas_connection, netcdf_connection):
     def checkErrExit(self, *variables, name:str=''):
         for var in variables:
             stat = self.is_valid(var)
-            if stat:
-                self.logger.exception(f'var {name} is empty')
+            if stat is False:
+               self.logger.exception(f'var {name} is invalid')
+               raise Exception(f'**ERROR**: {name} is invalid: len={len(var)}: {var}')
+
+
+    def interp1d_time(self, timesc, timep, dat):
+        r'''
+        interpolate dat from timep onto timesc
+        timesc: 1d scalar times; output dat has this size
+        dat: 2d (timep, 1d)
+        timep: 1d profile times; Same size of 1st dim of dat
+        '''
+        if self.is_valid(timesc) and self.is_valid(dat, timep, ind=len(timep)-1):
+           return np.interp(timesc, timep, dat[:,-1])
+        else:
+           return []
 
 
     #fill ids.value
@@ -234,7 +251,7 @@ class nc2imas(imas_connection, netcdf_connection):
             print(f'**WARNING: namelist file {self.nml_name} not found')
             return
 
-        with open(self.nml_name) as nmf:
+        with open(self.nml_name, encoding = 'ISO-8859-1') as nmf:
             self.logger.info(f'loading {self.nml_name}')
             for line in nmf:
                 lns = line.strip()

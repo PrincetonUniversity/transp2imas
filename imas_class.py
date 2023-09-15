@@ -54,7 +54,11 @@ class imas_connection:
 
         #TODO thread lock
         if self.ids is None:
+            if self.shot > 214747 and self.backend==imas.imasdef.MDSPLUS_BACKEND:
+                print('adjusting shot number for MDS backend')
+                self.shot = self.shot%214747
             self.create_dir() #only for MDS+
+
             try:
                 self.ids = imas.ids(self.shot, self.run, 0, 0)
             except:
@@ -63,6 +67,7 @@ class imas_connection:
     def get_imas_database(self):
         if not self.ids:
             raise Exception('ids is not valid, call init_database first')
+
         if self.create_new:
             try:
                 status, idx = self.ids.create_env_backend(self.user,self.imas_dbname,

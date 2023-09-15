@@ -251,12 +251,12 @@ class imas_equilibrium:
             pass
 
         #Area of the LCFS poloidal cross section
-        #ZONE CROSS SECTIONAL AREA
-        darea = self.im.get_ncvar('DAREA', 1.0e-4) #(TIME3,X) cm^2
+        #ZONE CROSS SECTIONAL AREA;(TIME3,X) cm^2
+        darea = self.im.get_ncvar('DAREA', 1.0e-4)
 
         #Surface area of the toroidal flux surface
-        #FLUX SURFACE AREA
-        surface = self.im.get_ncvar('SURF', 1.0e-4) #(TIME3,X) cm^2
+        #FLUX SURFACE AREA;(TIME3,X) cm^2
+        surface = self.im.get_ncvar('SURF', 1.0e-4)
 
         #rminor =
 
@@ -268,15 +268,15 @@ class imas_equilibrium:
         square_up = self.im.get_ncvar('SQUARE_UO')
         square_lo = self.im.get_ncvar('SQUARE_LO')
 
-        #if scalar tiem is different from profile time
-        elongb = np.interp(timesc, timep, elong[:,-1])
-        triangb = np.interp(timesc, timep, triang[:,-1])
-        triang_lob = np.interp(timesc, timep, triang_lo[:,-1])
-        triang_upb = np.interp(timesc, timep, triang_up[:,-1])
+        #if scalar time is different from profile time
+        elongb = self.im.interp1d_time(timesc, timep, elong)
+        triangb = self.im.interp1d_time(timesc, timep,triang)
+        triang_lob = self.im.interp1d_time(timesc, timep, triang_lo)
+        triang_upb = self.im.interp1d_time(timesc, timep, triang_up)
 
         bdry_sepx_psi = self.im.get_ncvar('PBPMHD', 2.0*pi)
         psi = self.im.get_ncvar('PLFLX2PI')
-        if not self.im.is_valid:
+        if not self.im.is_valid(psi):
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
         phi = self.im.get_ncvar('TRFLX', 2.*pi)
         qpsi = self.im.get_ncvar('Q')
@@ -343,11 +343,6 @@ class imas_equilibrium:
 
         self.logger.info(f'equilibrium #time slices {ntimes}')
         for it in range(ntimes):
-            if it>5:
-               break
-
-
-
             print_progress(ntimes-1, it)
             if it==0 or it==ntimes-1:
                 self.logger.info(f'time slice: {it}')
