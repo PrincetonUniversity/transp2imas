@@ -337,11 +337,6 @@ class imas_equilibrium:
 
         self.logger.info(f'equilibrium #time slices {ntimes}')
         for it in range(ntimes):
-            if it>5:
-               break
-
-
-
             print_progress(ntimes-1, it)
             if it==0 or it==ntimes-1:
                 self.logger.info(f'time slice: {it}')
