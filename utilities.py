@@ -68,6 +68,8 @@ def find_runid_shot_code(runid):
 
 
 def print_progress(tot, at):
+    if not sys.stdout.isatty():
+      return
     bar = 50
     progr = int(at*bar/tot)
     comp = str(int(at*100/tot)) + '%'

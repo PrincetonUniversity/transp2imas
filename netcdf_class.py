@@ -300,7 +300,13 @@ class netcdf_connection:
             self.device = dev.strip()
         else:
             raise Exception(f'machine is not found in CDF header. Pass it using -m')
-        self.shot = int(self.get_ncattr('shot'))
+        shot = self.get_ncattr('shot')
+        ss = []
+        try:
+            ss = [x for x in shot if x.isdigit()]
+        except:
+            pass
+        self.shot = int(ss[0]) if len(ss)>0 else 0
 
         try:
             runf = Path(self.ncfile).stem #.CDF

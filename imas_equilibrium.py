@@ -23,7 +23,8 @@ class imas_equilibrium:
         self.bound_error = 0
         self.create_ids()
         elapsed = (datetime.now() - time1).seconds/60.0
-        print(f'took:{elapsed:.2f} m')
+        if elapsed > 1.0:
+            print(f'\ttook:{elapsed:.2f} m')
 
     #to be called per time frame
     def convert_moments(self, ncoord_xb, ntheta:int, time:int):
