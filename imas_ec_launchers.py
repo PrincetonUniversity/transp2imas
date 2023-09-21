@@ -63,8 +63,8 @@ class imas_ec_launchers:
                self.im.fill_data(ec.beam[i].steering_angle_tor, beta)
                self.im.fill_data(ec.beam[i].steering_angle_pol, alpha)
 
-            self.im.putdb_imas(ec)
-            self.logger.info('Done')
+        self.im.putdb_imas(ec)
+        self.logger.info('Done')
 
 
 if __name__ == '__main__':
