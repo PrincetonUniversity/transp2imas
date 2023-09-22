@@ -6,6 +6,24 @@ class imas_nbi:
         self.logger = ncimas.logger
         self.create_ids()
 
+    def get_beam_powerfrac(self, stn:str, ntimes:int):
+        #stn : beam number in string format
+        pdata = []
+        try:
+            pinj = self.im.get_ncvar(f'PINJ{stn}')
+            einjn = np.zeros(shape=(3, ntimes), dtype=float)
+            einjn[0] = self.im.get_ncvar(f'EINJ{stn}_E1')
+            einjn[1] = self.im.get_ncvar(f'EINJ{stn}_E2')
+            einjn[2] = self.im.get_ncvar(f'EINJ{stn}_E3')
+            einj = np.sum(einjn, axis=0)
+            pdata = np.zeros(shape=einjn.shape, dtype=float)
+            for i in range(3):
+               einjf = self.im.operate_arrays(einjn[i], '/', einj)
+               pdata[i] = self.im.operate_arrays(pinj, '*', einjf)
+        except:
+            self.im.logger.info(f'beam_power_fraction null: {stn} len(pinj) {len(pinj)}')
+        return pdata
+
     def create_ids(self):
         self.im.logger.info('\nnbi')
         nbi = self.im.ids.nbi
@@ -64,6 +82,12 @@ class imas_nbi:
             else:
                self.im.fill_data_nc(nbu.power_launched.data, f'PINJ_{sname}')
             #self.im.fill_data(nbu.power_launched.time, timesc)
+
+            #PINJm_E{1,2,3} = EINJn_E{1,2,3} * PINJ/(EINJn_E1 + EINJn_E2 + EINJn_E3)
+            pdata = self.get_beam_powerfrac(stn, ntimes)
+            if self.im.is_valid(pdata):
+               nbu.beam_power_fraction.data.resize(pdata.shape)
+               nbu.beam_power_fraction.data = pdata
 
         if nunits > 0:
             nbi = self.im.fill_properties(nbi)

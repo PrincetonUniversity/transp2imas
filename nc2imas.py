@@ -57,7 +57,6 @@ class nc2imas(imas_connection, netcdf_connection):
               return np.array(dat).ndim==1
 
 
-    #scalar 0 is invalid. Don't check if it can be valid
     #Don't call this using varargs forwarded by another function
     def is_valid(self, *variables, ind:int=0, name:str=''):
         ii = ind+1
@@ -76,10 +75,6 @@ class nc2imas(imas_connection, netcdf_connection):
               if len(var)<ii or not any(var):
                   if ind==1:
                       self.logger.info(f'{name} len: {len(var)}')
-                  return False
-          else:
-              if var == 0:
-                  #self.logger.info(f'{name} = 0')
                   return False
         return True
 
