@@ -57,7 +57,6 @@ class nc2imas(imas_connection, netcdf_connection):
               return np.array(dat).ndim==1
 
 
-    #scalar 0 is invalid. Don't check if it can be valid
     #Don't call this using varargs forwarded by another function
     def is_valid(self, *variables, ind:int=0, name:str=''):
         ii = ind+1
@@ -76,10 +75,6 @@ class nc2imas(imas_connection, netcdf_connection):
               if len(var)<ii or not any(var):
                   if ind==1:
                       self.logger.info(f'{name} len: {len(var)}')
-                  return False
-          else:
-              if var == 0:
-                  #self.logger.info(f'{name} = 0')
                   return False
         return True
 
@@ -298,7 +293,7 @@ class nc2imas(imas_connection, netcdf_connection):
         try:
             n = tp(nn[0]) if len(nn)>0 else None
         except:
-            print(f'{ss0} extracted: {nn}')
+            print(f'parse error: {ss0} extracted: {nn}')
         for i,s in enumerate(ops):
             d = tp(nn[i+1])
             if s=='*':
@@ -317,10 +312,10 @@ class nc2imas(imas_connection, netcdf_connection):
         if name[-1] != '?':
             raise Exception(f'Error: {name} needs "?" as last char')
         name = name[:-1]
-        pattern = fr'\b{name}(\d{1,2})\b'
+        pattern = fr'\b{name}(\((d{0,2}))?\b'
         try:
-            matches = [self.nmlist[k] for k in self.nmlist.keys() if re.search(pattern, k)]
-            len(matches)
+            matches = [self.nmlist[k] for k in self.nmlist.keys() if name==k or re.search(pattern, k)]
+            return len(matches)
         except:
             self.logger.info(f'**Error: {name}: namelist not found')
         return 0
@@ -351,23 +346,39 @@ class nc2imas(imas_connection, netcdf_connection):
         return matches
 
 
+    #this need not be used
     def get_namelist_vars(self, name:str, tp=None, scale=1.):
         #return list. name's last character is discarded. Eg. XECECH?
         n = self.get_namelist_nvars(name)
-        name0 = name[-1]
+        name0 = name[:-1]
+
+        found = False
         try:
-            val = [self.nmlist[f'{name0}({i})'] for i in range(1,n+1)]
+            val = [self.nmlist[f'{name0}({i})'] for i in range(1,n+1)][0]
+            found = True
         except:
             self.logger.info(f'** Failed to get {name} from name list')
             if self.nmlist is None:
                 self.logger.info(f'** {self.nmlist} is not set')
-        else:
-            if self.is_valid(val):
+
+        if not found:
+           try:
+               #optional parenthesis doesn't work
+               val = self.nmlist[f'{name0}']
+               found = True
+           except:
+               self.logger.info(f'** Failed to get {name0} from name list')
+               if self.nmlist is None:
+                   self.logger.info(f'** {self.nmlist} is not set')
+
+        if found:
+            if self.is_valid(val, ind=1):
+                vals = val.split(',')
                 if tp in [int, float]:
-                    val = [self.parse_number(x, tp) for x in val]
+                    vals = [self.parse_number(x, tp) for x in vals]
                 if scale < 1. or scale > 1.:
-                    val = scale*val
-                return val
+                    vals = scale*vals
+                return vals
         return []
 
     #returns scalar
@@ -384,12 +395,12 @@ class nc2imas(imas_connection, netcdf_connection):
 
         if tp in [int, float]:
             val = self.parse_number(val, tp)
-            if scale < 1. or scale > 1.:
+            if scale != 1.0:
                 val = scale*val
         return val
 
 
-    def get_namelist_var(self, name:str, tp=None, scale=0, ind:int=-1):
+    def get_namelist_var(self, name:str, tp=None, scale=1.0, ind:int=-1):
         #name: don't escape (); only regex needs \(
         res = self.get_namelist_var_(name, tp, scale, ind)
         if res is None and ind>=0:
