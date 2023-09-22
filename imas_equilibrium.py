@@ -436,9 +436,13 @@ class imas_equilibrium:
 
             bfield = self.im.get_ncvar('B_FIELD', ind=it)
             if self.im.is_valid(bfield, name='bfield'):
-                self.im.fill_data(prof2.b_field_r, bfield, ind=0, ind2=nrz)
-                self.im.fill_data(prof2.b_field_tor, bfield, ind=nrz, ind2=2*nrz)
-                self.im.fill_data(prof2.b_field_z, bfield, ind=2*nrz, ind2=3*nrz)
+                bfield = bfield.reshape((3,rsh[1],zsh[1]))
+                prof2.b_field_r = bfield[0]
+                prof2.b_field_tor = bfield[1]
+                prof2.b_field_z = bfield[2]
+                #self.im.(prof2.b_field_r, bfield[0])
+                #self.im.fill_data(prof2.b_field_tor, bfield[1])
+                #self.im.fill_data(prof2.b_field_z, bfield[2])
                 if it==ntimes-1:
                     self.logger.info(f't {it}: wrote B_FIELD {bfield.shape}')
 
