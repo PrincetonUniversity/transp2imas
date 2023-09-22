@@ -16,6 +16,7 @@ class imas_equilibrium:
         self.coskth = None
         self.sinkth = None
         self.dtheta = None
+        self.dthetab = None
         self.inv_grid_theta = None
         time1 = datetime.now()
         self.bound_error = 0
@@ -105,9 +106,11 @@ class imas_equilibrium:
             raise Exception(f'convert_moments_bdry: ntheta {ntheta} time {time}')
          rsurf = np.zeros(ntheta)
          ysurf = np.zeros(ntheta)
+         if self.dthetab is None:
+            raise Exception('Please define dthetab')
 
          for ith in range(ntheta-1):
-            th = ith*self.dtheta
+            th = ith*self.dthetab
             th = -self.im.pi + th
             rsurf[ith] = self.rmcb[time,0]
             ysurf[ith] = self.ymcb[time,0]
@@ -312,6 +315,9 @@ class imas_equilibrium:
         ntheta = 201
         self.dtheta = 2*pi/ntheta
 
+        nthetab = 128 #TODO
+        self.dthetab = 2*pi/nthetab
+
         if self.inv_grid_theta is None:
            self.inv_grid_theta = [-self.im.pi + ith*self.dtheta for ith in range(ntheta)]
 
@@ -369,9 +375,8 @@ class imas_equilibrium:
             #2D psi
             psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
 
-            nthetab = 128 #TODO
-            #rbound, ybound = self.convert_moments_bdry(nthetab, it)
-            rbound, ybound = self.trace_boundary(psirz, rgrid, zgrid, it, nr, nz)
+            rbound, ybound = self.convert_moments_bdry(nthetab, it)
+            #rbound, ybound = self.trace_boundary(psirz, rgrid, zgrid, it, nr, nz)
             self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
@@ -437,8 +442,11 @@ class imas_equilibrium:
             bfield = self.im.get_ncvar('B_FIELD', ind=it)
             if self.im.is_valid(bfield, name='bfield'):
                 bfield = bfield.reshape((3,rsh[1],zsh[1]))
+                prof2.b_field_r.resize((nr, nz))
                 prof2.b_field_r = bfield[0]
+                prof2.b_field_tor.resize((nr, nz))
                 prof2.b_field_tor = bfield[1]
+                prof2.b_field_z.resize((nr, nz))
                 prof2.b_field_z = bfield[2]
                 #self.im.(prof2.b_field_r, bfield[0])
                 #self.im.fill_data(prof2.b_field_tor, bfield[1])
@@ -450,7 +458,7 @@ class imas_equilibrium:
             coord = eqm.time_slice[it].coordinate_system
 
             #TODO check dimension of fill data
-            rsurf, ysurf = self.convert_moments(ncoord_xb, ntheta, it)
+            rsurf, ysurf = [],[] #self.convert_moments(ncoord_xb, ntheta, it)
 
             #fill data
             coord.grid_type.name = "inverse"
