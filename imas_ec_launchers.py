@@ -14,7 +14,6 @@ class imas_ec_launchers:
         ec = self.im.ids.ec_launchers
 
         pi = self.im.pi
-        freq = self.im.get_namelist_vars('FREQECH?', float)
 
         #scalar time
         timesc = self.im.get_ncvar('TIME')
@@ -33,9 +32,11 @@ class imas_ec_launchers:
         self.logger.info(f'#EC beams {nbeams}')
         for i in range(nbeams):
             ib = i+1
-            #frequency
-            if self.im.is_valid(freq, ind=i):
-                self.im.fill_data(ec.beam[i].frequency.data, freq[i])
+            #frequency. search either FREQECH or FREQECH(i)
+            freq = self.im.get_namelist_var(f'FREQECH', float, ind=i)
+            if freq is not None:
+                freq = np.tile(np.atleast_1d(freq), ntimes)
+                self.im.fill_data(ec.beam[i].frequency.data, freq)
 #                self.im.fill_data(ec.beam[i].frequency.time, timesc)
 
             #PECIN+1..n(TIME)
