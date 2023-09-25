@@ -39,7 +39,7 @@ class nc2imas(imas_connection, netcdf_connection):
         #namelist contents dict
         self.nmlist = None
         self.set_logger(log)
-        self.logger.info(f'creating nc2imas using {ncfile} for {self.device} {self.shot}')
+        self.logger.info(f'creating nc2imas using {ncfile} for {self.device} {self.shot} {self.run}')
         self.load_namelist()
         self.cm2m = 0.01
         self.area_inv = 1.0e4
