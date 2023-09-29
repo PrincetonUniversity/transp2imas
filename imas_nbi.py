@@ -6,6 +6,24 @@ class imas_nbi:
         self.logger = ncimas.logger
         self.create_ids()
 
+    def find_beam_times(self, stn, times, nlines):
+        val = 0
+        limit = 0
+        if nlines>0:
+           einje1 = self.im.get_ncvar(f'EINJ{stn}_E1')
+           einje2 = self.im.get_ncvar(f'EINJ{stn}_E2')
+           einje3 = self.im.get_ncvar(f'EINJ{stn}_E3')
+           if self.im.is_valid(einje1, einje2, einje3):
+              check = np.logical_and(einje1>limit, einje2>limit, einje3>limit)
+              times = np.where(check, times, val)
+        else:
+            einjs = self.im.get_ncvar(f'EINJ')
+            if self.im.is_valid(einjs):
+               times = np.where(einj>0, times, val)
+        #use original times if no data found?
+        return times
+
+
     def create_ids(self):
         self.im.logger.info('\nnbi')
         nbi = self.im.ids.nbi
@@ -50,20 +68,43 @@ class imas_nbi:
                 nbu.species.z_n = sp_zn
                 nbu.species.label = sp_label
 
+            beam_times = self.find_beam_times(stn, timesc, nlines)
+
+            einj = []
             if nlines>0:
+               #fill even if zeros
                #energy EINJ02_E1
-               self.im.fill_data_nc(nbu.energy.data, f'EINJ{stn}_E1')
+               einj = self.im.get_ncvar(f'EINJ{stn}_E1')
             else:
                #EINJ(TIME)EV; MAX INITIAL BEAM ENERGY
-               self.im.fill_data_nc(nbu.energy.data, 'EINJ')
-            #self.im.fill_data(nbu.energy.time, timesc)
+               einj = self.im.get_ncvar('EINJ')
+
+            nbu.energy.data.resize(len(einj))
+            nbu.energy.data = einj
+
+            #times
+            #self.im.fill_data(nbu.energy.time, beam_times, name='energy_times')
+            nbu.energy.time.resize(ntimes)
+            nbu.energy.time = beam_times
+            if i==0:
+               print('NOTE: Scalar time filled')
 
             if nlines>0:
                #injected power PINJ02
-               self.im.fill_data_nc(nbu.power_launched.data, f'PINJ{stn}')
+               pinj = self.im.get_ncvar(f'PINJ{stn}')
             else:
-               self.im.fill_data_nc(nbu.power_launched.data, f'PINJ_{sname}')
-            #self.im.fill_data(nbu.power_launched.time, timesc)
+               pinj = self.im.get_ncvar(f'PINJ_{stn}')
+
+            nbu.power_launched.data.resize(len(pinj))
+            nbu.power_launched.data = pinj
+
+            nbu.power_launched.time.resize(ntimes)
+            nbu.power_launched.time = beam_times
+
+
+            if i==4:
+               print(pinj)
+
 
         if nunits > 0:
             nbi = self.im.fill_properties(nbi)
