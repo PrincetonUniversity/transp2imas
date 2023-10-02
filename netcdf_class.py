@@ -229,7 +229,9 @@ class netcdf_connection:
             else:
                res = np.array(self.nc.variables[var])
 
-            if scale < 1. or scale > 1.:
+            if res.ndim==0:
+               res = np.array([res])
+            if scale != 1.0:
                 return scale*res
             else:
                 return res
@@ -298,7 +300,16 @@ class netcdf_connection:
             self.device = dev.strip()
         else:
             raise Exception(f'machine is not found in CDF header. Pass it using -m')
-        self.shot = int(self.get_ncattr('shot'))
+        shot = self.get_ncattr('shot')
+        self.shot = shot
+
+        try:
+            #if shot is string
+            ss = ''.join([x for x in shot if x.isdigit()])
+        except:
+            pass
+        else:
+            self.shot = int(ss) if ss else 0
 
         try:
             runf = Path(self.ncfile).stem #.CDF

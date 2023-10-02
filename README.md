@@ -19,19 +19,31 @@ The environment modules valid on PPPL portal are listed here.
 
 ```
 #gcc 9.3 (env_gcc.txt)
+module load python/3.10.7
 module load gcc/9.3.0
 module load openmpi/4.0.3
 module load netcdf-c/4.7.3
 module load szip/2.1.1
 module load imas/3.37.1-4.11.0
 
-#intel ifort 2019  (env_inte.txt)
+#intel ifort 2019  (env_intel.txt)
+module load python/3.10.7
 module load flexlm
 module load intel/2019.u3
 module load openmpi
 module load netcdf-c
 module load netcdf-fortran
 module load imas/3.37.1-4.11.0
+
+#intel ifort 2019 IMAS 3.39  (env_intel_3.39)
+module load python/3.11.4
+module load flexlm
+module load intel/2019.u3
+module load openmpi
+module load netcdf-c
+module load netcdf-fortran
+module load imas/3.39.0-4.11.5
+
 ```
 
 #### Convert CDF to IDS
@@ -40,10 +52,9 @@ TRANSP run output CDF file or its symlink is required to be present in the curre
 
 Python virtual environment with numpy, scipy, netcdf_class, and imass_class or system installations of these are required. Here the \<python_venv\> is the name of the virtual environment directory. The machine name (eg. ITER, D3D) and shot number are retrieved from the input CDF file, in order to avoid errors of passing in mismatched arguments.
 
+The first step is to load modules.
 
 source \<intel_or_gcc_imas_modules\>
-module load python/3.10.7
-
 
 If python virtual environment is already setup, skip this this section (of 6 lines).
 ```
@@ -53,6 +64,9 @@ python3 -m venv  python_venv
 source ~/python_venv/bin/activate
 pip install --upgrade pip
 pip install flake8 matplotlib netCDF4 f90nml numpy  PyYAML scipy
+#for imas3.39, need this too
+pip install pyqt5
+
 ```
 
 To run convert script,
@@ -169,5 +183,17 @@ make
 
 python $VIZ_HOME/imasviz/VizGUI/QtVIZ_GUI.py
 ```
+
+### Troubleshooting
+#### SyntaxError: invalid syntax
+This error could be due to missing virtual environment. Activate the venv,
+$ source <path_to_venv>/bin/activate
+
+#### python: error while loading shared libraries
+Load python module, or install python
+
+#### ModuleNotFoundError: No module named 'imas'
+Load list of modules including IMAS module.
+
 https://wpcd-workflows.github.io/IMASviz/index.html
 https://docs.psnc.pl/display/WFMS/IMASViz+v2?preview=/17146892/17147822/IMASViz.pdf

@@ -3,6 +3,7 @@ from nc2imas import *
 from multiprocessing import Pool
 from datetime import datetime
 import matplotlib.pyplot as plt #boundary trace
+from matplotlib import path
 
 class imas_equilibrium:
     def __init__(self, ncimas:nc2imas):
@@ -22,7 +23,8 @@ class imas_equilibrium:
         self.bound_error = 0
         self.create_ids()
         elapsed = (datetime.now() - time1).seconds/60.0
-        print(f'took:{elapsed:.2f} m')
+        if elapsed > 1.0:
+            print(f'\ttook:{elapsed:.2f} m')
 
     #to be called per time frame
     def convert_moments(self, ncoord_xb, ntheta:int, time:int):
@@ -128,27 +130,32 @@ class imas_equilibrium:
     #rgrid, zgrid are for all times (time, grid)
     def trace_boundary(self, psirz, rgrid, zgrid, time, nr, nz):
          #psirz is 1D, to be reshaped
-         if len(rgrid)<time or len(zgrid)<time:
+         if nr==0 or nz==0 or nr<time or nz<time or len(psirz)==0:
             return [],[]
          rbdy = []
          zbdy = []
          plt.figure()
          #PBPMHD , PLCFSMHD
          psib = self.im.get_ncvar('PLFLXA', scale=2.*self.im.pi, ind=time)
-         psib = 0.99*psib
+         if np.isscalar(psib):
+            psib = 0.99*psib
 
          psi2d = np.reshape(psirz, (nz, nr)) #.T
          #psi2d = np.reshape(psirz, (nr, nz))
 
+         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=time)
+         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=time)
+
          eps = 0.01
          try:
             contour = plt.contour(rgrid[time], zgrid[time], psi2d, levels=[psib])
-
             for cont in contour.allsegs[0]:
-               #TODO check if axis is included in this bounded contour
-               rb, zb = cont[:,0], cont[:,1]
-               if abs(cont[:,0][0]-cont[:,0][-1])<eps and abs(cont[:,1][0]-cont[:,1][-1])<eps:
-                  rbdy, zbdy = rb, zb
+               #check if axis is included in this bounded contour
+               p = path.Path(cont)
+               has_axis = p.contains_point((raxis,yaxis))
+               closed = abs(cont[:,0][0]-cont[:,0][-1])<eps and abs(cont[:,1][0]-cont[:,1][-1])<eps
+               if has_axis and closed:
+                  rbdy, zbdy = cont[:,0], cont[:,1]
                   rbdy[0] = rbdy[-1]
                   zbdy[0] = zbdy[-1]
                   break
@@ -157,16 +164,27 @@ class imas_equilibrium:
                print(f'Error tracing boundary for PSI= {psib}')
             pass
 
+         #to debug, change to True
+         if False and (time<2 or time%100==0):
+            cts = plt.contour(rgrid[time], zgrid[time], psi2d, levels=30)
+            plt.clabel(cts, inline=1, fontsize=10)
+            plt.plot(rbdy, zbdy, 'r-')
+            limitr = self.im.get_ncvar('RLIM', scale=0.01, ind=time)
+            limitz = self.im.get_ncvar('YLIM', scale=0.01, ind=time)
+            plt.plot(limitr, limitz)
+            plt.show()
+
          plt.close('all')
          return rbdy, zbdy
 
 
-    def boundary_minor(self, rsurf):
+    def boundary_minor(self, rsurf, time):
          minor = -1
          try:
             minor = (np.max(rsurf) - np.min(rsurf))/2.0
          except:
-            self.im.logger.info('minor_axis: plasma boundary invalid')
+            if time==0:
+               self.im.logger.info('minor_axis: plasma boundary invalid')
          return minor
 
 
@@ -209,11 +227,6 @@ class imas_equilibrium:
         emhd = self.im.np_multiply_sum(pmhd, gvol, axis=1, scale=1.5)
 
         self.logger.info(f'ntimesc {ntimes} nprof {nprof} raxis {raxis.shape}')
-        #
-        #PBPMHD
-
-        #boundary_separatrix
-        #psi_sepx = self.im.get_ncvar('
 
         #TOTAL BETA TOROIDAL.
         # 2 mu0 integral(p dV) / V / B0^2   ??
@@ -239,12 +252,12 @@ class imas_equilibrium:
             pass
 
         #Area of the LCFS poloidal cross section
-        #ZONE CROSS SECTIONAL AREA
-        darea = self.im.get_ncvar('DAREA', 1.0e-4) #(TIME3,X) cm^2
+        #ZONE CROSS SECTIONAL AREA;(TIME3,X) cm^2
+        darea = self.im.get_ncvar('DAREA', 1.0e-4)
 
         #Surface area of the toroidal flux surface
-        #FLUX SURFACE AREA
-        surface = self.im.get_ncvar('SURF', 1.0e-4) #(TIME3,X) cm^2
+        #FLUX SURFACE AREA;(TIME3,X) cm^2
+        surface = self.im.get_ncvar('SURF', 1.0e-4)
 
         #rminor =
 
@@ -256,14 +269,15 @@ class imas_equilibrium:
         square_up = self.im.get_ncvar('SQUARE_UO')
         square_lo = self.im.get_ncvar('SQUARE_LO')
 
-        #if scalar tiem is different from profile time
-        elongb = np.interp(timesc, timep, elong[:,-1])
-        triangb = np.interp(timesc, timep, triang[:,-1])
-        triang_lob = np.interp(timesc, timep, triang_lo[:,-1])
-        triang_upb = np.interp(timesc, timep, triang_up[:,-1])
+        #if scalar time is different from profile time
+        elongb = self.im.interp1d_time(timesc, timep, elong)
+        triangb = self.im.interp1d_time(timesc, timep,triang)
+        triang_lob = self.im.interp1d_time(timesc, timep, triang_lo)
+        triang_upb = self.im.interp1d_time(timesc, timep, triang_up)
 
+        bdry_sepx_psi = self.im.get_ncvar('PBPMHD', 2.0*pi)
         psi = self.im.get_ncvar('PLFLX2PI')
-        if not self.im.is_valid:
+        if not self.im.is_valid(psi):
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
         phi = self.im.get_ncvar('TRFLX', 2.*pi)
         qpsi = self.im.get_ncvar('Q')
@@ -380,10 +394,9 @@ class imas_equilibrium:
             self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
-            minor = self.boundary_minor(rbound)
+            minor = self.boundary_minor(rbound, it)
             if minor > 0:
                eqm.time_slice[it].boundary.minor_radius = minor
-
 
             # what is being written here is not the geometric axis
             geom_rz = []    #TODO
@@ -391,8 +404,8 @@ class imas_equilibrium:
                eqm.time_slice[it].boundary.geometric_axis.r = geom_rz[0]
                eqm.time_slice[it].boundary.geometric_axis.z = geom_rz[1]
 
-            #if len(psi_sepx) >it:
-            #    eqm.time_slice[it].boundary_separatrix.psi = psi_sepx[it]
+            if len(bdry_sepx_psi) >it:
+                eqm.time_slice[it].boundary_separatrix.psi = bdry_sepx_psi[it].astype(float)
 
             if len(triangb) > it:
                 eqm.time_slice[it].boundary.triangularity = triangb[it].astype(float)
@@ -448,16 +461,13 @@ class imas_equilibrium:
                 prof2.b_field_tor = bfield[1]
                 prof2.b_field_z.resize((nr, nz))
                 prof2.b_field_z = bfield[2]
-                #self.im.(prof2.b_field_r, bfield[0])
-                #self.im.fill_data(prof2.b_field_tor, bfield[1])
-                #self.im.fill_data(prof2.b_field_z, bfield[2])
                 if it==ntimes-1:
                     self.logger.info(f't {it}: wrote B_FIELD {bfield.shape}')
 
             #inverse equilibrium
             coord = eqm.time_slice[it].coordinate_system
 
-            #TODO check dimension of fill data
+            #inverse coordinates
             rsurf, ysurf = [],[] #self.convert_moments(ncoord_xb, ntheta, it)
 
             #fill data
@@ -471,8 +481,6 @@ class imas_equilibrium:
             coord.z.resize(ncoord_xb, ntheta)
             if self.im.is_valid(ysurf):
                coord.z = ysurf
-
-            #self.outdb.put_slice(eq, occur)
 
         self.logger.info('writing ids')
         self.im.putdb_imas(eqm)

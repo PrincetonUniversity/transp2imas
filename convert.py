@@ -35,6 +35,7 @@ occur = 0
 user = os.getenv('USER')
 log = 'debug'  #for logger
 
+np.seterr(all='raise')
 all_ = True
 def do_convert(argvs):
     #get arguments from command line
