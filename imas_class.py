@@ -18,46 +18,60 @@ class imas_connection:
         self.user = user
         self.backend = backend
         self.ids = None
+        self.outdir = ''
         self.iter_ = True if db[:4].upper()=='ITER' else False
         self.init_imas_database()
         self.get_imas_database()
 
     def print_debug(self, msg:str='', force=False):
         print(msg)
+        print(' user', self.user)
         print(' create_new:', self.create_new, '; occur:', self.occur)
         print(' machine/imas_db:', self.imas_dbname, ' backend:', self.backend)
         print('shot:', self.shot, '; converted run number:', self.run)
 
     #for MDS+ backend the directory needs to exist in ~/public/imasdb
-    def create_dir(self, public_db:bool=True):
-        if self.backend != imas.imasdef.MDSPLUS_BACKEND:
-            return
-        hom = os.path.expanduser('~')
-        dbpath = f'{hom}/public/imasdb/{self.imas_dbname}'
+    def set_outdir(self, public_db:bool=True):
+        diry = self.user
+        #if home dir, use default path
+        if self.user == os.getenv('USER'):
+            diry = os.path.expanduser('~') + '/public/imasdb'
+
+        dbpath = diry + '/' + self.imas_dbname
         version = str(os.getenv('IMAS_VERSION')[0])
-        outdir = f"{dbpath}/{version}/0"
-        if not os.path.exists(outdir):
-            os.makedirs(outdir)
+        dbpath = dbpath + '/' + version
+        if self.backend == imas.imasdef.HDF5_BACKEND:
+            dbpath = dbpath + '/' + str(self.shot) + '/' + str(self.run)
+        elif self.backend == imas.imasdef.MDSPLUS_BACKEND:
+            dbpath = dbpath + '/0/' #occur?
+        self.outdir = dbpath
+
 
     def init_imas_database(self):
         if self.ids is not None:
             print('ids exists')
             return
+        mkdir = False
         if self.backend=='HDF5' or self.backend=='HDF':
             self.backend = imas.imasdef.HDF5_BACKEND
         elif self.backend=='MDS' or self.backend=='MDSPLUS':
             self.backend = imas.imasdef.MDSPLUS_BACKEND
+            mkdir = True
+
         if not self.user:
             self.user = os.getenv('USER')
         if self.create_new is None:
             self.create_new = True
+
+        self.set_outdir()
 
         #TODO thread lock
         if self.ids is None:
             if self.shot > 214747 and self.backend==imas.imasdef.MDSPLUS_BACKEND:
                 print('adjusting shot number for MDS backend')
                 self.shot = self.shot%214747
-            self.create_dir() #only for MDS+
+            if mkdir and not os.path.exists(self.outdir):
+                os.makedirs(self.outdir) #only for MDS+
 
             try:
                 self.ids = imas.ids(self.shot, self.run, 0, 0)
@@ -102,6 +116,8 @@ class imas_connection:
             del self.ids
         else:
             raise TypeError('ids not valid')
+        print('ids stored in', self.outdir)
+
 
 if __name__ == '__main__':
     print("Please use: python convert.py")

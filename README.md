@@ -11,9 +11,9 @@ The default location is ~/public/imasdb/\<machine\>/\<imas\_version\>/\<occur\>/
 For HDF5, the default location is the current directory, and each IDS is stored separately
 as an .h5 file within \<machine\>/\<version\>/\<shot\>/\<run\> directory.
 
-As of now, there is also a fortran code in this repo. For compiling that, TRANSP libraries are required.
 
 The python tool can be used as follows.
+Please note that this is tested using only Python 3.10.7 and 3.11.4. Other versions are being tested.
 
 The environment modules valid on PPPL portal are listed here.
 
@@ -57,6 +57,8 @@ The first step is to load modules.
 source \<intel_or_gcc_imas_modules\>
 
 If python virtual environment is already setup, skip this this section (of 6 lines).
+Please note that this is tested using only Python 3.10.7 and 3.11.4. Other versions are being tested.
+
 ```
 cd ~/
 python3 -m venv  python_venv
@@ -121,6 +123,8 @@ $ python convert.py -i all -d <dir_path>
 Examples
 $ python convert.py -i 38530P87  -d  <path>/
 $ python convert.py -i 38530P87_<text>.CDF  -d  <path>/
+
+The option -u can be used as -u `pwd` or -u ~/work or -u <absolute_path>. If this is not used the default path ~/public/imasdb/<machine>/version/ is used.
 The CDF file (extension is optional) can be a renamed one seperated by non-digit, e.g, an underscore.
 
 The namelists in corresponding directories will be used if available, in all cases.
