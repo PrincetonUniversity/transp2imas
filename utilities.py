@@ -186,8 +186,7 @@ def get_args(argv=None):
     if args.machine:
         machine = args.machine
 
-    user = os.path.expanduser('~') +'/public/imasdb' if \
-            (backend=='MDS' or backend=='MDSPLUS') else os.getenv('USER')
+    user = args.user if args.user else None
     #new_db = True if occur == 0 else False
 
     return backend, run, occur, user, machine, newdb, ncfile, nml, log
