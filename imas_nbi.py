@@ -101,11 +101,6 @@ class imas_nbi:
             nbu.power_launched.time.resize(ntimes)
             nbu.power_launched.time = beam_times
 
-
-            if i==4:
-               print(pinj)
-
-
         if nunits > 0:
             nbi = self.im.fill_properties(nbi)
             self.im.fill_code_properties(nbi)
