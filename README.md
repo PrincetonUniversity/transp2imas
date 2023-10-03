@@ -11,12 +11,11 @@ The default location is ~/public/imasdb/\<machine\>/\<imas\_version\>/\<occur\>/
 For HDF5, the default location is the current directory, and each IDS is stored separately
 as an .h5 file within \<machine\>/\<version\>/\<shot\>/\<run\> directory.
 
-As of now, there is also a fortran code in this repo. For compiling that, TRANSP libraries are required.
 
 The python tool can be used as follows.
 Please note that this is tested using only Python 3.10.7 and 3.11.4. Other versions are being tested.
 
-he environment modules valid on PPPL portal are listed here.
+The environment modules valid on PPPL portal are listed here.
 
 ```
 #gcc 9.3 (env_gcc.txt)
