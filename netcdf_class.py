@@ -19,11 +19,18 @@ class netcdf_connection:
         self.ncfile = ncfile
         self.device = None
         self.shot = 0
+        self.timep = []
+        self.timesc = []
         self.open_ncfile()
         self.set_machine_runid(machine)
+        self.get_times()
 
     def __del__(self):
         self.close_ncfile()
+
+    def get_times(self):
+        self.timesc = self.get_ncvar('TIME')
+        self.timep = self.get_ncvar('TIME3')
 
     def set_ncfile(self, ncfile):
         print(f're-setting cdf file to {ncfile}')
@@ -221,7 +228,7 @@ class netcdf_connection:
          return specs
 
 
-    def get_ncvar(self, var:str, scale:float=1., ind:int=-1) -> np.array:
+    def get_ncvar(self, var:str, scale:float=1., ind:int=-1, interp:bool=False) -> np.array:
         try:
             res = None
             if ind>=0:
@@ -231,6 +238,8 @@ class netcdf_connection:
 
             if res.ndim==0:
                res = np.array([res])
+            if interp is True:
+               res = np.interp(self.timep, self.timesc, res)
             if scale != 1.0:
                 return scale*res
             else:
@@ -334,7 +343,7 @@ class netcdf_connection:
             if name in self.nc.variables[key].ncattrs():
                 return repr(self.nc.variables[key].getncattr(name))
         except KeyError:
-            print(f"\tWARNING: attribute not found: {key}")
+            pass
 
         return None
 

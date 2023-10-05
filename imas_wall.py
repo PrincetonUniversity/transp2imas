@@ -32,10 +32,7 @@ class imas_wall:
         limitz = self.im.get_ncvar('YLIM', cm2m)
 
         self.logger.info(f'limitr {len(limitr)} limitz {len(limitz)} ')
-        if self.im.is_valid(limitr, limitz ):
-            self.logger.debug(f'limitr {limitr[0]}')
-            self.logger.debug(f'limitz {limitz[0]}')
-        else:
+        if not self.im.is_valid(limitr, limitz ):
             self.logger.debug('Error writing Wall')
             return
 

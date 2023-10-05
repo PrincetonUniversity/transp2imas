@@ -17,8 +17,8 @@ class imas_nbi:
               check = np.logical_and(einje1>limit, einje2>limit, einje3>limit)
               times = np.where(check, times, val)
         else:
-            einjs = self.im.get_ncvar(f'EINJ')
-            if self.im.is_valid(einjs):
+            einj = self.im.get_ncvar(f'EINJ')
+            if self.im.is_valid(einj):
                times = np.where(einj>0, times, val)
         #use original times if no data found?
         return times
@@ -87,7 +87,7 @@ class imas_nbi:
             nbu.energy.time.resize(ntimes)
             nbu.energy.time = beam_times
             if i==0:
-               print('NOTE: Scalar time filled')
+               self.im.logger.info('NOTE: Scalar time filled')
 
             if nlines>0:
                #injected power PINJ02

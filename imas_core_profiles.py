@@ -1,4 +1,3 @@
-import numpy
 from nc2imas import *
 
 class ion_states:
@@ -53,7 +52,8 @@ class imas_core_profiles:
         atomsDef = atom_base('')
         ionDict = atomsDef.ions
         ions = []
-        rmaj_ = self.im.get_ncvar('RMJSYM')  # RMJSYM RMJM
+        #RMJSYM(TIME3, RMJSYM)
+        rmaj_ = self.im.get_ncvar('RMJSYM')
         rmaj = np.average(rmaj_) if self.im.is_valid(rmaj_) else 0
 
         for short, label in ionDict.items():
@@ -113,10 +113,10 @@ class imas_core_profiles:
             #a,z_n from definition in atoms_class, except for TOK
 
             if symb=='TOK':
-               #a
-               ion.aas = self.im.get_ncvar(f'AIMP')
-               #z_n
-               ion.zns = self.im.get_ncvar(f'XZIMP')
+               #a   AIMP(TIME)
+               ion.aas = self.im.get_ncvar(f'AIMP', interp=True)
+               #z_n  XZIMP(TIME)
+               ion.zns = self.im.get_ncvar(f'XZIMP', interp=True)
                #z_ion
                ion.zions = ion.zns #ion charge, fully ionized ?
 
@@ -167,21 +167,29 @@ class imas_core_profiles:
         pi = constants.pi  #scipy
         sgn = 1 #-1 if self.im.iter_ else 1 TODO
 
-        #scalar time
-        timesc = self.im.get_ncvar('TIME')
-        ntimes = len(timesc)
-        timep = self.im.get_ncvar('TIME3')
-        ntimep = len(timep)
+        #scalar time  len(TIME)
+        ntimes = self.im.ntimes
+        #profile time  len(TIME3)
+        ntimep = self.im.ntimep
         coord_x = self.im.get_ncvar('X')
         coord_xb = self.im.get_ncvar('XB')
-        self.im.checkErrExit(timesc, timep, name='time')
-        self.im.checkErrExit(coord_x, coord_xb, name=r'coord_x/xb')
+        if not self.im.is_valid(coord_x, coord_xb, name=r'coord_x/xb'):
+            print('\t Error: invalid coord_x/xb', coord_x, coord_xb)
+            return
 
         cp = self.im.fill_properties(cp)
         self.im.fill_code_properties(cp)
         cp.ids_properties.homogeneous_time = 1
-        cp.time.resize(ntimes)
-        cp.time = timesc
+        cp.time.resize(ntimep)
+        cp.time = self.im.timep
+
+        #NOTE: nc2imas.fill_data and fill_data_nc functions do interpolation. These
+        #functions handle only 1D data. If 2D data is passed or read from NC variable,
+        # a valid index is required for selecting data at that index.
+
+        #If profile time(TIME3) and scalar time(TIME) are different, interp onto profile time
+        #Since homogeneous time=1, all quantities should have the same time.
+        interp = (ntimes != ntimep)
 
         # Geometry related quantities
         # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
@@ -203,12 +211,13 @@ class imas_core_profiles:
 
         #global_quantities
         #------------------------------------------------------------------
-        self.im.fill_data_nc(cp.global_quantities.ip, 'PCURC', mult=sgn)
+        self.im.fill_data_nc(cp.global_quantities.ip, 'PCURC', mult=sgn, interp=True)
 
         # current_non_inductive. Toroidal component.
         # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
         cur_tot = self.im.get_ncvar('CUR', aconv)
-        currents = self.im.get_ncvar('PCURC') 
+
+        #CUROH(TIME3, X)
         j_ohmic = self.im.get_ncvar('CUROH', aconv)
         j_nonind = []
         if self.im.is_valid(cur_tot, j_ohmic, grid_area):
@@ -224,13 +233,13 @@ class imas_core_profiles:
             self.im.fill_data(cp.global_quantities.current_bootstrap, curbsxa)
 
         #vloop VSURC(TIME)
-        self.im.fill_data_nc(cp.global_quantities.v_loop, 'VSURC')
+        self.im.fill_data_nc(cp.global_quantities.v_loop, 'VSURC', interp=True)
 
         #li  LI_3(TIME)
-        self.im.fill_data_nc(cp.global_quantities.li_3, 'LI_3')
+        self.im.fill_data_nc(cp.global_quantities.li_3, 'LI_3', interp=True)
 
         #beta_tor BTEQ(TIME) EQUILIBRIUM BETA(TOROIDAL)
-        self.im.fill_data_nc(cp.global_quantities.beta_tor, 'BTEQ')
+        self.im.fill_data_nc(cp.global_quantities.beta_tor, 'BTEQ', interp=True)
 
         #beta_tor_norm
         bz = self.im.get_ncvar('BZ') #(TIME) T. BZ outside plasma
@@ -238,13 +247,15 @@ class imas_core_profiles:
         beta_tor_norm = []
         try:
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
+            #PCURC(TIME)
+            currents = self.im.get_ncvar('PCURC')
             a = np.sqrt(parea/pi)
             beta_tor_norm = 100.*btor*a*bz/currents
         except:
             pass
 
         #beta_pol BETAT(TIME)
-        self.im.fill_data_nc(cp.global_quantities.beta_pol, 'BETAT')
+        self.im.fill_data_nc(cp.global_quantities.beta_pol, 'BETAT', interp=True)
 
         #Plasma diamagnetic energy content = 3/2*integral over the plasma volume of
         #  the total perpendicular pressure [J].
@@ -259,22 +270,35 @@ class imas_core_profiles:
         tel = self.im.get_ncvar('TE')  #TE(TIME3,X) eV
         tev = []
         #volume PVOL(TIME) CM^3 : PLASMA VOLUME
-        pvol = self.im.get_ncvar('PVOL', vconv)
+        pvol_pt = self.im.get_ncvar('PVOL', vconv)
+        #interpolate pvol from scalar time onto profile times
+        if ntimep != ntimes:
+            pvol_pt = self.im.interp1d_time(self.im.timep, self.im.timesc, pvol_pt)
+
+        te0_tev = []
         try:
-            tev = np.sum(np.multiply(tel, gvol), axis=1) / pvol
-            self.im.fill_data(cp.global_quantities.t_e_peaking, te0/tev)
+            tev = np.sum(np.multiply(tel, gvol), axis=1) / pvol_pt
+            te0_tev = te0/tev
         except:
             pass
+
+        self.im.fill_data(cp.global_quantities.t_e_peaking, te0_tev)
 
         #t_i_average_peaking
         ti0 = self.im.get_ncvar('TI0') #magnetic axis
         tion = self.im.get_ncvar('TI')  #TE(TIME3,X)EV
         tiv = []
-        if self.im.is_valid(ti0, tion, pvol):
+
+        if self.im.is_valid(ti0, tion, pvol_pt):
             ti_ = self.im.np_multiply_sum(tion, gvol, axis=1)
-            tiv = self.im.operate_arrays(ti_, '/', pvol)
-            ti0_ti = self.im.operate_arrays(ti0, '/', tiv)
-            self.im.fill_data(cp.global_quantities.t_i_average_peaking, ti0_ti, name='t_i_average_peak')
+            tiv = self.im.operate_arrays(ti_, '/', pvol_pt)
+            if ntimep != ntimes:
+               ti0_pt = self.im.interp1d_time(self.im.timep, self.im.timesc, ti0)
+            else:
+               ti0_pt = ti0
+            ti0_ti = self.im.operate_arrays(ti0_pt, '/', tiv)
+            self.im.fill_data(cp.global_quantities.t_i_average_peaking, ti0_ti,
+               name='t_i_average_peak')
 
         #resistive_psi_losses
         #ejima
@@ -286,21 +310,22 @@ class imas_core_profiles:
         #n_e_volume_average
         #NE(TIME3, X) N/CM3
         nel = self.im.get_ncvar('NE', self.im.vol_inv)
-        if len(nel) >0:
+        if self.im.is_valid(nel, gvol, pvol_pt):
             ne_ = self.im.np_multiply_sum(nel, gvol, axis=1)
-            ne_ = self.im.operate_arrays(ne_, '/', pvol)
+            ne_ = self.im.operate_arrays(ne_, '/', pvol_pt)
             self.im.fill_data(cp.global_quantities.n_e_volume_average, ne_)
 
         #IONS
+        #NI(TIME3, X)
         nion = self.im.get_ncvar('NI')
         cp.global_quantities.ion.resize(1)
         #t_i_volume_average
         if len(tiv) >0:
             self.im.fill_data(cp.global_quantities.ion[0].t_i_volume_average, tiv, name='tiv')
 
-        if len(nion) >0:
+        if self.im.is_valid(nion, gvol, pvol_pt):
             ni_ = self.im.np_multiply_sum(nion, gvol, axis=1)
-            ni_ = self.im.operate_arrays( ni_, '/', pvol)
+            ni_ = self.im.operate_arrays( ni_, '/', pvol_pt)
             self.im.fill_data(cp.global_quantities.ion[0].n_i_volume_average, ni_, name='niv')
 
         #ion_time_slice
@@ -313,6 +338,10 @@ class imas_core_profiles:
         #TRFLX(TIME3, XB)
         bflux_tor = self.im.get_ncvar('TRFLX')
         rho_tor = []
+        #interpolate onto profile time
+        if ntimep != ntimes:
+            bz = self.im.interp1d_time(self.im.timep, self.im.timesc, bz)
+
         try:
             rho_tor = np.sqrt(bflux_tor/(pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
         except:
@@ -323,7 +352,11 @@ class imas_core_profiles:
         if not self.im.is_valid(psi):
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
 
-        psi_axis = self.im.get_ncvar('PSI0_TR') # Wb/rad
+        #PSI0_TR(TIME)  Wb/rad
+        psi_axis = self.im.get_ncvar('PSI0_TR')
+        if ntimep != ntimes:
+            psi_axis = self.im.interp1d_time(self.im.timep, self.im.timesc, psi_axis)
+
         #Normalised poloidal flux coordinate
         # = sqrt((psi(rho)-psi(magnetic_axis)) / (psi(LCFS)-psi(magnetic_axis)))
         #rho_pol_norm
@@ -348,11 +381,12 @@ class imas_core_profiles:
         #ZEFFP(TIME3, X) PLASMA COMPOSITION ZEFF PROFILE
         zeff = self.im.get_ncvar('ZEFFP')
         
-        # Q profile at XB
+        # Q profile at XB ; Q(TIME3, XB)
         qtmp = self.im.get_ncvar('Q') 
         qprof = []
         for i in range(ntimep):
-            qprof.append(numpy.interp(coord_x[i], coord_xb[i], qtmp[i]))
+            #interpolate onto centers of zones
+            qprof.append(np.interp(coord_x[i], coord_xb[i], qtmp[i]))
 
         self.logger.info(f'Filling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(ntimep)
