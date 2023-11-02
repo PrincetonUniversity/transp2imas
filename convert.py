@@ -41,7 +41,7 @@ def do_convert(argvs):
     #get arguments from command line
     #if -i all -d <dir> ;instead of CDF file name, then search for all CDF files in that dir,
     #and run in a loop
-    backend, run, occur, user, machine, newdb, ncfile, nml, log = get_args(argvs) #(sys.argv)
+    backend, run, occur, user, machine, newdb, ncfile, nml, log, moments = get_args(argvs) #(sys.argv)
 
     nci = nc2imas(backend=backend, run=run, occur=occur, user=user,
          machine=machine, new_db=newdb, ncfile=ncfile, nml_file=nml, log=log)
@@ -125,7 +125,7 @@ def do_convert(argvs):
          # rho_tor_norm is incorrect
          # psi is COCOS dependent (both 1D and 2D)
         print('equilibrium') #142202U01.CDF
-        imas_equilibrium(nci)
+        imas_equilibrium(nci, conv_moments=moments)
 
         # to be fixed: everything
 #        print('imas_core_sources') # 112989Z09(NSTX), 175286T57

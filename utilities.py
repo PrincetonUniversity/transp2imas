@@ -115,6 +115,8 @@ def get_args(argv=None):
     parser.add_argument('-o', '--occur', type=int, help='occurrence')
     parser.add_argument('-u', '--user', type=str, help='username or path of database')
     parser.add_argument('-m', '--machine', type=str, help='machine. eg: ITER')
+    parser.add_argument('-mom', '--moments', type=str, choices=['yes', 'no'], default='no',
+         help='convert moments to equilibrium')
     # -h is added by default for help
     parser.add_argument('-v', '--verbose', action='count', default=0, help='increase output verbosity')
     parser.add_argument("-l", "--log", choices=['debug','info','warn','error','critical'],
@@ -172,7 +174,7 @@ def get_args(argv=None):
     occur = 0
     log = 'debug'  #for logger
     machine = None
-
+    moments = False
     if args.backend:
         backend = args.backend
     if args.new_db:
@@ -185,9 +187,11 @@ def get_args(argv=None):
         newdb = True
     if args.machine:
         machine = args.machine
+    if args.moments and args.moments=='yes':
+        moments = True
 
     user = args.user if args.user else None
     #new_db = True if occur == 0 else False
 
-    return backend, run, occur, user, machine, newdb, ncfile, nml, log
+    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments
 

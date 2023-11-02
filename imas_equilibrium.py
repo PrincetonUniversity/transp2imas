@@ -6,13 +6,14 @@ import matplotlib.pyplot as plt #boundary trace
 from matplotlib import path
 
 class imas_equilibrium:
-    def __init__(self, ncimas:nc2imas):
+    def __init__(self, ncimas:nc2imas, conv_moments=False):
         self.im = ncimas
         self.logger = ncimas.logger
         self.rmcb = []
         self.rmsb = []
         self.ymcb = []
         self.ymsb = []
+        self.conv_moments = conv_moments
         self.nmoments = 0
         self.coskth = None
         self.sinkth = None
@@ -468,19 +469,20 @@ class imas_equilibrium:
             coord = eqm.time_slice[it].coordinate_system
 
             #inverse coordinates
-            rsurf, ysurf = [],[] #self.convert_moments(ncoord_xb, ntheta, it)
+            if hasattr(self, 'conv_moments') and self.conv_moments is True:
+               rsurf, ysurf = self.convert_moments(ncoord_xb, ntheta, it)
 
-            #fill data
-            coord.grid_type.name = "inverse"
-            coord.grid_type.index = 2
-            self.im.fill_data(coord.grid.dim1, coord_xb, ind=it, name='grid_r')
-            self.im.fill_data(coord.grid.dim2, self.inv_grid_theta, name='grid_theta')
-            coord.r.resize(ncoord_xb, ntheta)
-            if self.im.is_valid(rsurf):
-               coord.r = rsurf
-            coord.z.resize(ncoord_xb, ntheta)
-            if self.im.is_valid(ysurf):
-               coord.z = ysurf
+               #fill data
+               coord.grid_type.name = "inverse"
+               coord.grid_type.index = 2
+               self.im.fill_data(coord.grid.dim1, coord_xb, ind=it, name='grid_r')
+               self.im.fill_data(coord.grid.dim2, self.inv_grid_theta, name='grid_theta')
+               coord.r.resize(ncoord_xb, ntheta)
+               if self.im.is_valid(rsurf):
+                  coord.r = rsurf
+               coord.z.resize(ncoord_xb, ntheta)
+               if self.im.is_valid(ysurf):
+                  coord.z = ysurf
 
         self.logger.info('writing ids')
         self.im.putdb_imas(eqm)
