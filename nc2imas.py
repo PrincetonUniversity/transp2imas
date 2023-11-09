@@ -31,7 +31,7 @@ def getVarName(var):
 
 class nc2imas(imas_connection, netcdf_connection):
     def __init__(self, run, backend, occur, user, machine, new_db, ncfile,
-         nml_file:str=None, log:str='error'):
+         nml_file:str=None, log:str='error', debug:int=0):
         netcdf_connection.__init__(self, ncfile, machine)
         imas_connection.__init__(self, self.device, self.shot, run, backend, occur, user, new_db)
         self.nml_name = nml_file
@@ -48,6 +48,8 @@ class nc2imas(imas_connection, netcdf_connection):
         self.vol_inv = 1.e6
         self.sgn = -1 if self.iter_ else 1
         self.pi = constants.pi  #scipy
+        self.debug = False if debug<1 else True
+        self.debug_max = False if debug<2 else True
 
 
     def check_1dim(self, dat):
