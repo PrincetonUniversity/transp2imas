@@ -62,10 +62,6 @@ def do_convert(argvs):
         print('ic_antenna') 
         imas_ic_antennas(nci)
 
-#  O H I O => Only Handle It Once ...
-
-# PRIORITY
-
         print('ec_launchers')
         imas_ec_launchers(nci)
 
@@ -95,9 +91,6 @@ def do_convert(argvs):
         # and the arrays need to be filled consistently
         print('core_profiles')
         imas_core_profiles(nci)
-
-
-# IGNORE EVERYTHING LISTED BELOW THIS LINE. NEED TO COMPLETE EVERYTHING ABOVE THIS LINE FIRST
 
 
 # everything below this line needs to be verified

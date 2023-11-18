@@ -7,7 +7,7 @@ from matplotlib import path
 from matplotlib.collections import LineCollection
 
 class imas_equilibrium:
-    def __init__(self, ncimas:nc2imas, conv_moments=False):
+    def __init__(self, ncimas:nc2imas, conv_moments=True):
         self.im = ncimas
         self.logger = ncimas.logger
         self. debug_max = self.im.debug_max
@@ -87,6 +87,7 @@ class imas_equilibrium:
          yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=0)
 
          inv_grid_theta = np.zeros(ntheta)
+         inv_grid_theta[ntheta-1] = self.im.pi
          if self.dtheta is None:
             self.dtheta = 2*self.im.pi/ntheta
          cm2m = 0.01
@@ -110,7 +111,7 @@ class imas_equilibrium:
                rsurf[j,:] = rcos[0,j]
                ysurf[j,:] = ycos[0,j]
                for ith in range(ntheta-1):
-                  th = -self.im.pi + ith*self.dtheta #as in TRANSP
+                  th = -self.im.pi + 2*ith*self.im.pi/(ntheta-1)  #as in TRANSP
                   inv_grid_theta[ith] = th
                   for k in range(1, nmoments):
                      ct = np.cos(k*th)
@@ -123,9 +124,11 @@ class imas_equilibrium:
 
                # verify
                pts = np.zeros((ntheta,2))
+
                for k in range(ntheta):
                   pts[k,0] = rsurf[j,k]
                   pts[k,1] = ysurf[j,k]
+
                pth = path.Path(pts)
                has_axis = pth.contains_point((raxis,yaxis))
                if has_axis is False:
@@ -536,7 +539,7 @@ class imas_equilibrium:
             coord = eqm.time_slice[it].coordinate_system
 
             #inverse coordinates
-            if hasattr(self, 'conv_moments') and self.conv_moments is True:
+            if hasattr(self, 'conv_moments') and self.conv_moments is not False:
                rsurf, ysurf, inv_theta = self.convert_moments(ncoord_xb, ntheta, it)
 
                #fill data
