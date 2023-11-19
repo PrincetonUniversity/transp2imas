@@ -111,11 +111,15 @@ def get_args(argv=None):
         choices=['MDS','MDSPLUS', 'HDF', 'HDF5'], help='IMAS backend')
     parser.add_argument('-r', '--run', type=int,
         help='run number of o/p IDS (overrides default converted number: eg: Z10 -> 2610)')
-    parser.add_argument('-new', '--new-db', help='create new database', action="store_true")
+    parser.add_argument('-new', '--new-db', help='create new database', action='store_true')
     parser.add_argument('-o', '--occur', type=int, help='occurrence')
     parser.add_argument('-u', '--user', type=str, help='username or path of database')
     parser.add_argument('-m', '--machine', type=str, help='machine. eg: ITER')
+    parser.add_argument('-mom', '--moments', type=str, choices=['yes', 'no'], default='yes',
+         help='convert moments to equilibrium, default is yes')
     # -h is added by default for help
+    parser.add_argument('--debug', help='extra debug prints', action='store_true')
+    parser.add_argument('--debug-max', help='All possible debug output including plots', action='store_true')
     parser.add_argument('-v', '--verbose', action='count', default=0, help='increase output verbosity')
     parser.add_argument("-l", "--log", choices=['debug','info','warn','error','critical'],
         help="Provide logging level")
@@ -172,7 +176,8 @@ def get_args(argv=None):
     occur = 0
     log = 'debug'  #for logger
     machine = None
-
+    moments = True
+    debug = 0
     if args.backend:
         backend = args.backend
     if args.new_db:
@@ -185,9 +190,15 @@ def get_args(argv=None):
         newdb = True
     if args.machine:
         machine = args.machine
+    if args.moments and args.moments=='no':
+        moments = False
+    if args.debug:
+        debug = 1
+    if args.debug_max:
+        debug = 2
 
     user = args.user if args.user else None
     #new_db = True if occur == 0 else False
 
-    return backend, run, occur, user, machine, newdb, ncfile, nml, log
+    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, debug
 
