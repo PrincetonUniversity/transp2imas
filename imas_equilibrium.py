@@ -1,15 +1,22 @@
 
 from nc2imas import *
+#from multiprocessing import Pool
 from datetime import datetime
+import matplotlib.pyplot as plt #boundary trace
+from matplotlib import path
+from matplotlib.collections import LineCollection
+
 
 class imas_equilibrium:
-    def __init__(self, ncimas:nc2imas):
+    def __init__(self, ncimas:nc2imas, conv_moments=True):
         self.im = ncimas
         self.logger = ncimas.logger
+        self. debug_max = self.im.debug_max
         self.rmcb = []
         self.rmsb = []
         self.ymcb = []
         self.ymsb = []
+        self.conv_moments = conv_moments
         self.nmoments = 0
         self.coskth = None
         self.sinkth = None
@@ -24,7 +31,7 @@ class imas_equilibrium:
             print(f'\ttook:{elapsed:.2f} m')
 
     #to be called per time frame
-    def convert_moments(self, ncoord_xb, ntheta:int, time:int):
+    def convert_moments_2(self, ncoord_xb, ntheta:int, time:int):
          #TODO check dimension of fill data
          nmoments = self.im.get_var_names_re('RMC?', nd1=1, nd2=2, length=True)
          rcos = np.zeros(shape=(nmoments, ncoord_xb))
@@ -67,8 +74,76 @@ class imas_equilibrium:
             for j in range(ncoord_xb):
                rsurf[j] = [np.sum(rcos[j]*self.coskth[ith] + rsin[j]*self.sinkth[ith]) for ith in range(ntheta)]
                ysurf[j] = [np.sum(ycos[j]*self.coskth[ith] + ysin[j]*self.sinkth[ith]) for ith in range(ntheta)]
+
          return np.array(rsurf), np.array(ysurf)
 
+
+    def convert_moments(self, ncoord_xb, ntheta:int, time:int):
+         nmoments = self.im.get_var_names_re('RMC?', nd1=1, nd2=2, length=True)
+         rcos = np.zeros(shape=(nmoments, ncoord_xb))
+         rsin = np.zeros(shape=(nmoments, ncoord_xb))
+         ycos = np.zeros(shape=(nmoments, ncoord_xb))
+         ysin = np.zeros(shape=(nmoments, ncoord_xb))
+         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=0)
+         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=0)
+
+         inv_grid_theta = np.zeros(ntheta)
+         inv_grid_theta[ntheta-1] = self.im.pi
+         if self.dtheta is None:
+            self.dtheta = 2*self.im.pi/ntheta
+         cm2m = 0.01
+         #RMC00(TIME3, XB); CM; 0TH ASYM R MOMENT
+         rcos[0,:] = self.im.get_ncvar(f'RMC00', ind=time, scale=cm2m)
+         ycos[0,:] = self.im.get_ncvar(f'YMC00', ind=time, scale=cm2m)
+
+         for k in range(1, nmoments):
+            kn = f'0{k}' if k<10 else k
+            #RMCn(TIME3, XB); CM ; nth ASYM R COS MOMENT
+            rcos[k,:] = self.im.get_ncvar(f'RMC{kn}', ind=time, scale=cm2m)
+            rsin[k,:] = self.im.get_ncvar(f'RMS{kn}', ind=time, scale=cm2m)
+            ycos[k,:] = self.im.get_ncvar(f'YMC{kn}', ind=time, scale=cm2m)
+            ysin[k,:] = self.im.get_ncvar(f'YMS{kn}', ind=time, scale=cm2m)
+
+         rsurf = np.zeros(shape=(ncoord_xb, ntheta))
+         ysurf = np.zeros(shape=(ncoord_xb, ntheta))
+
+         if nmoments>1:
+            for j in range(ncoord_xb):
+               rsurf[j,:] = rcos[0,j]
+               ysurf[j,:] = ycos[0,j]
+               for ith in range(ntheta-1):
+                  th = -self.im.pi + 2*ith*self.im.pi/(ntheta-1)  #as in TRANSP
+                  inv_grid_theta[ith] = th
+                  for k in range(1, nmoments):
+                     ct = np.cos(k*th)
+                     st = np.sin(k*th)
+                     rsurf[j,ith] += rcos[k,j]*ct + rsin[k,j]*st
+                     ysurf[j,ith] += ycos[k,j]*ct + ysin[k,j]*st
+
+               rsurf[j,ntheta-1] = rsurf[j,0]
+               ysurf[j,ntheta-1] = ysurf[j,0]
+
+               # verify
+               pts = np.zeros((ntheta,2))
+
+               for k in range(ntheta):
+                  pts[k,0] = rsurf[j,k]
+                  pts[k,1] = ysurf[j,k]
+
+               pth = path.Path(pts)
+               has_axis = pth.contains_point((raxis,yaxis))
+               if has_axis is False:
+                  print(f'Error: axis {raxis}, {yaxis} outside equil surface {j}')
+                  raise Exception(f'Error: axis outside equil surface')
+
+            #DEBUG all
+            if self.debug_max is True:
+               data = np.stack((rsurf,ysurf), axis=2)
+               fig, ax = plt.subplots()
+               ax.add_collection(LineCollection(data))
+               plt.plot(raxis, yaxis, 'ro')
+               plt.show()
+         return np.array(rsurf), np.array(ysurf), np.array(inv_grid_theta)
 
 
     #to be called per time frame
@@ -106,7 +181,7 @@ class imas_equilibrium:
          rsurf = np.zeros(ntheta)
          ysurf = np.zeros(ntheta)
          if self.dthetab is None:
-            raise Exception('Please define dthetab')
+            raise Exception('dthetab not defined')
 
          for ith in range(ntheta-1):
             th = ith*self.dthetab
@@ -330,7 +405,7 @@ class imas_equilibrium:
         self.logger.info(f'rgrid {rgrid.shape}')
 
         #RSURF - flux surface R locations
-        ntheta = 201
+        ntheta = 101 #201  # TODO this is wrong
         self.dtheta = 2*pi/ntheta
 
         nthetab = 128
@@ -472,19 +547,21 @@ class imas_equilibrium:
             coord = eqm.time_slice[it].coordinate_system
 
             #inverse coordinates
-            rsurf, ysurf = [],[] #self.convert_moments(ncoord_xb, ntheta, it)
+            if hasattr(self, 'conv_moments') and self.conv_moments is not False:
+               rsurf, ysurf, inv_theta = self.convert_moments(ncoord_xb, ntheta, it)
 
-            #fill data
-            coord.grid_type.name = "inverse"
-            coord.grid_type.index = 2
-            self.im.fill_data(coord.grid.dim1, coord_xb, ind=it, name='grid_r')
-            self.im.fill_data(coord.grid.dim2, self.inv_grid_theta, name='grid_theta')
-            coord.r.resize(ncoord_xb, ntheta)
-            if self.im.is_valid(rsurf):
-               coord.r = rsurf
-            coord.z.resize(ncoord_xb, ntheta)
-            if self.im.is_valid(ysurf):
-               coord.z = ysurf
+               #fill data
+               coord.grid_type.name = "inverse"
+               coord.grid_type.index = 2
+               self.im.fill_data(coord.grid.dim1, coord_xb, ind=it, name='grid_r')
+               #self.im.fill_data(coord.grid.dim2, self.inv_grid_theta, name='grid_theta')
+               self.im.fill_data(coord.grid.dim2, inv_theta, name='grid_theta')
+               coord.r.resize(ncoord_xb, ntheta)
+               if self.im.is_valid(rsurf):
+                  coord.r = rsurf
+               coord.z.resize(ncoord_xb, ntheta)
+               if self.im.is_valid(ysurf):
+                  coord.z = ysurf
 
         self.logger.info('writing ids')
         self.im.putdb_imas(eqm)

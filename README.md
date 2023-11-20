@@ -90,11 +90,14 @@ python convert.py  -i <runid> [ -b MDS/HDF -r <ids_run_num> -new ]
 #  Also used if available <runid>TR.DAT
 # machine name (eg. ITER, D3D) is retrieved from CDF file.
 
+Remember to use -new if creating fresh, to avoid accumulating old copies making the database huge.
+Excluding this option may causes error sometimes, which is being fixed.
 
 All options:
  convert.py [-h] [-i INPUT_CDF] [-d INPUT_DIR] [-b {MDS,MDSPLUS,HDF,HDF5}] [-r RUN] [-new] [-o OCCUR] [-u USER]
                   [-v] [-l {debug,info,warn,error,critical}]
 
+options:
 options:
   -h, --help            show this help message and exit
   -i INPUT_CDF, --input-cdf INPUT_CDF
@@ -108,6 +111,12 @@ options:
   -o OCCUR, --occur OCCUR
                         occurrence
   -u USER, --user USER  username or path of database
+  -m MACHINE, --machine MACHINE
+                        machine. eg: ITER
+  -mom {yes,no}, --moments {yes,no}
+                        convert moments to equilibrium, default is yes
+  --debug               extra debug prints
+  --debug-max           All possible debug output including plots
   -v, --verbose         increase output verbosity
   -l {debug,info,warn,error,critical}, --log {debug,info,warn,error,critical}
                         Provide logging level
@@ -129,11 +138,14 @@ The CDF file (extension is optional) can be a renamed one seperated by non-digit
 
 The namelists in corresponding directories will be used if available, in all cases.
 
-
-
 ```
 The above steps will create MDS+ backend if HDF is not opted for. A log file log.out is written including which variables were not found in the input CDF file, for each IDS written out. In the above command line arguments, the run number is the end part of MDS output file names, while occurrence can be selected only when the ids is accessed, or from VIZ. If an existing database is appended, the size of MDS+ ids_...datafile increases with the current run.
 
+The fixed boundary equilibrium is calculated from moments using option -mom or --moments. This options is enabled by default. This is needed because the fixed boundary equilibrium data in time_slice.profiles_2d.psi causes error in TRANSP. Since this method is very slow, this can be disabled if free boundary equilibrium (which works from time_slice.profiles_2d.psi) is used and the fixed boundary equilibrium is not needed, by the option
+
+```
+-mom no  (OR, --moments no)
+```
 
 ### IMAS VIZ for visualization
 
