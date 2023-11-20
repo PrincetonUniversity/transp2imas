@@ -31,7 +31,7 @@ def getVarName(var):
 
 class nc2imas(imas_connection, netcdf_connection):
     def __init__(self, run, backend, occur, user, machine, new_db, ncfile,
-         nml_file:str=None, log:str='error'):
+         nml_file:str=None, log:str='error', debug:int=0):
         netcdf_connection.__init__(self, ncfile, machine)
         imas_connection.__init__(self, self.device, self.shot, run, backend, occur, user, new_db)
         self.nml_name = nml_file
@@ -46,36 +46,17 @@ class nc2imas(imas_connection, netcdf_connection):
         self.vconv = 1.e-6
         self.aconv = 1.0e-4
         self.vol_inv = 1.e6
-        self.timesc = []
-        self.timep = []
-        self.ntimes = 0
-        self.ntimep = 0
         self.sgn = -1 if self.iter_ else 1
         self.pi = constants.pi  #scipy
-        self.get_nc_times()
+        self.debug = False if debug<1 else True
+        self.debug_max = False if debug<2 else True
 
-
-    def get_nc_times(self):
-        self.timesc = self.get_ncvar('TIME')
-        self.ntimes = len(self.timesc)
-        self.timep = self.get_ncvar('TIME3')
-        self.ntimep = len(self.timep)
-        if self.ntimes>1 and self.ntimep>1:
-            coords_x = self.get_ncvar('X')
-            sh = coords_x.shape[1] if coords_x.ndim>1 else coords_x.shape
-            self.logger.info(f' nprof {sh}: ntimes {self.ntimes}'
-               f' {self.timesc[0]} .. {self.timesc[-1]}')
-            self.logger.info(f' ntimep {self.ntimep} {self.timep[0]} .. {self.timep[-1]}')
-            self.logger.info(f' Dtimep {self.timep[1]-self.timep[0]};'
-               f' Dtimesc {self.timesc[1]-self.timesc[0]}')
-        else:
-            raise Exception(f'Invalid times prof:{self.ntimep} scalar {self.ntimes}')
 
     def check_1dim(self, dat):
          if isinstance(dat, np.ndarray):
-            return dat.ndim==1
+              return dat.ndim==1
          elif isinstance(dat, (list, tuple, set)):
-            return np.array(dat).ndim==1
+              return np.array(dat).ndim==1
 
 
     #Don't call this using varargs forwarded by another function
@@ -154,11 +135,7 @@ class nc2imas(imas_connection, netcdf_connection):
 
     def np_multiply_sum(self, arr1, arr2, axis:int, name1:str='', name2:str='', scale=None):
         if not self.is_valid(arr1, arr2):
-            mes = ' np_multiply_sum error'
-            s1, s2 = len(arr1), len(arr2)
-            if isinstance(arr1, np.ndarray) and isinstance(arr2, np.ndarray):
-               s1, s2 = arr1.shape, arr2.shape
-            self.logger.info(f'{mes}: {name1}:{s1} {name2}: {s2}')
+            self.logger.info(f' np_multiply_sum error: {name1} {name2}')
             return np.array([])
         try:
             if scale is not None:
@@ -178,24 +155,15 @@ class nc2imas(imas_connection, netcdf_connection):
                raise Exception(f'**ERROR**: {name} is invalid: len={len(var)}: {var}')
 
 
-    def interp1d_time(self, time_new, time, dat, ind1:int=None, ind2:int=None):
+    def interp1d_time(self, timesc, timep, dat):
         r'''
-        interpolate dat from time onto time_new
-        time_new: 1d times; output dat has this size.
-        dat: 2d (time, 1d)
-        time: 1d times (x axis); Same size of 1st dim or values or f(x) of dat
+        interpolate dat from timep onto timesc
+        timesc: 1d scalar times; output dat has this size
+        dat: 2d (timep, 1d)
+        timep: 1d profile times; Same size of 1st dim of dat
         '''
-        #if dat is 2D, 1st dim should have len of len(time)
-        if self.is_valid(time_new) and self.is_valid(dat, time, ind=len(time)-1):
-           if isinstance(dat, np.ndarray) and dat.ndim==2:
-               if ind1 is not None and ind2 is None:
-                  dat = dat[ind1, :]
-               if ind1 is None and ind2 is not None:
-                  dat = dat[:, ind2]
-           if len(time_new) == len(time):
-               return dat
-           else:
-               return np.interp(time_new, time, dat)
+        if self.is_valid(timesc) and self.is_valid(dat, timep, ind=len(timep)-1):
+           return np.interp(timesc, timep, dat[:,-1])
         else:
            return []
 
@@ -228,9 +196,7 @@ class nc2imas(imas_connection, netcdf_connection):
         else:
             self.fill_value(ids, dat, rsz=rsz, mult=mult)
 
-    # if var is 2D, ind must be valid. If ind<0, use this to fill ONLY 1D data
-    def fill_data_nc(self, ids, var:str, mult:float=None, ind:int=-1, resize:bool=True,
-         interp:bool=False):
+    def fill_data_nc(self, ids, var:str, mult:float=None, ind:int=-1, resize:bool=True):
         if not isinstance(var, str):
             raise ValueError(f'variable {var} is not string')
         dat = self.get_ncvar(var, ind=ind)
@@ -238,19 +204,15 @@ class nc2imas(imas_connection, netcdf_connection):
             if ind==0:
                 self.logger.info(f'{var} not-found')
         else:
-            if mult is not None:
-                dat = mult*dat
-            if interp is True and self.ntimes != self.ntimep:
-                dat = np.interp(self.timep, self.timesc, dat)
             if resize:
                 ids.resize(len(dat), refcheck=False)
+            if mult is not None:
+                dat = mult*dat
             ids[:] = dat
 
-
-    #If ind<0, use this to fill ONLY 1D data. if var is 2D, ind must be valid.
-    #Don't use this to fill scalar
+    #don't use this to fill scalar
     def fill_data(self, ids, dat, mult:float=None, ind:int=-1, ind2:int=-1,
-          interp:bool=False, name:str=None, resize:bool=True, chk:int=-1) -> bool:
+          name:str=None, resize:bool=True, chk:int=-1) -> bool:
         nm = name if name is not None else 'data'
 
         try:
@@ -267,12 +229,10 @@ class nc2imas(imas_connection, netcdf_connection):
 
             if np.isscalar(dat):
                raise Exception('Cannot fill scalar value')
-            if mult is not None:
-                dat = mult*dat
-            if interp is True and self.ntimes != self.ntimep:
-                dat = np.interp(self.timep, self.timesc, dat)
             if (not np.isscalar(dat)) and resize:
                 ids.resize(len(dat), refcheck=False)
+            if mult is not None:
+                dat = mult*dat
             ids[:] = dat
           elif ind==0:
             self.logger.info(f'{nm} is invalid')
@@ -366,14 +326,15 @@ class nc2imas(imas_connection, netcdf_connection):
         return n
 
 
-    #name's last character is discarded. Eg. XECECH?
-    def get_namelist_nvars(self, name:str):
+    #name's last character is discarded. Eg. XECECH?. () added separately
+    def get_namelist_nvars(self, name:str, ndig:int=2):
         if name[-1] != '?':
             raise Exception(f'Error: {name} needs "?" as last char')
         name = name[:-1]
-        pattern = fr'\b{name}(\((d{0,2}))?\b'
+        pattern = fr'\b{name}(\((d{0,{ndig}}))?\b'
         try:
-            matches = [self.nmlist[k] for k in self.nmlist.keys() if name==k or re.search(pattern, k)]
+            matches = [self.nmlist[k] for k in self.nmlist.keys()
+                        if name==k or re.search(pattern, k)]
             return len(matches)
         except:
             self.logger.info(f'**Error: {name}: namelist not found')
@@ -394,7 +355,7 @@ class nc2imas(imas_connection, netcdf_connection):
 
     def get_namelist_keys_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
           nch2:int=0, nd:int=0, nch:int=0) -> list:
-        # name: regex need escaped \(
+        # name: regex need to be escaped \(
         pat = self.make_namelist_re_pattern(name, nd1, nd2, nch1, nch2, nd, nch)
 
         if pat is None:
@@ -405,67 +366,74 @@ class nc2imas(imas_connection, netcdf_connection):
         return matches
 
 
-    #this need not be used
-    def get_namelist_vars(self, name:str, tp=None, scale=1.):
-        #return list. name's last character is discarded. Eg. XECECH?
-        n = self.get_namelist_nvars(name)
-        name0 = name[:-1]
-
-        found = False
-        try:
-            val = [self.nmlist[f'{name0}({i})'] for i in range(1,n+1)][0]
-            found = True
-        except:
-            self.logger.info(f'** Failed to get {name} from name list')
-            if self.nmlist is None:
-                self.logger.info(f'** {self.nmlist} is not set')
-
-        if not found:
-           try:
-               #optional parenthesis doesn't work
-               val = self.nmlist[f'{name0}']
-               found = True
-           except:
-               self.logger.info(f'** Failed to get {name0} from name list')
-               if self.nmlist is None:
-                   self.logger.info(f'** {self.nmlist} is not set')
-
-        if found:
-            if self.is_valid(val, ind=1):
-                vals = val.split(',')
-                if tp in [int, float]:
-                    vals = [self.parse_number(x, tp) for x in vals]
-                if scale < 1. or scale > 1.:
-                    vals = scale*vals
-                return vals
-        return []
-
-    #returns scalar
+    #returns scalar or list
     def get_namelist_var_(self, name:str, tp=None, scale=1., ind:int=-1):
         try:
             val = self.nmlist[name]
-            if ind>=0 and isinstance(val, str):
-                val = re.split(r'[\s,;]+', val)[ind]
+            if isinstance(val, str):
+               val = re.split(r'[\s,;]+', val)
+            if ind>=0:
+               val = val[ind]
         except:
             self.logger.info(f'** {name} NOT found in name list')
             if self.nmlist is None:
                 self.logger.info(f'** {self.nmlist} is not set')
             return None
 
+        narr = 0
+        try:
+            narr = len(val)
+        except:
+            pass
+
         if tp in [int, float]:
-            val = self.parse_number(val, tp)
+            if narr>0:
+               val =  [self.parse_number(val[i], tp) for i in range(narr)]
+            else:
+               val = self.parse_number(val, tp)
             if scale != 1.0:
                 val = scale*val
         return val
 
-
-    def get_namelist_var(self, name:str, tp=None, scale=1.0, ind:int=-1):
+    # Some scalar can stand for arrays, e.g: FREQECH, which causes error when
+    #  an array is expected. So, call for array should handle single variable also.
+    # Returns scalar for single, list for array on RHS
+    def get_namelist_vars(self, name:str, tp=None, scale=1.0, ind:int=-1,
+          size:int=1, resize:bool=False):
         #name: don't escape (); only regex needs \(
-        res = self.get_namelist_var_(name, tp, scale, ind)
-        if res is None and ind>=0:
-            name = f'{name}({ind+1})'
-            res = self.get_namelist_var_(name, tp, scale, ind)
+        # search for single or without () for array on rhs
+        res = self.get_namelist_var_(name, tp, scale)
+        n = 0
+        # search for index
+        if ind>=0 and res is None:
+           namei = f'{name}({ind+1})'
+           res = self.get_namelist_var_(namei, tp, scale)
+           n = 1
+        # search for array
+        elif res is None:
+           n = self.get_namelist_nvars(f'{name}?')
+           res = []
+           for i in range(n):
+              namei = f'{name}({i+1})'
+              val = self.get_namelist_var_(namei, tp, scale)
+              if val is not None:
+                 res.append(val)
+
+        check = True
+        try:
+            if resize and n!= size:
+              n = size
+              res = np.full(n, res)
+            if n>0 and np.size(res)!=n:
+               check = False
+        except:
+            pass
+        if not check:
+            raise Exception(f'size of {name} != {n}')
         return res
+
+    def get_namelist_var(self, name:str, tp=None, scale=1.0, ind:int=-1, size:int=1):
+        return get_namelist_vars(name, tp, scale, ind, size)
 
 
     def extract_str_between(self, name:str, pat1:str, pat2:str, default:str, tp=None):
@@ -510,14 +478,10 @@ class nc2imas(imas_connection, netcdf_connection):
 
     #for all times
     def fill_vac_tor_field(self, ids):
-        #RAXIS(TIME)
         raxis = self.get_ncvar('RAXIS', self.cm2m)
         #(TIME) TESLA*CM. vac field
         bzxR = self.get_ncvar('BZXR', self.cm2m)
         if self.is_valid(raxis, bzxR):
-            if self.ntimep != self.ntimes:
-               raxis = np.interp(self.timep, self.timesc, raxis)
-               bzxR = np.interp(self.timep, self.timesc, bzxR)
             b_field_tor = bzxR / raxis
             rave = (raxis[0] + raxis[-1])/2.0
             self.logger.info('Vac_tor_field')
