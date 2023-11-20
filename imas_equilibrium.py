@@ -1,21 +1,15 @@
 
 from nc2imas import *
-#from multiprocessing import Pool
 from datetime import datetime
-import matplotlib.pyplot as plt #boundary trace
-from matplotlib import path
-from matplotlib.collections import LineCollection
 
 class imas_equilibrium:
-    def __init__(self, ncimas:nc2imas, conv_moments=True):
+    def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self. debug_max = self.im.debug_max
         self.rmcb = []
         self.rmsb = []
         self.ymcb = []
         self.ymsb = []
-        self.conv_moments = conv_moments
         self.nmoments = 0
         self.coskth = None
         self.sinkth = None
@@ -30,7 +24,7 @@ class imas_equilibrium:
             print(f'\ttook:{elapsed:.2f} m')
 
     #to be called per time frame
-    def convert_moments_2(self, ncoord_xb, ntheta:int, time:int):
+    def convert_moments(self, ncoord_xb, ntheta:int, time:int):
          #TODO check dimension of fill data
          nmoments = self.im.get_var_names_re('RMC?', nd1=1, nd2=2, length=True)
          rcos = np.zeros(shape=(nmoments, ncoord_xb))
@@ -73,76 +67,8 @@ class imas_equilibrium:
             for j in range(ncoord_xb):
                rsurf[j] = [np.sum(rcos[j]*self.coskth[ith] + rsin[j]*self.sinkth[ith]) for ith in range(ntheta)]
                ysurf[j] = [np.sum(ycos[j]*self.coskth[ith] + ysin[j]*self.sinkth[ith]) for ith in range(ntheta)]
-
          return np.array(rsurf), np.array(ysurf)
 
-
-    def convert_moments(self, ncoord_xb, ntheta:int, time:int):
-         nmoments = self.im.get_var_names_re('RMC?', nd1=1, nd2=2, length=True)
-         rcos = np.zeros(shape=(nmoments, ncoord_xb))
-         rsin = np.zeros(shape=(nmoments, ncoord_xb))
-         ycos = np.zeros(shape=(nmoments, ncoord_xb))
-         ysin = np.zeros(shape=(nmoments, ncoord_xb))
-         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=0)
-         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=0)
-
-         inv_grid_theta = np.zeros(ntheta)
-         inv_grid_theta[ntheta-1] = self.im.pi
-         if self.dtheta is None:
-            self.dtheta = 2*self.im.pi/ntheta
-         cm2m = 0.01
-         #RMC00(TIME3, XB); CM; 0TH ASYM R MOMENT
-         rcos[0,:] = self.im.get_ncvar(f'RMC00', ind=time, scale=cm2m)
-         ycos[0,:] = self.im.get_ncvar(f'YMC00', ind=time, scale=cm2m)
-
-         for k in range(1, nmoments):
-            kn = f'0{k}' if k<10 else k
-            #RMCn(TIME3, XB); CM ; nth ASYM R COS MOMENT
-            rcos[k,:] = self.im.get_ncvar(f'RMC{kn}', ind=time, scale=cm2m)
-            rsin[k,:] = self.im.get_ncvar(f'RMS{kn}', ind=time, scale=cm2m)
-            ycos[k,:] = self.im.get_ncvar(f'YMC{kn}', ind=time, scale=cm2m)
-            ysin[k,:] = self.im.get_ncvar(f'YMS{kn}', ind=time, scale=cm2m)
-
-         rsurf = np.zeros(shape=(ncoord_xb, ntheta))
-         ysurf = np.zeros(shape=(ncoord_xb, ntheta))
-
-         if nmoments>1:
-            for j in range(ncoord_xb):
-               rsurf[j,:] = rcos[0,j]
-               ysurf[j,:] = ycos[0,j]
-               for ith in range(ntheta-1):
-                  th = -self.im.pi + 2*ith*self.im.pi/(ntheta-1)  #as in TRANSP
-                  inv_grid_theta[ith] = th
-                  for k in range(1, nmoments):
-                     ct = np.cos(k*th)
-                     st = np.sin(k*th)
-                     rsurf[j,ith] += rcos[k,j]*ct + rsin[k,j]*st
-                     ysurf[j,ith] += ycos[k,j]*ct + ysin[k,j]*st
-
-               rsurf[j,ntheta-1] = rsurf[j,0]
-               ysurf[j,ntheta-1] = ysurf[j,0]
-
-               # verify
-               pts = np.zeros((ntheta,2))
-
-               for k in range(ntheta):
-                  pts[k,0] = rsurf[j,k]
-                  pts[k,1] = ysurf[j,k]
-
-               pth = path.Path(pts)
-               has_axis = pth.contains_point((raxis,yaxis))
-               if has_axis is False:
-                  print(f'Error: axis {raxis}, {yaxis} outside equil surface {j}')
-                  raise Exception(f'Error: axis outside equil surface')
-
-            #DEBUG all
-            if self.debug_max is True:
-               data = np.stack((rsurf,ysurf), axis=2)
-               fig, ax = plt.subplots()
-               ax.add_collection(LineCollection(data))
-               plt.plot(raxis, yaxis, 'ro')
-               plt.show()
-         return np.array(rsurf), np.array(ysurf), np.array(inv_grid_theta)
 
 
     #to be called per time frame
@@ -180,7 +106,7 @@ class imas_equilibrium:
          rsurf = np.zeros(ntheta)
          ysurf = np.zeros(ntheta)
          if self.dthetab is None:
-            raise Exception('dthetab not defined')
+            raise Exception('Please define dthetab')
 
          for ith in range(ntheta-1):
             th = ith*self.dthetab
@@ -200,6 +126,10 @@ class imas_equilibrium:
 
     #rgrid, zgrid are for all times (time, grid)
     def trace_boundary(self, psirz, rgrid, zgrid, time, nr, nz):
+         #If this function is used, this import should be moved to common for efficiency
+         from matplotlib import path
+         import matplotlib.pyplot as plt
+
          #psirz is 1D, to be reshaped
          if nr==0 or nz==0 or nr<time or nz<time or len(psirz)==0:
             return [],[]
@@ -265,39 +195,41 @@ class imas_equilibrium:
         cm2m = 0.01
         pi = constants.pi  #scipy
         #scalar time
-        timesc = self.im.get_ncvar('TIME')
-        ntimes = len(timesc)
-        timep = self.im.get_ncvar('TIME3')
-        ntimep = len(timep)
+        timesc = self.im.timesc
+        ntimes = self.im.ntimes
+        timep = self.im.timep
+        ntimep = self.im.ntimep
         coord_x = self.im.get_ncvar('X')
         coord_xb = self.im.get_ncvar('XB')
-        if not self.im.is_valid(timesc, timep, name='times'):
+
+        if not self.im.is_valid(coord_x, coord_xb, name=r'coord_x/xb'):
+            print('\t Error: invalid coord_x/xb', coord_x, coord_xb)
             return
+
         nprof = coord_x.shape[1]
 
-        currents = self.im.get_ncvar('PCURC') #(TIME)
-        raxis = self.im.get_ncvar('RAXIS', cm2m) #RAXISEQ
-        yaxis = self.im.get_ncvar('YAXIS', cm2m) #YAXISEQ
+        currents = self.im.get_ncvar('PCURC', interp=True) #(TIME)
+        raxis = self.im.get_ncvar('RAXIS', scale=cm2m, interp=True) #RAXISEQ
+        yaxis = self.im.get_ncvar('YAXIS', scale=cm2m, interp=True) #YAXISEQ
 
-        psi_axis = self.im.get_ncvar('PSI0_TR', 2*pi) # Wb/rad
+        psi_axis = self.im.get_ncvar('PSI0_TR', scale=2*pi, interp=True) # Wb/rad
         #psi_bdry =
-        q95 = self.im.get_ncvar('Q95')
-        qaxis  = self.im.get_ncvar('Q0')
-        li3 = self.im.get_ncvar('LI_3')
-        bpeq = self.im.get_ncvar('BETAT') #poloidal beta
-        btor = self.im.get_ncvar('BTEQ') #toroidal beta
+        q95 = self.im.get_ncvar('Q95', interp=True)
+        qaxis  = self.im.get_ncvar('Q0', interp=True)
+        li3 = self.im.get_ncvar('LI_3', interp=True)
+        bpeq = self.im.get_ncvar('BETAT', interp=True) #poloidal beta
+        btor = self.im.get_ncvar('BTEQ', interp=True) #toroidal beta
         #Zone volume
         gvol = self.im.get_ncvar('DVOL', 1.0e-6) #(TIME3,X) cm^3
         #plasma volume
-        pvol = self.im.get_ncvar('PVOL', 1.0e-6) #(TIME) cm^3
+        pvol = self.im.get_ncvar('PVOL', 1.0e-6, interp=True) #(TIME) cm^3
         if not self.im.is_valid(gvol, pvol, name='vol'):
             return
 
         #PMHD(TIME3, X). Pressure from equilibrium solver
         pmhd = self.im.get_ncvar('PMHD')
-        emhd = self.im.np_multiply_sum(pmhd, gvol, axis=1, scale=1.5)
-
-        self.logger.info(f'ntimesc {ntimes} nprof {nprof} raxis {raxis.shape}')
+        emhd = self.im.np_multiply_sum(pmhd, gvol, axis=1, scale=1.5,
+               name1='pmhd', name2='gvol')
 
         #TOTAL BETA TOROIDAL.
         # 2 mu0 integral(p dV) / V / B0^2   ??
@@ -312,9 +244,9 @@ class imas_equilibrium:
           beta_normal = np.array(beta_normal)
 
         beta_tor_norm = []
-        bz = self.im.get_ncvar('BZ') #(TIME) T
+        bz = self.im.get_ncvar('BZ', interp=True) #(TIME) T
         # PAREA(TIME) - plasma CS area[cm^2]
-        area = self.im.get_ncvar('PAREA')*1.e-4
+        area = self.im.get_ncvar('PAREA', scale=1.0e-4, interp=True)
         try:
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
             a = np.sqrt(area/pi)
@@ -341,12 +273,12 @@ class imas_equilibrium:
         square_lo = self.im.get_ncvar('SQUARE_LO')
 
         #if scalar time is different from profile time
-        elongb = self.im.interp1d_time(timesc, timep, elong)
-        triangb = self.im.interp1d_time(timesc, timep,triang)
-        triang_lob = self.im.interp1d_time(timesc, timep, triang_lo)
-        triang_upb = self.im.interp1d_time(timesc, timep, triang_up)
+        elongb = self.im.interp1d_time(timesc, timep, elong, ind2=-1)
+        triangb = self.im.interp1d_time(timesc, timep,triang, ind2=-1)
+        triang_lob = self.im.interp1d_time(timesc, timep, triang_lo, ind2=-1)
+        triang_upb = self.im.interp1d_time(timesc, timep, triang_up, ind2=-1)
 
-        bdry_sepx_psi = self.im.get_ncvar('PBPMHD', 2.0*pi)
+        bdry_sepx_psi = self.im.get_ncvar('PBPMHD', 2.0*pi, interp=True)
         psi = self.im.get_ncvar('PLFLX2PI')
         if not self.im.is_valid(psi):
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
@@ -362,7 +294,8 @@ class imas_equilibrium:
             print(' Error getting equilibrium psi')
             return
 
-        bzxR = self.im.get_ncvar('BZXR', cm2m) #(TIME) TESLA*CM. vac field
+        #(TIME) TESLA*CM. vac field
+        bzxR = self.im.get_ncvar('BZXR', cm2m, interp=True)
         b_field_tor = self.im.operate_arrays(bzxR, '/', raxis)
 
         #RMJMP flux surface centers
@@ -397,10 +330,10 @@ class imas_equilibrium:
         self.logger.info(f'rgrid {rgrid.shape}')
 
         #RSURF - flux surface R locations
-        ntheta = 101 #201  # TODO this is wrong
+        ntheta = 201
         self.dtheta = 2*pi/ntheta
 
-        nthetab = 128 #TODO
+        nthetab = 128
         self.dthetab = 2*pi/nthetab
 
         if self.inv_grid_theta is None:
@@ -409,14 +342,14 @@ class imas_equilibrium:
         eqm = self.im.fill_properties(eqm)
         self.im.fill_code_properties(eqm)
         eqm.ids_properties.homogeneous_time = 1
-        eqm.time.resize(ntimes)
+        eqm.time.resize(ntimep)
         eqm.time = timesc
-        eqm.time_slice.resize(ntimes)
+        eqm.time_slice.resize(ntimep)
 
-        self.logger.info(f'equilibrium #time slices {ntimes}')
-        for it in range(ntimes):
-            print_progress(ntimes-1, it)
-            if it==0 or it==ntimes-1:
+        self.logger.info(f'equilibrium #time slices {ntimep}')
+        for it in range(ntimep):
+            print_progress(ntimep-1, it)
+            if it==0 or it==ntimep-1:
                 self.logger.info(f'time slice: {it}')
             #global
             if len(currents) > it :
@@ -486,7 +419,7 @@ class imas_equilibrium:
                 eqm.time_slice[it].boundary.triangularity_lower = triang_lob[it].astype(float)
 
             if len(elongb) > it:
-                eqm.time_slice[it].boundary.elongation = elongb[it]
+                eqm.time_slice[it].boundary.elongation = elongb[it].astype(float)
 
             #profiles 1d
             iprof = eqm.time_slice[it].profiles_1d
@@ -520,7 +453,7 @@ class imas_equilibrium:
                 prof2.psi.resize((nr, nz))
                 prof2.psi = np.reshape(psirz, (nz, nr)).T
 
-                if it==ntimes-1:
+                if it==ntimep-1:
                     self.logger.info(f't {it}: wrote 2d profile : rgrid {nr}, zgrid {nz} psi {prof2.psi.shape}')
 
             bfield = self.im.get_ncvar('B_FIELD', ind=it)
@@ -532,28 +465,26 @@ class imas_equilibrium:
                 prof2.b_field_tor = bfield[1]
                 prof2.b_field_z.resize((nr, nz))
                 prof2.b_field_z = bfield[2]
-                if it==ntimes-1:
+                if it==ntimep-1:
                     self.logger.info(f't {it}: wrote B_FIELD {bfield.shape}')
 
             #inverse equilibrium
             coord = eqm.time_slice[it].coordinate_system
 
             #inverse coordinates
-            if hasattr(self, 'conv_moments') and self.conv_moments is not False:
-               rsurf, ysurf, inv_theta = self.convert_moments(ncoord_xb, ntheta, it)
+            rsurf, ysurf = [],[] #self.convert_moments(ncoord_xb, ntheta, it)
 
-               #fill data
-               coord.grid_type.name = "inverse"
-               coord.grid_type.index = 2
-               self.im.fill_data(coord.grid.dim1, coord_xb, ind=it, name='grid_r')
-               #self.im.fill_data(coord.grid.dim2, self.inv_grid_theta, name='grid_theta')
-               self.im.fill_data(coord.grid.dim2, inv_theta, name='grid_theta')
-               coord.r.resize(ncoord_xb, ntheta)
-               if self.im.is_valid(rsurf):
-                  coord.r = rsurf
-               coord.z.resize(ncoord_xb, ntheta)
-               if self.im.is_valid(ysurf):
-                  coord.z = ysurf
+            #fill data
+            coord.grid_type.name = "inverse"
+            coord.grid_type.index = 2
+            self.im.fill_data(coord.grid.dim1, coord_xb, ind=it, name='grid_r')
+            self.im.fill_data(coord.grid.dim2, self.inv_grid_theta, name='grid_theta')
+            coord.r.resize(ncoord_xb, ntheta)
+            if self.im.is_valid(rsurf):
+               coord.r = rsurf
+            coord.z.resize(ncoord_xb, ntheta)
+            if self.im.is_valid(ysurf):
+               coord.z = ysurf
 
         self.logger.info('writing ids')
         self.im.putdb_imas(eqm)
