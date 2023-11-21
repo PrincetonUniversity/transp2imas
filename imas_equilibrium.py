@@ -346,9 +346,9 @@ class imas_equilibrium:
         # GB2(TIME3, X);  T**2; <B**2> flux surface average
         fs_ave = self.im.get_ncvar('GB2')
         # GRI(TIME3, X);CM**-1; <1/R> FLUX SURFACE VOL.AVG
-        fs_vol_ave1 = self.im.get_ncvar('GRI', scale=10)
+        fs_vol_ave1 = self.im.get_ncvar('GRI', scale=100)
         # GR2I(TIME3, X) ;CM**-2; <1/R**2> FLUX SURFACE VOL.AVG
-        fs_vol_ave2 = self.im.get_ncvar('GR2I', scale=100)
+        fs_vol_ave2 = self.im.get_ncvar('GR2I', scale=1.0e4)
         # Flux surface averaged |grad_rho_tor| =  GXI * DRAV / DRAVFAC
         # GXI(TIME3, X) ;CM**-1; <GRAD(XI)> FLUX SURF VOL.AVG
         gxi_fs = self.im.get_ncvar('GXI', scale=10)
