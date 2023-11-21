@@ -114,7 +114,7 @@ options:
   -m MACHINE, --machine MACHINE
                         machine. eg: ITER
   -mom {yes,no}, --moments {yes,no}
-                        convert moments to equilibrium, default is yes
+                        convert moments to equilibrium, default is no
   --debug               extra debug prints
   --debug-max           All possible debug output including plots
   -v, --verbose         increase output verbosity
@@ -141,10 +141,10 @@ The namelists in corresponding directories will be used if available, in all cas
 ```
 The above steps will create MDS+ backend if HDF is not opted for. A log file log.out is written including which variables were not found in the input CDF file, for each IDS written out. In the above command line arguments, the run number is the end part of MDS output file names, while occurrence can be selected only when the ids is accessed, or from VIZ. If an existing database is appended, the size of MDS+ ids_...datafile increases with the current run.
 
-The fixed boundary equilibrium is calculated from moments using option -mom or --moments. This options is enabled by default. This is needed because the fixed boundary equilibrium data in time_slice.profiles_2d.psi causes error in TRANSP. Since this method is very slow, this can be disabled if free boundary equilibrium (which works from time_slice.profiles_2d.psi) is used and the fixed boundary equilibrium is not needed, by the option
+The fixed boundary equilibrium is calculated from moments using option -mom or --moments. This options is disabled by default, since it is not needed if the source CDF file has free-boundary equilibrium data, which is filled in equilibrium.time_slice.profiles_2d.psi. Also this method is very slow, and should be optimized. This method is needed for the fixed boundary equilibrium, since in wich case the data in time_slice.profiles_2d.psi causes error in TRANSP. This option can be enabled by
 
 ```
--mom no  (OR, --moments no)
+-mom yes  (OR, --moments yes)
 ```
 
 ### IMAS VIZ for visualization

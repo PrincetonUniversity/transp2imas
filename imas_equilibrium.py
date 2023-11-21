@@ -8,7 +8,7 @@ from matplotlib.collections import LineCollection
 
 
 class imas_equilibrium:
-    def __init__(self, ncimas:nc2imas, conv_moments=True):
+    def __init__(self, ncimas:nc2imas, conv_moments=False):
         self.im = ncimas
         self.logger = ncimas.logger
         self. debug_max = self.im.debug_max
@@ -421,6 +421,7 @@ class imas_equilibrium:
         eqm.time = timesc
         eqm.time_slice.resize(ntimep)
 
+        has2d_eq = False
         self.logger.info(f'equilibrium #time slices {ntimep}')
         for it in range(ntimep):
             print_progress(ntimep-1, it)
@@ -503,6 +504,9 @@ class imas_equilibrium:
             self.im.fill_data(iprof.q, qpsi, ind=it, name='qpsi')
             self.im.fill_data(iprof.f, fprof, ind=it, name='fprof')
             self.im.fill_data(iprof.pressure, pres, ind=it, name='pres')
+            self.im.fill_data(iprof.volume, gvol, ind=it, name='vol')
+            self.im.fill_data(iprof.area, darea, ind=it, name='area')
+            self.im.fill_data(iprof.surface, surface, ind=it, name='surface')
 
             self.im.fill_data(iprof.rho_tor_norm, rho_tor_norm, ind=it, name='rho_tor_norm')
             self.im.fill_data(iprof.elongation, elong, ind=it, name='elong')
@@ -527,6 +531,8 @@ class imas_equilibrium:
             if self.im.is_valid(rgrid, zgrid, ind=it, name='grid') and self.im.is_valid(psirz, name='prirz'):
                 prof2.psi.resize((nr, nz))
                 prof2.psi = np.reshape(psirz, (nz, nr)).T
+                if not has2d_eq:
+                  has2d_eq = True
 
                 if it==ntimep-1:
                     self.logger.info(f't {it}: wrote 2d profile : rgrid {nr}, zgrid {nz} psi {prof2.psi.shape}')
@@ -547,7 +553,7 @@ class imas_equilibrium:
             coord = eqm.time_slice[it].coordinate_system
 
             #inverse coordinates
-            if hasattr(self, 'conv_moments') and self.conv_moments is not False:
+            if (not has2d_eq) or hasattr(self, 'conv_moments') and self.conv_moments is True:
                rsurf, ysurf, inv_theta = self.convert_moments(ncoord_xb, ntheta, it)
 
                #fill data
