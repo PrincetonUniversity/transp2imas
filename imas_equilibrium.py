@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt #boundary trace
 from matplotlib import path
 from matplotlib.collections import LineCollection
 
+
 class imas_equilibrium:
     def __init__(self, ncimas:nc2imas, conv_moments=True):
         self.im = ncimas
@@ -200,6 +201,10 @@ class imas_equilibrium:
 
     #rgrid, zgrid are for all times (time, grid)
     def trace_boundary(self, psirz, rgrid, zgrid, time, nr, nz):
+         #If this function is used, this import should be moved to common for efficiency
+         from matplotlib import path
+         import matplotlib.pyplot as plt
+
          #psirz is 1D, to be reshaped
          if nr==0 or nz==0 or nr<time or nz<time or len(psirz)==0:
             return [],[]
@@ -265,39 +270,41 @@ class imas_equilibrium:
         cm2m = 0.01
         pi = constants.pi  #scipy
         #scalar time
-        timesc = self.im.get_ncvar('TIME')
-        ntimes = len(timesc)
-        timep = self.im.get_ncvar('TIME3')
-        ntimep = len(timep)
+        timesc = self.im.timesc
+        ntimes = self.im.ntimes
+        timep = self.im.timep
+        ntimep = self.im.ntimep
         coord_x = self.im.get_ncvar('X')
         coord_xb = self.im.get_ncvar('XB')
-        if not self.im.is_valid(timesc, timep, name='times'):
+
+        if not self.im.is_valid(coord_x, coord_xb, name=r'coord_x/xb'):
+            print('\t Error: invalid coord_x/xb', coord_x, coord_xb)
             return
+
         nprof = coord_x.shape[1]
 
-        currents = self.im.get_ncvar('PCURC') #(TIME)
-        raxis = self.im.get_ncvar('RAXIS', cm2m) #RAXISEQ
-        yaxis = self.im.get_ncvar('YAXIS', cm2m) #YAXISEQ
+        currents = self.im.get_ncvar('PCURC', interp=True) #(TIME)
+        raxis = self.im.get_ncvar('RAXIS', scale=cm2m, interp=True) #RAXISEQ
+        yaxis = self.im.get_ncvar('YAXIS', scale=cm2m, interp=True) #YAXISEQ
 
-        psi_axis = self.im.get_ncvar('PSI0_TR', 2*pi) # Wb/rad
+        psi_axis = self.im.get_ncvar('PSI0_TR', scale=2*pi, interp=True) # Wb/rad
         #psi_bdry =
-        q95 = self.im.get_ncvar('Q95')
-        qaxis  = self.im.get_ncvar('Q0')
-        li3 = self.im.get_ncvar('LI_3')
-        bpeq = self.im.get_ncvar('BETAT') #poloidal beta
-        btor = self.im.get_ncvar('BTEQ') #toroidal beta
+        q95 = self.im.get_ncvar('Q95', interp=True)
+        qaxis  = self.im.get_ncvar('Q0', interp=True)
+        li3 = self.im.get_ncvar('LI_3', interp=True)
+        bpeq = self.im.get_ncvar('BETAT', interp=True) #poloidal beta
+        btor = self.im.get_ncvar('BTEQ', interp=True) #toroidal beta
         #Zone volume
         gvol = self.im.get_ncvar('DVOL', 1.0e-6) #(TIME3,X) cm^3
         #plasma volume
-        pvol = self.im.get_ncvar('PVOL', 1.0e-6) #(TIME) cm^3
+        pvol = self.im.get_ncvar('PVOL', 1.0e-6, interp=True) #(TIME) cm^3
         if not self.im.is_valid(gvol, pvol, name='vol'):
             return
 
         #PMHD(TIME3, X). Pressure from equilibrium solver
         pmhd = self.im.get_ncvar('PMHD')
-        emhd = self.im.np_multiply_sum(pmhd, gvol, axis=1, scale=1.5)
-
-        self.logger.info(f'ntimesc {ntimes} nprof {nprof} raxis {raxis.shape}')
+        emhd = self.im.np_multiply_sum(pmhd, gvol, axis=1, scale=1.5,
+               name1='pmhd', name2='gvol')
 
         #TOTAL BETA TOROIDAL.
         # 2 mu0 integral(p dV) / V / B0^2   ??
@@ -312,9 +319,9 @@ class imas_equilibrium:
           beta_normal = np.array(beta_normal)
 
         beta_tor_norm = []
-        bz = self.im.get_ncvar('BZ') #(TIME) T
+        bz = self.im.get_ncvar('BZ', interp=True) #(TIME) T
         # PAREA(TIME) - plasma CS area[cm^2]
-        area = self.im.get_ncvar('PAREA')*1.e-4
+        area = self.im.get_ncvar('PAREA', scale=1.0e-4, interp=True)
         try:
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
             a = np.sqrt(area/pi)
@@ -341,12 +348,12 @@ class imas_equilibrium:
         square_lo = self.im.get_ncvar('SQUARE_LO')
 
         #if scalar time is different from profile time
-        elongb = self.im.interp1d_time(timesc, timep, elong)
-        triangb = self.im.interp1d_time(timesc, timep,triang)
-        triang_lob = self.im.interp1d_time(timesc, timep, triang_lo)
-        triang_upb = self.im.interp1d_time(timesc, timep, triang_up)
+        elongb = self.im.interp1d_time(timesc, timep, elong, ind2=-1)
+        triangb = self.im.interp1d_time(timesc, timep,triang, ind2=-1)
+        triang_lob = self.im.interp1d_time(timesc, timep, triang_lo, ind2=-1)
+        triang_upb = self.im.interp1d_time(timesc, timep, triang_up, ind2=-1)
 
-        bdry_sepx_psi = self.im.get_ncvar('PBPMHD', 2.0*pi)
+        bdry_sepx_psi = self.im.get_ncvar('PBPMHD', 2.0*pi, interp=True)
         psi = self.im.get_ncvar('PLFLX2PI')
         if not self.im.is_valid(psi):
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
@@ -362,7 +369,8 @@ class imas_equilibrium:
             print(' Error getting equilibrium psi')
             return
 
-        bzxR = self.im.get_ncvar('BZXR', cm2m) #(TIME) TESLA*CM. vac field
+        #(TIME) TESLA*CM. vac field
+        bzxR = self.im.get_ncvar('BZXR', cm2m, interp=True)
         b_field_tor = self.im.operate_arrays(bzxR, '/', raxis)
 
         #RMJMP flux surface centers
@@ -400,7 +408,7 @@ class imas_equilibrium:
         ntheta = 101 #201  # TODO this is wrong
         self.dtheta = 2*pi/ntheta
 
-        nthetab = 128 #TODO
+        nthetab = 128
         self.dthetab = 2*pi/nthetab
 
         if self.inv_grid_theta is None:
@@ -409,14 +417,14 @@ class imas_equilibrium:
         eqm = self.im.fill_properties(eqm)
         self.im.fill_code_properties(eqm)
         eqm.ids_properties.homogeneous_time = 1
-        eqm.time.resize(ntimes)
+        eqm.time.resize(ntimep)
         eqm.time = timesc
-        eqm.time_slice.resize(ntimes)
+        eqm.time_slice.resize(ntimep)
 
-        self.logger.info(f'equilibrium #time slices {ntimes}')
-        for it in range(ntimes):
-            print_progress(ntimes-1, it)
-            if it==0 or it==ntimes-1:
+        self.logger.info(f'equilibrium #time slices {ntimep}')
+        for it in range(ntimep):
+            print_progress(ntimep-1, it)
+            if it==0 or it==ntimep-1:
                 self.logger.info(f'time slice: {it}')
             #global
             if len(currents) > it :
@@ -486,7 +494,7 @@ class imas_equilibrium:
                 eqm.time_slice[it].boundary.triangularity_lower = triang_lob[it].astype(float)
 
             if len(elongb) > it:
-                eqm.time_slice[it].boundary.elongation = elongb[it]
+                eqm.time_slice[it].boundary.elongation = elongb[it].astype(float)
 
             #profiles 1d
             iprof = eqm.time_slice[it].profiles_1d
@@ -520,7 +528,7 @@ class imas_equilibrium:
                 prof2.psi.resize((nr, nz))
                 prof2.psi = np.reshape(psirz, (nz, nr)).T
 
-                if it==ntimes-1:
+                if it==ntimep-1:
                     self.logger.info(f't {it}: wrote 2d profile : rgrid {nr}, zgrid {nz} psi {prof2.psi.shape}')
 
             bfield = self.im.get_ncvar('B_FIELD', ind=it)
@@ -532,7 +540,7 @@ class imas_equilibrium:
                 prof2.b_field_tor = bfield[1]
                 prof2.b_field_z.resize((nr, nz))
                 prof2.b_field_z = bfield[2]
-                if it==ntimes-1:
+                if it==ntimep-1:
                     self.logger.info(f't {it}: wrote B_FIELD {bfield.shape}')
 
             #inverse equilibrium

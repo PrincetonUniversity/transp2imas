@@ -46,17 +46,40 @@ class nc2imas(imas_connection, netcdf_connection):
         self.vconv = 1.e-6
         self.aconv = 1.0e-4
         self.vol_inv = 1.e6
+        self.timesc = []
+        self.timep = []
+        self.ntimes = 0
+        self.ntimep = 0
         self.sgn = -1 if self.iter_ else 1
         self.pi = constants.pi  #scipy
+
         self.debug = False if debug<1 else True
         self.debug_max = False if debug<2 else True
+        self.get_nc_times()
+
+
+    def get_nc_times(self):
+        self.timesc = self.get_ncvar('TIME')
+        self.ntimes = len(self.timesc)
+        self.timep = self.get_ncvar('TIME3')
+        self.ntimep = len(self.timep)
+        if self.ntimes>1 and self.ntimep>1:
+            coords_x = self.get_ncvar('X')
+            sh = coords_x.shape[1] if coords_x.ndim>1 else coords_x.shape
+            self.logger.info(f' nprof {sh}: ntimes {self.ntimes}'
+               f' {self.timesc[0]} .. {self.timesc[-1]}')
+            self.logger.info(f' ntimep {self.ntimep} {self.timep[0]} .. {self.timep[-1]}')
+            self.logger.info(f' Dtimep {self.timep[1]-self.timep[0]};'
+               f' Dtimesc {self.timesc[1]-self.timesc[0]}')
+        else:
+            raise Exception(f'Invalid times prof:{self.ntimep} scalar {self.ntimes}')
 
 
     def check_1dim(self, dat):
          if isinstance(dat, np.ndarray):
-              return dat.ndim==1
+            return dat.ndim==1
          elif isinstance(dat, (list, tuple, set)):
-              return np.array(dat).ndim==1
+            return np.array(dat).ndim==1
 
 
     #Don't call this using varargs forwarded by another function
@@ -135,7 +158,11 @@ class nc2imas(imas_connection, netcdf_connection):
 
     def np_multiply_sum(self, arr1, arr2, axis:int, name1:str='', name2:str='', scale=None):
         if not self.is_valid(arr1, arr2):
-            self.logger.info(f' np_multiply_sum error: {name1} {name2}')
+            mes = ' np_multiply_sum error'
+            s1, s2 = len(arr1), len(arr2)
+            if isinstance(arr1, np.ndarray) and isinstance(arr2, np.ndarray):
+               s1, s2 = arr1.shape, arr2.shape
+            self.logger.info(f'{mes}: {name1}:{s1} {name2}: {s2}')
             return np.array([])
         try:
             if scale is not None:
@@ -155,15 +182,24 @@ class nc2imas(imas_connection, netcdf_connection):
                raise Exception(f'**ERROR**: {name} is invalid: len={len(var)}: {var}')
 
 
-    def interp1d_time(self, timesc, timep, dat):
+    def interp1d_time(self, time_new, time, dat, ind1:int=None, ind2:int=None):
         r'''
-        interpolate dat from timep onto timesc
-        timesc: 1d scalar times; output dat has this size
-        dat: 2d (timep, 1d)
-        timep: 1d profile times; Same size of 1st dim of dat
+        interpolate dat from time onto time_new
+        time_new: 1d times; output dat has this size.
+        dat: 2d (time, 1d)
+        time: 1d times (x axis); Same size of 1st dim or values or f(x) of dat
         '''
-        if self.is_valid(timesc) and self.is_valid(dat, timep, ind=len(timep)-1):
-           return np.interp(timesc, timep, dat[:,-1])
+        #if dat is 2D, 1st dim should have len of len(time)
+        if self.is_valid(time_new) and self.is_valid(dat, time, ind=len(time)-1):
+           if isinstance(dat, np.ndarray) and dat.ndim==2:
+               if ind1 is not None and ind2 is None:
+                  dat = dat[ind1, :]
+               if ind1 is None and ind2 is not None:
+                  dat = dat[:, ind2]
+           if len(time_new) == len(time):
+               return dat
+           else:
+               return np.interp(time_new, time, dat)
         else:
            return []
 
@@ -196,7 +232,9 @@ class nc2imas(imas_connection, netcdf_connection):
         else:
             self.fill_value(ids, dat, rsz=rsz, mult=mult)
 
-    def fill_data_nc(self, ids, var:str, mult:float=None, ind:int=-1, resize:bool=True):
+    # if var is 2D, ind must be valid. If ind<0, use this to fill ONLY 1D data
+    def fill_data_nc(self, ids, var:str, mult:float=None, ind:int=-1, resize:bool=True,
+         interp:bool=False):
         if not isinstance(var, str):
             raise ValueError(f'variable {var} is not string')
         dat = self.get_ncvar(var, ind=ind)
@@ -204,15 +242,19 @@ class nc2imas(imas_connection, netcdf_connection):
             if ind==0:
                 self.logger.info(f'{var} not-found')
         else:
-            if resize:
-                ids.resize(len(dat), refcheck=False)
             if mult is not None:
                 dat = mult*dat
+            if interp is True and self.ntimes != self.ntimep:
+                dat = np.interp(self.timep, self.timesc, dat)
+            if resize:
+                ids.resize(len(dat), refcheck=False)
             ids[:] = dat
 
-    #don't use this to fill scalar
+
+    #If ind<0, use this to fill ONLY 1D data. if var is 2D, ind must be valid.
+    #Don't use this to fill scalar
     def fill_data(self, ids, dat, mult:float=None, ind:int=-1, ind2:int=-1,
-          name:str=None, resize:bool=True, chk:int=-1) -> bool:
+          interp:bool=False, name:str=None, resize:bool=True, chk:int=-1) -> bool:
         nm = name if name is not None else 'data'
 
         try:
@@ -229,10 +271,12 @@ class nc2imas(imas_connection, netcdf_connection):
 
             if np.isscalar(dat):
                raise Exception('Cannot fill scalar value')
-            if (not np.isscalar(dat)) and resize:
-                ids.resize(len(dat), refcheck=False)
             if mult is not None:
                 dat = mult*dat
+            if interp is True and self.ntimes != self.ntimep:
+                dat = np.interp(self.timep, self.timesc, dat)
+            if (not np.isscalar(dat)) and resize:
+                ids.resize(len(dat), refcheck=False)
             ids[:] = dat
           elif ind==0:
             self.logger.info(f'{nm} is invalid')
@@ -478,10 +522,14 @@ class nc2imas(imas_connection, netcdf_connection):
 
     #for all times
     def fill_vac_tor_field(self, ids):
+        #RAXIS(TIME)
         raxis = self.get_ncvar('RAXIS', self.cm2m)
         #(TIME) TESLA*CM. vac field
         bzxR = self.get_ncvar('BZXR', self.cm2m)
         if self.is_valid(raxis, bzxR):
+            if self.ntimep != self.ntimes:
+               raxis = np.interp(self.timep, self.timesc, raxis)
+               bzxR = np.interp(self.timep, self.timesc, bzxR)
             b_field_tor = bzxR / raxis
             rave = (raxis[0] + raxis[-1])/2.0
             self.logger.info('Vac_tor_field')
