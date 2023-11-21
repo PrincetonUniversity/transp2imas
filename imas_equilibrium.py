@@ -8,7 +8,7 @@ from matplotlib.collections import LineCollection
 
 
 class imas_equilibrium:
-    def __init__(self, ncimas:nc2imas, conv_moments=True):
+    def __init__(self, ncimas:nc2imas, conv_moments=False):
         self.im = ncimas
         self.logger = ncimas.logger
         self. debug_max = self.im.debug_max
@@ -336,6 +336,28 @@ class imas_equilibrium:
         #Surface area of the toroidal flux surface
         #FLUX SURFACE AREA;(TIME3,X) cm^2
         surface = self.im.get_ncvar('SURF', 1.0e-4)
+        #GB1(TIME3, X) ; T; <B> flux surface average
+        bf_ave = self.im.get_ncvar('GB1')
+        #BMAX(TIME3, X) ; T; Bmax on flux surface
+        bf_max = self.im.get_ncvar('BMAX')
+        #BMIN(TIME3, X) ; T; Bmin on flux surface
+        bf_min = self.im.get_ncvar('BMIN')
+
+        # GB2(TIME3, X);  T**2; <B**2> flux surface average
+        fs_ave = self.im.get_ncvar('GB2')
+        # GRI(TIME3, X);CM**-1; <1/R> FLUX SURFACE VOL.AVG
+        fs_vol_ave1 = self.im.get_ncvar('GRI', scale=10)
+        # GR2I(TIME3, X) ;CM**-2; <1/R**2> FLUX SURFACE VOL.AVG
+        fs_vol_ave2 = self.im.get_ncvar('GR2I', scale=100)
+        # Flux surface averaged |grad_rho_tor| =  GXI * DRAV / DRAVFAC
+        # GXI(TIME3, X) ;CM**-1; <GRAD(XI)> FLUX SURF VOL.AVG
+        gxi_fs = self.im.get_ncvar('GXI', scale=10)
+        # DRAV(TIME3, X); CM; FLUX SURFACE AVG <DR>
+        drav_fs = self.im.get_ncvar('DRAV', scale=0.1)
+        # DRAVFAC(TIME3, X); ; <dr>*<1/dr>
+        drav_fac = self.im.get_ncvar('DRAVFAC')
+        fs_ave_gm = self.im.operate_arrays(gxi_fs, '*', drav_fs)
+        fs_ave_gm7 = self.im.operate_arrays(fs_ave_gm, '/', drav_fac)
 
         #rminor =
 
@@ -421,6 +443,7 @@ class imas_equilibrium:
         eqm.time = timesc
         eqm.time_slice.resize(ntimep)
 
+        has2d_eq = False
         self.logger.info(f'equilibrium #time slices {ntimep}')
         for it in range(ntimep):
             print_progress(ntimep-1, it)
@@ -503,6 +526,16 @@ class imas_equilibrium:
             self.im.fill_data(iprof.q, qpsi, ind=it, name='qpsi')
             self.im.fill_data(iprof.f, fprof, ind=it, name='fprof')
             self.im.fill_data(iprof.pressure, pres, ind=it, name='pres')
+            self.im.fill_data(iprof.volume, gvol, ind=it, name='vol')
+            self.im.fill_data(iprof.area, darea, ind=it, name='area')
+            self.im.fill_data(iprof.surface, surface, ind=it, name='surface')
+            self.im.fill_data(iprof.b_field_average, bf_ave, ind=it, name='bf_ave')
+            self.im.fill_data(iprof.b_field_max, bf_max, ind=it, name='bf_max')
+            self.im.fill_data(iprof.b_field_min, bf_min, ind=it, name='bf_min')
+            self.im.fill_data(iprof.gm1, fs_vol_ave2, ind=it, name='gm1')
+            self.im.fill_data(iprof.gm5, fs_ave, ind=it, name='gm5')
+            self.im.fill_data(iprof.gm7, fs_ave_gm7, ind=it, name='gm7')
+            self.im.fill_data(iprof.gm9, fs_vol_ave1, ind=it, name='gm9')
 
             self.im.fill_data(iprof.rho_tor_norm, rho_tor_norm, ind=it, name='rho_tor_norm')
             self.im.fill_data(iprof.elongation, elong, ind=it, name='elong')
@@ -527,6 +560,8 @@ class imas_equilibrium:
             if self.im.is_valid(rgrid, zgrid, ind=it, name='grid') and self.im.is_valid(psirz, name='prirz'):
                 prof2.psi.resize((nr, nz))
                 prof2.psi = np.reshape(psirz, (nz, nr)).T
+                if not has2d_eq:
+                  has2d_eq = True
 
                 if it==ntimep-1:
                     self.logger.info(f't {it}: wrote 2d profile : rgrid {nr}, zgrid {nz} psi {prof2.psi.shape}')
@@ -547,7 +582,7 @@ class imas_equilibrium:
             coord = eqm.time_slice[it].coordinate_system
 
             #inverse coordinates
-            if hasattr(self, 'conv_moments') and self.conv_moments is not False:
+            if (not has2d_eq) or hasattr(self, 'conv_moments') and self.conv_moments is True:
                rsurf, ysurf, inv_theta = self.convert_moments(ncoord_xb, ntheta, it)
 
                #fill data
