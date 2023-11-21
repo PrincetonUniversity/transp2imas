@@ -376,6 +376,7 @@ class imas_equilibrium:
         triang_upb = self.im.interp1d_time(timesc, timep, triang_up, ind2=-1)
 
         bdry_sepx_psi = self.im.get_ncvar('PBPMHD', 2.0*pi, interp=True)
+        # PLFLX2PI(TIME3, XB) : Wb ; total poloidal flux
         psi = self.im.get_ncvar('PLFLX2PI')
         if not self.im.is_valid(psi):
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
@@ -526,8 +527,21 @@ class imas_equilibrium:
             self.im.fill_data(iprof.q, qpsi, ind=it, name='qpsi')
             self.im.fill_data(iprof.f, fprof, ind=it, name='fprof')
             self.im.fill_data(iprof.pressure, pres, ind=it, name='pres')
-            self.im.fill_data(iprof.volume, gvol, ind=it, name='vol')
-            self.im.fill_data(iprof.area, darea, ind=it, name='area')
+
+            if len(gvol)>it and len(darea)>it:
+               nvols = gvol.shape[1]
+               gvols = np.zeros(nvols)
+               dareas = np.zeros(nvols)
+               gvols[0] = gvol[it,0]
+               darea[0] = darea[it,0]
+               for iv in range(1,nvols): # +1 ?
+                  gvols[iv] = gvol[it,iv] + gvols[iv-1]
+                  dareas[iv] = darea[it,iv] + dareas[iv-1]
+               if nvols>1:
+                  self.im.fill_data(iprof.volume, gvols, name='vol')
+                  self.im.fill_data(iprof.area, dareas, name='area')
+
+
             self.im.fill_data(iprof.surface, surface, ind=it, name='surface')
             self.im.fill_data(iprof.b_field_average, bf_ave, ind=it, name='bf_ave')
             self.im.fill_data(iprof.b_field_max, bf_max, ind=it, name='bf_max')
