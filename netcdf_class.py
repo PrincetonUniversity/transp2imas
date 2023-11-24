@@ -11,7 +11,7 @@ from scipy.interpolate import interp1d
 
 from pathlib import Path
 from netCDF4 import Dataset
-
+from typing import List, Dict, Tuple, Union
 class netcdf_connection:
     def __init__(self, ncfile:str, machine:str):
         self.nc = None
@@ -141,15 +141,18 @@ class netcdf_connection:
         return n>0
 
     #names: list[str] or np.array
-    def split_var_name(self, names, cut:str='') -> dict[str:list]:
+    def split_var_name(self, names, cut:str='') -> Union[Dict[str,List], None]:
         try:
-            res = {s.split(cut)[0]: s.split(cut)[1:] for s in names if len(s.split(cut))>1}
+            return {s.split(cut)[0]: s.split(cut)[1:] for s in names if len(s.split(cut))>1}
         except:
-            print(f'{name} split error {name.split(chars,1)}')
+            chars=''
+            print(f'{names} split error {names.split(chars,1)}')
+        return None
+        
 
 
     #TODO use chars after '?'
-    def get_var_names_lst(self, name:str, lst:list[str], crop=False, cut:str='') -> list[str]:
+    def get_var_names_lst(self, name:str, lst:List[str], crop=False, cut:str='') -> List[str]:
         r'''
           select existing variables matching pattern + passed in lst
           eg: get_var_names_lst('BSTH_?', sp_look); sp_look=['H', 'D', 'T',..]
@@ -167,7 +170,7 @@ class netcdf_connection:
             matches = [str(s.split(st,1)[1]) for s in matches if len(s.split(st,1))>1]
         return matches
 
-    def get_species_names(self, name:str, cut:str=None, prep_HE=True) -> list[str]:
+    def get_species_names(self, name:str, cut:str=None, prep_HE=True) -> List[str]:
         #characters after 1st position of '?' returned
         ind = name.find('?') #only 1st position of '?' replaced
         if ind < 0:
@@ -182,7 +185,7 @@ class netcdf_connection:
         return sps
 
 
-    def get_species_data(self, name:str, cut:str='') -> list|list:
+    def get_species_data(self, name:str, cut:str='') -> Tuple[List, List]:
          r'''
          NIMP_BE_? for finding NIMP_BE_4. Returns two lists: [str,..],[1,..]
          #z value as string; and corresponding number of +charges
@@ -247,7 +250,7 @@ class netcdf_connection:
         except:
             return np.array([])
 
-    def get_ncvars_lst(self, lst:list[str], scale:float=1., ind:int=-1) -> np.array:
+    def get_ncvars_lst(self, lst:List[str], scale:float=1., ind:int=-1) -> np.array:
         tot = []
         n = 0
         for name in lst:
