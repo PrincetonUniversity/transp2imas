@@ -4,7 +4,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 import imas
-import MDSplus
+# import MDSplus
 from plotter import *
 from utilities import *
 
