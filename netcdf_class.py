@@ -199,7 +199,7 @@ class netcdf_connection:
             names.append(st)
          return names, lst
 
-    def get_species_data_rec(self, name:str) ->dict:
+    def get_species_data_rec(self, name:str) -> Dict:
          r'''
          NIMP_?_? for finding NIMP_BE_4. Returns dict: {'BE':[['4',..],[1,..]],  }
          #dict value is list of two lists: [Z,..], [ch,...]

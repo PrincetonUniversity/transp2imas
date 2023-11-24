@@ -3,6 +3,7 @@
 import os
 import sys
 import math
+from typing import List
 import numpy as np
 import inspect
 
@@ -398,7 +399,7 @@ class nc2imas(imas_connection, netcdf_connection):
         return pat
 
     def get_namelist_keys_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
-          nch2:int=0, nd:int=0, nch:int=0) -> list:
+          nch2:int=0, nd:int=0, nch:int=0) -> List:
         # name: regex need to be escaped \(
         pat = self.make_namelist_re_pattern(name, nd1, nd2, nch1, nch2, nd, nch)
 

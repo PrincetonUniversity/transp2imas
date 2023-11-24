@@ -1,4 +1,5 @@
 
+from typing import Dict
 import numpy as np
 from scipy import constants
 from scipy.constants import physical_constants as scipy_phyc
@@ -176,7 +177,7 @@ class atom_base():
 
 
     #dct is one of self.atoms, beams, ions, or neutrals
-    def find_species_label(self, sp_a:float, sp_zn:float, dct:dict)->str :
+    def find_species_label(self, sp_a:float, sp_zn:float, dct:Dict)->str :
         if not (sp_a and sp_zn and dct):
             return None
         eps = 0.1 #round off
