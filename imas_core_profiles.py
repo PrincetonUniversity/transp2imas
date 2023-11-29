@@ -1,3 +1,4 @@
+from typing import List
 from nc2imas import *
 
 class ion_states:
@@ -48,7 +49,7 @@ class imas_core_profiles:
         self.create_ids()
 
     #ions data
-    def get_ion_data(self) -> list:
+    def get_ion_data(self) -> List:
         atomsDef = atom_base('')
         ionDict = atomsDef.ions
         ions = []

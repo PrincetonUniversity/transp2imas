@@ -1,4 +1,5 @@
 
+from typing import Dict, List
 from nc2imas import *
 
 class imas_core_sources:
@@ -787,7 +788,7 @@ class imas_core_sources:
 
 
 
-    def get_sources_info(self, sources:list)->dict:
+    def get_sources_info(self, sources:List)->Dict:
         '''
         Return: dict  {str : [name, species]}
         '''
