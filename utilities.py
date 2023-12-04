@@ -117,6 +117,8 @@ def get_args(argv=None):
     parser.add_argument('-m', '--machine', type=str, help='machine. eg: ITER')
     parser.add_argument('-mom', '--moments', type=str, choices=['yes', 'no'], default='no',
          help='convert moments to equilibrium, default is no')
+    parser.add_argument('-ecnml', '--ec-nml-launch', type=str, choices=['yes', 'no'], default='no',
+         help='get EC launch position from namelist (for testing)')
     # -h is added by default for help
     parser.add_argument('--debug', help='extra debug prints', action='store_true')
     parser.add_argument('--debug-max', help='All possible debug output including plots', action='store_true')
@@ -177,6 +179,7 @@ def get_args(argv=None):
     log = 'debug'  #for logger
     machine = None
     moments = False
+    ec_nml = False
     debug = 0
     if args.backend:
         backend = args.backend
@@ -192,6 +195,8 @@ def get_args(argv=None):
         machine = args.machine
     if args.moments and args.moments=='yes':
         moments = True
+    if args.ec_nml_launch and args.ec_nml_launch=='yes':
+        ec_nml = True
     if args.debug:
         debug = 1
     if args.debug_max:
@@ -200,5 +205,5 @@ def get_args(argv=None):
     user = args.user if args.user else None
     #new_db = True if occur == 0 else False
 
-    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, debug
+    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, debug, ec_nml
 
