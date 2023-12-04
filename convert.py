@@ -41,7 +41,8 @@ def do_convert(argvs):
     #get arguments from command line
     #if -i all -d <dir> ;instead of CDF file name, then search for all CDF files in that dir,
     #and run in a loop
-    backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, deb = get_args(argvs) #(sys.argv)
+    backend, run, occur, user, machine, newdb, ncfile, nml, log, \
+      moments, deb, ec_nml_launch = get_args(argvs) #(sys.argv)
 
     nci = nc2imas(backend=backend, run=run, occur=occur, user=user,
          machine=machine, new_db=newdb, ncfile=ncfile, nml_file=nml, log=log, debug=deb)
@@ -63,7 +64,8 @@ def do_convert(argvs):
         imas_ic_antennas(nci)
 
         print('ec_launchers')
-        imas_ec_launchers(nci)
+        # get launch position from namelist
+        imas_ec_launchers(nci, ec_nml_launch=ec_nml_launch)
 
          # to be fixed: consistency with homogenous_time
         print('nbi') 
