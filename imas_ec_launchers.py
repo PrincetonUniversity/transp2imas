@@ -102,8 +102,11 @@ class imas_ec_launchers:
                   ec.beam[i].phase.curvature[sj,:] = curv_vert
             # --- above for testing only ---
 
-            #O-mode ?
-#            ec.beam[i].mode = 1
+            # using mode from namelist
+            rfmode = get_namelist_data('RFMODECH', float, i)
+            if rfmode is not None:
+               # extra ordinary mode -1; ordinary mode 1
+               ec.beam[i].mode = -1 if (rfmode<0.01) else 1
 
             # fmp needs to check the code below for a number of cases with different B, I geometry
             #steering_angle_tor [rad]. Azimuthal launch angle
