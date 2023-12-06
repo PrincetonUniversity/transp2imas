@@ -351,14 +351,8 @@ class imas_equilibrium:
         fs_vol_ave2 = self.im.get_ncvar('GR2I', scale=1.0e4)
         # Flux surface averaged |grad_rho_tor| =  GXI * DRAV / DRAVFAC
         # GXI(TIME3, X) ;CM**-1; <GRAD(XI)> FLUX SURF VOL.AVG
-        gxi_fs = self.im.get_ncvar('GXI', scale=10)
-        # DRAV(TIME3, X); CM; FLUX SURFACE AVG <DR>
-        drav_fs = self.im.get_ncvar('DRAV', scale=0.1)
-        # DRAVFAC(TIME3, X); ; <dr>*<1/dr>
-        drav_fac = self.im.get_ncvar('DRAVFAC')
-        fs_ave_gm = self.im.operate_arrays(gxi_fs, '*', drav_fs)
-        fs_ave_gm7 = self.im.operate_arrays(fs_ave_gm, '/', drav_fac)
-
+        fs_ave_gm7 = self.im.get_ncvar('GXI', scale=100)
+        
         #rminor =
 
         #profiles (TIME3, XB)
@@ -526,8 +520,22 @@ class imas_equilibrium:
             self.im.fill_data(iprof.q, qpsi, ind=it, name='qpsi')
             self.im.fill_data(iprof.f, fprof, ind=it, name='fprof')
             self.im.fill_data(iprof.pressure, pres, ind=it, name='pres')
-            self.im.fill_data(iprof.volume, gvol, ind=it, name='vol')
-            self.im.fill_data(iprof.area, darea, ind=it, name='area')
+
+            vol=[]
+            s=0
+            for i in gvol:
+                s +=i
+                vol.append(s)
+
+            self.im.fill_data(iprof.volume, vol, ind=it, name='vol')
+
+            area=[]
+            s=0
+            for i in darea:
+                s +=i
+                area.append(s)
+
+            self.im.fill_data(iprof.area, area, ind=it, name='area')
             self.im.fill_data(iprof.surface, surface, ind=it, name='surface')
             self.im.fill_data(iprof.b_field_average, bf_ave, ind=it, name='bf_ave')
             self.im.fill_data(iprof.b_field_max, bf_max, ind=it, name='bf_max')
