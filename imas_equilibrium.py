@@ -521,21 +521,22 @@ class imas_equilibrium:
             self.im.fill_data(iprof.f, fprof, ind=it, name='fprof')
             self.im.fill_data(iprof.pressure, pres, ind=it, name='pres')
 
+ 
             vol=[]
             s=0
-            for i in gvol:
+            for i in gvol[it]:
                 s +=i
                 vol.append(s)
-
+            
             self.im.fill_data(iprof.volume, vol, ind=it, name='vol')
 
-            area=[]
+            prof_area=[]
             s=0
-            for i in darea:
+            for i in darea[it]:
                 s +=i
-                area.append(s)
+                prof_area.append(s)
 
-            self.im.fill_data(iprof.area, area, ind=it, name='area')
+            self.im.fill_data(iprof.area, prof_area, ind=it, name='area')
             self.im.fill_data(iprof.surface, surface, ind=it, name='surface')
             self.im.fill_data(iprof.b_field_average, bf_ave, ind=it, name='bf_ave')
             self.im.fill_data(iprof.b_field_max, bf_max, ind=it, name='bf_max')
