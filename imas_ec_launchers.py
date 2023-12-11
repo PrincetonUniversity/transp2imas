@@ -94,7 +94,9 @@ class imas_ec_launchers:
                   ec.beam[i].spot.size.resize((2,ntimes));
                   ec.beam[i].spot.size[si,:] = spot_hor
                   ec.beam[i].spot.size[sj,:] = spot_vert
-               if self.im.is_valid(curv_hor, curv_vert, ind=ntimes-1):
+
+               if self.im.is_valid(curv_hor, curv_vert, ind=ntimes-1) and \
+                  np.all(curv_hor) and np.all(curv_vert) :
                   curv_hor = -1.0/curv_hor
                   curv_vert = -1.0/curv_vert
                   ec.beam[i].phase.curvature.resize((2,ntimes));

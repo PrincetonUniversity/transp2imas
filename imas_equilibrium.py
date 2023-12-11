@@ -423,7 +423,7 @@ class imas_equilibrium:
         self.logger.info(f'rgrid {rgrid.shape}')
 
         #RSURF - flux surface R locations
-        ntheta = 101 #201  # TODO this is wrong
+        ntheta = 101 #201  # this should be set case by case ?
         self.dtheta = 2*pi/ntheta
 
         nthetab = 128
@@ -582,11 +582,11 @@ class imas_equilibrium:
             if self.im.is_valid(bfield, name='bfield'):
                 bfield = bfield.reshape((3,nz,nr))
                 prof2.b_field_r.resize((nr, nz))
-                prof2.b_field_r = bfield[0]
+                prof2.b_field_r = bfield[0].T
                 prof2.b_field_tor.resize((nr, nz))
-                prof2.b_field_tor = bfield[1]
+                prof2.b_field_tor = bfield[1].T
                 prof2.b_field_z.resize((nr, nz))
-                prof2.b_field_z = bfield[2]
+                prof2.b_field_z = bfield[2].T
                 if it==ntimep-1:
                     self.logger.info(f't {it}: wrote B_FIELD {bfield.shape}')
 
