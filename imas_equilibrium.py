@@ -569,8 +569,9 @@ class imas_equilibrium:
                     self.logger.info(f't {it}: wrote 2d profile : rgrid {nr}, zgrid {nz} psi {prof2.psi.shape}')
 
             bfield = self.im.get_ncvar('B_FIELD', ind=it)
+
             if self.im.is_valid(bfield, name='bfield'):
-                bfield = bfield.reshape((3,rsh[1],zsh[1]))
+                bfield = bfield.reshape((3,nz,nr))
                 prof2.b_field_r.resize((nr, nz))
                 prof2.b_field_r = bfield[0]
                 prof2.b_field_tor.resize((nr, nz))
