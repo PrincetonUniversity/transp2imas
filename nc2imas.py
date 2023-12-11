@@ -420,24 +420,26 @@ class nc2imas(imas_connection, netcdf_connection):
             if ind>=0:
                val = val[ind]
         except:
-            self.logger.info(f'** {name} NOT found in name list')
+            #self.logger.info(f'** {name} NOT found in name list')
             if self.nmlist is None:
                 self.logger.info(f'** {self.nmlist} is not set')
             return None
 
         narr = 0
         try:
-            narr = len(val)
+            if ind==-1:
+               narr = len(val)
         except:
             pass
 
         if tp in [int, float]:
             if narr>0:
                val =  [self.parse_number(val[i], tp) for i in range(narr)]
+               val = np.array(val)
             else:
                val = self.parse_number(val, tp)
             if scale != 1.0:
-                val = scale*val
+               val = scale*val
         return val
 
     # Some scalar can stand for arrays, e.g: FREQECH, which causes error when
@@ -447,7 +449,7 @@ class nc2imas(imas_connection, netcdf_connection):
           size:int=1, resize:bool=False):
         #name: don't escape (); only regex needs \(
         # search for single or without () for array on rhs
-        res = self.get_namelist_var_(name, tp, scale)
+        res = self.get_namelist_var_(name, tp, scale, ind=ind)
         n = 0
         # search for index
         if ind>=0 and res is None:
@@ -463,18 +465,19 @@ class nc2imas(imas_connection, netcdf_connection):
               val = self.get_namelist_var_(namei, tp, scale)
               if val is not None:
                  res.append(val)
+           res = np.array(res)
 
-        check = True
-        try:
-            if resize and n!= size:
-              n = size
-              res = np.full(n, res)
-            if n>0 and np.size(res)!=n:
-               check = False
-        except:
-            pass
-        if not check:
-            raise Exception(f'size of {name} != {n}')
+        # resize only if scalar, not an array to different size
+        if res is not None and resize:
+           try:
+               n = len(res)
+           except:
+               pass
+           if n<=1:
+               res = np.full(size, res)
+
+        if size>1 and res is not None and len(np.array(res))!= size:
+            raise Exception(f'resize failed: size of {name} != {size}')
         return res
 
     def get_namelist_var(self, name:str, tp=None, scale=1.0, ind:int=-1, size:int=1):

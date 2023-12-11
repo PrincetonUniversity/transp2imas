@@ -84,8 +84,8 @@ class imas_equilibrium:
          rsin = np.zeros(shape=(nmoments, ncoord_xb))
          ycos = np.zeros(shape=(nmoments, ncoord_xb))
          ysin = np.zeros(shape=(nmoments, ncoord_xb))
-         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=0)
-         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=0)
+         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=time)
+         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=time)
 
          inv_grid_theta = np.zeros(ntheta)
          inv_grid_theta[ntheta-1] = self.im.pi
@@ -106,6 +106,8 @@ class imas_equilibrium:
 
          rsurf = np.zeros(shape=(ncoord_xb, ntheta))
          ysurf = np.zeros(shape=(ncoord_xb, ntheta))
+
+         axis_err = 0
 
          if nmoments>1:
             for j in range(ncoord_xb):
@@ -131,20 +133,20 @@ class imas_equilibrium:
                   pts[k,1] = ysurf[j,k]
 
                pth = path.Path(pts)
-               has_axis = pth.contains_point((raxis,yaxis))
-               if has_axis is False:
-                  print(f'Error: axis {raxis}, {yaxis} outside equil surface {j}')
-                  raise Exception(f'Error: axis outside equil surface')
+               if not pth.contains_point((raxis,yaxis)):
+                  axis_err += 1
 
             #DEBUG all
-            if self.debug_max is True:
+            if self.debug_max and axis_err>0:
                data = np.stack((rsurf,ysurf), axis=2)
                fig, ax = plt.subplots()
                ax.add_collection(LineCollection(data))
                plt.plot(raxis, yaxis, 'ro')
                plt.show()
-         return np.array(rsurf), np.array(ysurf), np.array(inv_grid_theta)
 
+            if axis_err > 0:
+               print('time', time, f'Error: axis {raxis}, {yaxis} outside one/more flux surfaces')
+         return np.array(rsurf), np.array(ysurf), np.array(inv_grid_theta)
 
     #to be called per time frame
     def get_moments_bdry(self):
@@ -576,8 +578,9 @@ class imas_equilibrium:
                     self.logger.info(f't {it}: wrote 2d profile : rgrid {nr}, zgrid {nz} psi {prof2.psi.shape}')
 
             bfield = self.im.get_ncvar('B_FIELD', ind=it)
+
             if self.im.is_valid(bfield, name='bfield'):
-                bfield = bfield.reshape((3,rsh[1],zsh[1]))
+                bfield = bfield.reshape((3,nz,nr))
                 prof2.b_field_r.resize((nr, nz))
                 prof2.b_field_r = bfield[0]
                 prof2.b_field_tor.resize((nr, nz))
