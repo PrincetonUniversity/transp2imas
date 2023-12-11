@@ -524,19 +524,19 @@ class imas_equilibrium:
  
             vol=[]
             s=0
-            for i in gvol[it]:
+            for i in gvol:
                 s +=i
                 vol.append(s)
             
-            self.im.fill_data(iprof.volume, vol, ind=it, name='vol')
+            self.im.fill_data(iprof.volume, vol, name='vol')
 
             prof_area=[]
             s=0
-            for i in darea[it]:
+            for i in darea:
                 s +=i
                 prof_area.append(s)
 
-            self.im.fill_data(iprof.area, prof_area, ind=it, name='area')
+            self.im.fill_data(iprof.area, prof_area, name='area')
             self.im.fill_data(iprof.surface, surface, ind=it, name='surface')
             self.im.fill_data(iprof.b_field_average, bf_ave, ind=it, name='bf_ave')
             self.im.fill_data(iprof.b_field_max, bf_max, ind=it, name='bf_max')
