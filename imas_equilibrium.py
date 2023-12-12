@@ -384,7 +384,7 @@ class imas_equilibrium:
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
 
         # add psi at axis PSI0_TR(TIME)
-        if self.im.is_valid(psi, psi_axis, ntimes-1):
+        if self.im.is_valid(psi, psi_axis, ind=ntimes-1):
             psi = psi + np.tile(psi_axis[None,:].T, nprof)
 
         phi = self.im.get_ncvar('TRFLX', 2.*pi)

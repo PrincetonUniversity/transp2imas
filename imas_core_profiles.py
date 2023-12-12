@@ -31,7 +31,10 @@ class ion_data(atom_base):
         check1 = self.a>0 and self.z_n>0 and self.z_ion>0
         check2 = len(self.aas)>0 and len(self.zns)>0 and len(self.zions)>0
         check3 = self.atoms_n>0 and len(self.dens)>0
-        return check3 and (check1 or check2)
+        valid = check3 and (check1 or check2)
+        if not valid:
+            print(f'invalid ion {self.label} {self.a}')
+        return valid
 
 class neutrals_data(atom_base):
      def __init__(self, symb):
@@ -45,7 +48,6 @@ class imas_core_profiles:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-
         self.create_ids()
 
     #ions data
@@ -82,6 +84,7 @@ class imas_core_profiles:
 
             if self.im.is_valid(ang_vel) and rmaj>0:
                 ion.rotation_frequency_tor = ang_vel / rmaj
+
             if ion.is_valid():
                ions.append(ion)
 
@@ -131,13 +134,63 @@ class imas_core_profiles:
 
             if ion.is_valid():
                ions.append(ion)
+        return ions
 
+    def get_beam_ion_data(self) -> List:
+        #BDENS_{T,D,H,3,4}
+        atomsDef = atom_base('')
+        ionDict = atomsDef.beams
+        ions = []
+        for short, label in ionDict.items():
+            symb = 'HE' + short if short in ['3', '4'] else short
+            ion = ion_data(symb)
+            dens = self.im.get_ncvar(f'BDENS_{symb}', 1.0e6)
+            if len(dens) == 0:
+               continue
+            ion.dens = dens
+            ion.temp = self.im.get_ncvar(f'EBEAM_{symb}')
+            if ion.is_valid():
+               ions.append(ion)
+        return ions
+
+    def get_fusion_ion_data(self) -> List:
+        #BDENS_{T,D,H,3,4}
+        atomsDef = atom_base('')
+        ionDict = atomsDef.fusion_ions
+        ions = []
+        for short, label in ionDict.items():
+            symb = 'HE' + short if short in ['3', '4'] else short
+            ion = ion_data(symb)
+            dens = self.im.get_ncvar(f'FDENS_{symb}', 1.0e6)
+            if len(dens) == 0:
+               continue
+            ion.dens = dens
+            ion.temp = self.im.get_ncvar(f'EFUSN_{symb}')
+            if ion.is_valid():
+               ions.append(ion)
+        return ions
+
+    def get_ion_data_all(self) -> List:
+        ions = self.get_ion_data()
+        beams = self.get_beam_ion_data()
+        fions = self.get_fusion_ion_data()
+        if len(beams)>0:
+           for ion in beams:
+              if ion.is_valid():
+                 ions.append(ion)
+              else:
+                 print(f'Error: invalid beam ion {ion.label}')
+        if len(fions)>0:
+           for ion in fions:
+              if ion.is_valid():
+                 ions.append(ion)
+              else:
+                 print(f'Error: invalid fusion ion {ion.label}')
         return ions
 
     def get_ion_data_global(ions:ion_data) ->ion_data:
         iong = []
         #for ion in ions:
-
 
 
     #volume/wall neutral density
@@ -207,7 +260,8 @@ class imas_core_profiles:
         self.im.fill_vac_tor_field(cp)
 
         #ions for profiles_1d. Also need in global_quantities
-        ions = self.get_ion_data()
+        #ions = self.get_ion_data()
+        ions = self.get_ion_data_all()
         #ion_glob = self.get_ion_data_global(ions)
 
         #global_quantities
