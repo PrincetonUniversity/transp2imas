@@ -561,7 +561,7 @@ class imas_equilibrium:
 
             if self.im.is_valid(rgrid, zgrid, ind=it, name='grid') and self.im.is_valid(psirz, name='prirz'):
                 prof2.psi.resize((nr, nz))
-                prof2.psi = np.reshape(psirz, (nz, nr)).T
+                prof2.psi = np.reshape(psirz, (nz, nr)) #.T
                 if not has2d_eq:
                   has2d_eq = True
 

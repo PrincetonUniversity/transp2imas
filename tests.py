@@ -34,6 +34,16 @@ class Tests:
         #ni for number of indices to plot for all times
         plot_equilibrium_ids(eq, ni=6, pre=pre, save=self.save)
 
+    def test_equil2d_interactive(self, times=[0], img=True):
+        print('* testing equilibrium')
+        eq = self.input.get('equilibrium')
+        plot_equil_psi2d_interactive(eq, times, img=True)
+
+    def plot_eq_psi1d_interactive(self, times=[0]):
+        print('* testing equilibrium psi 1d')
+        eq = self.input.get('equilibrium')
+        plot_equil_psi1d_interactive(eq, times)
+
     def test_core_profiles(self):
         print('* testing test_core_profiles')
         cp = self.input.get('core_profiles')
@@ -75,6 +85,18 @@ class Tests:
         self.test_equilibrium()
         self.input.close()
 
+    def do_test_eq_psi2d_interactive(self, shot, run, db, backend, times=[0], img=True):
+        self.init_database(db,shot,run,backend)
+        self.input.open()
+        self.test_equil2d_interactive(times, img)
+        self.input.close()
+
+    def do_test_eq_psi1d_interactive(self, shot, run, db, backend, times=[0]):
+        self.init_database(db,shot,run,backend)
+        self.input.open()
+        self.plot_eq_psi1d_interactive(times)
+        self.input.close()
+
     def do_tests(self, shot, run, db, backend):
         #shot,run,db = 141711,2502,'NSTX'
         # 10000,99,'test'
@@ -95,6 +117,7 @@ class Tests:
 if __name__ == '__main__':
     if(len(sys.argv)<3):
         print('usage: python tests.py  <runid/CDFname> <db(NSTX)> <backend/HDF,MDS>')
+        sys.exit(1)
 
     runid = sys.argv[1]
     run, shot, rid = find_runid_shot_code(runid)
@@ -107,5 +130,9 @@ if __name__ == '__main__':
     pre = db+str(run) # +'_h5'
     save_plots = True
     tt = Tests(pre, save_plots)
-    tt.do_test_eq(shot, run, db, backend)
+    #tt.do_test_eq(shot, run, db, backend)
+    times = [0]
+    for time in times:
+      tt.do_test_eq_psi2d_interactive(shot, run, db, backend, times=time, img=True)
+      tt.do_test_eq_psi1d_interactive(shot, run, db, backend, times=time)
     #tt.do_test(shot,run,db)
