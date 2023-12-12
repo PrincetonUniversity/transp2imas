@@ -230,19 +230,17 @@ def plot_equil_psi2d_interactive(eq, times, ncontour=30, img=False):
    for time in times:
       dat = eq.time_slice[time].profiles_2d[0].psi
 
-      dat = dat/(2*np.pi)
+      #dat = dat/(2*np.pi)
       rr = eq.time_slice[time].profiles_2d[0].grid.dim1
       zz = eq.time_slice[time].profiles_2d[0].grid.dim2
       rinv = eq.time_slice[time].coordinate_system.r
       zinv = eq.time_slice[time].coordinate_system.z
       ext = [rr[time], rr[-1], zz[time], zz[-1]]
-      rh, zh = int(len(rr)/2), int(len(zz)/2)
       levels = [i for i in np.arange(np.min(dat), np.max(dat), (np.max(dat)-np.min(dat))/ncontour)]
       fig, ax = plt.subplots()
       fig.set_figheight(10)
       fig.set_figwidth(10)
       cont = ax.contour(dat, levels=levels, extent=ext, origin='lower', colors='grey')
-
       if img is True:
           image = plt.imshow(dat, extent=ext, interpolation='nearest', cmap = cmap, origin='lower')
           cbar = fig.colorbar(image, ax=ax)
