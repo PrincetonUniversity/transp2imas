@@ -289,8 +289,9 @@ class imas_equilibrium:
         raxis = self.im.get_ncvar('RAXIS', scale=cm2m, interp=True) #RAXISEQ
         yaxis = self.im.get_ncvar('YAXIS', scale=cm2m, interp=True) #YAXISEQ
 
-        psi_axis = self.im.get_ncvar('PSI0_TR', scale=2*pi, interp=True) # Wb/rad
-        #psi_bdry =
+        # PSI0_TR(TIME); Wb/rad ; Psi_poloidal(axis) in simulation
+        psi_axis = self.im.get_ncvar('PSI0_TR', scale=2*pi, interp=True)
+
         q95 = self.im.get_ncvar('Q95', interp=True)
         qaxis  = self.im.get_ncvar('Q0', interp=True)
         li3 = self.im.get_ncvar('LI_3', interp=True)
@@ -381,6 +382,11 @@ class imas_equilibrium:
         psi = self.im.get_ncvar('PLFLX2PI')
         if not self.im.is_valid(psi):
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
+
+        # add psi at axis PSI0_TR(TIME)
+        if self.im.is_valid(psi, psi_axis, ntimes-1):
+            psi = psi + np.tile(psi_axis[None,:].T, nprof)
+
         phi = self.im.get_ncvar('TRFLX', 2.*pi)
         qpsi = self.im.get_ncvar('Q')
         pres = self.im.get_ncvar('PPLAS') #'PMHD')
