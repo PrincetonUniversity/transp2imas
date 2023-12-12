@@ -34,10 +34,10 @@ class Tests:
         #ni for number of indices to plot for all times
         plot_equilibrium_ids(eq, ni=6, pre=pre, save=self.save)
 
-    def test_equil2d_interactive(self, times=[0], img=True):
+    def test_equil2d_interactive(self, name, times=[0], img=True):
         print('* testing equilibrium')
         eq = self.input.get('equilibrium')
-        plot_equil_psi2d_interactive(eq, times, img=True)
+        plot_equil2d_interactive(eq, name, times, img=True)
 
     def plot_eq_psi1d_interactive(self, times=[0]):
         print('* testing equilibrium psi 1d')
@@ -85,10 +85,10 @@ class Tests:
         self.test_equilibrium()
         self.input.close()
 
-    def do_test_eq_psi2d_interactive(self, shot, run, db, backend, times=[0], img=True):
+    def do_test_equil2d_interactive(self, shot, run, db, backend, name, times=[0], img=True):
         self.init_database(db,shot,run,backend)
         self.input.open()
-        self.test_equil2d_interactive(times, img)
+        self.test_equil2d_interactive(name, times, img)
         self.input.close()
 
     def do_test_eq_psi1d_interactive(self, shot, run, db, backend, times=[0]):
@@ -116,13 +116,14 @@ class Tests:
 
 if __name__ == '__main__':
     if(len(sys.argv)<3):
-        print('usage: python tests.py  <runid/CDFname> <db(NSTX)> <backend/HDF,MDS>')
+        print('usage: python tests.py  <runid/CDFname> <db(NSTX)> <backend/HDF,MDS> [<name>]')
         sys.exit(1)
 
     runid = sys.argv[1]
     run, shot, rid = find_runid_shot_code(runid)
     db = sys.argv[2]
     backend = sys.argv[3] if len(sys.argv)>3 else 'HDF5'
+    name = sys.argv[4] if (len(sys.argv)>3 and sys.argv[4]!='-') else ''
 
     #shot,run,db = 163303,8702,'D3Dr' #r'
     print(f'testing  {db} {shot} {run} {backend}')
@@ -132,7 +133,9 @@ if __name__ == '__main__':
     tt = Tests(pre, save_plots)
     #tt.do_test_eq(shot, run, db, backend)
     times = [0]
+    name = 'psirz' if not name else name #'bfield' # 'psirz'
     for time in times:
-      tt.do_test_eq_psi2d_interactive(shot, run, db, backend, times=time, img=True)
-      tt.do_test_eq_psi1d_interactive(shot, run, db, backend, times=time)
+      tt.do_test_equil2d_interactive(shot, run, db, backend, name, times=time, img=True)
+      if name == 'psirz':
+         tt.do_test_eq_psi1d_interactive(shot, run, db, backend, times=time)
     #tt.do_test(shot,run,db)
