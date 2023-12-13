@@ -435,6 +435,8 @@ class imas_equilibrium:
         self.logger.info(f'rgrid {rgrid.shape}')
 
         #RSURF - flux surface R locations
+
+        #why this should be = to #RMAJ ? Some error is reshape?
         ntheta = 101 #201  # this should be set case by case ?
         self.dtheta = 2*pi/ntheta
 
