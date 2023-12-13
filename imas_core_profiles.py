@@ -139,15 +139,15 @@ class imas_core_profiles:
         self.logger.info(f' beam-ions::')
         for short, key in ionDict.items():
             symb = 'HE' + short if short in ['3', '4'] else short
-            dens = self.im.get_ncvar(f'BDENS_{symb}', 1.0e6)
+            dens = self.im.get_ncvar(f'BDENS_{short}', 1.0e6)
             if len(dens) == 0:
                continue
             ion = ion_data(key)
             ion.dens = dens
-            ion.temp = self.im.get_ncvar(f'EBEAM_{symb}')
+            ion.temp = self.im.get_ncvar(f'EBEAM_{short}')
             self.logger.info(f'  {symb} => {ion.label} :')
-            self.logger.info(f'\t{symb} : BDENS_{symb} {ion.dens.shape}')
-            self.logger.info(f'\t{symb} : EBEAM_{symb} {ion.temp.shape}')
+            self.logger.info(f'\t{symb} : BDENS_{short} {ion.dens.shape}')
+            self.logger.info(f'\t{symb} : EBEAM_{short} {ion.temp.shape}')
             if ion.is_valid():
                ions.append(ion)
         return ions
@@ -160,15 +160,15 @@ class imas_core_profiles:
         self.logger.info(f' fusion-ions::')
         for short, key in ionDict.items():
             symb = 'HE' + short if short in ['3', '4'] else short
-            dens = self.im.get_ncvar(f'FDENS_{symb}', 1.0e6)
+            dens = self.im.get_ncvar(f'FDENS_{short}', 1.0e6)
             if len(dens) == 0:
                continue
             ion = ion_data(key)
             ion.dens = dens
-            ion.temp = self.im.get_ncvar(f'EFUSN_{symb}')
+            ion.temp = self.im.get_ncvar(f'EFUSN_{short}')
             self.logger.info(f'  {symb} => {ion.label} :')
-            self.logger.info(f'\t{symb} : FDENS_{symb} {ion.dens.shape}')
-            self.logger.info(f'\t{symb} : EFUSN_{symb} {ion.temp.shape}')
+            self.logger.info(f'\t{symb} : FDENS_{short} {ion.dens.shape}')
+            self.logger.info(f'\t{symb} : EFUSN_{short} {ion.temp.shape}')
             if ion.is_valid():
                ions.append(ion)
         return ions
