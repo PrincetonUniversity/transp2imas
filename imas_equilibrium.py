@@ -526,7 +526,7 @@ class imas_equilibrium:
  
             vol=[]
             s=0
-            for i in gvol:
+            for i in gvol[it]:
                 s +=i
                 vol.append(s)
             
@@ -534,7 +534,7 @@ class imas_equilibrium:
 
             prof_area=[]
             s=0
-            for i in darea:
+            for i in darea[it]:
                 s +=i
                 prof_area.append(s)
 
