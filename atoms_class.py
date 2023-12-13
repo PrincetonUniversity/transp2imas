@@ -160,8 +160,8 @@ class atom_base():
                         'YB'  : ['Yb',  173.0400,     70.0], #Yb
                         'ZN'  : ['Zn',   65.3800,     30.0], #Zn
                         'ZR'  : ['Zr',   91.2200,     40.0], #Zr
-                        'Z'   : ['Z',   183.5000,     74.0], #Heavy. High Z = W ?
-                        'Z_BEAM' : ['Z_BEAM', 183.5000,  74.0], #Heavy. High Z = W ?
+                        'Z'   : ['Z',   -1.0,     -1.0], #Heavy. High Z = W ?
+                        'Z_BEAM' : ['Z_BEAM', -1.0,  -1.0], #Heavy. High Z = W ?
                         'TOK' : ['Z',    -1.0,        -1.0], #
                         'X'   : ['X',    -1.0,        -1.0] #
                       }
@@ -184,6 +184,8 @@ class atom_base():
             return 0,0,''
         key = (self.beams[bsymb]).upper()
         label = self.entries[key][0]
+        # label has _BEAM added in beams. Remove it
+        label = label.strip().split('_BEAM')[0]
         a = self.entries[key][1]
         z_n = self.entries[key][2]
         return z_n, a, label
