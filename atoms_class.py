@@ -16,24 +16,34 @@ class atom_base():
         self.z_ion = 1.0 #ion charge; same as atomic number if only 1 element
         self.label = 'dummy'
 
-        #Transp : IDS
-        self.atoms = {'H':'H', 'D':'D', 'T':'T', '3':'He3', '4':'He4'}
-        self.nb2 = {'N':'Ne', 'A':'Ar', 'K':'Kr', 'X':'Xe', 'Z':'HI_Z'} #'High_Z or heavy ??
-        self.beams = {**self.atoms, **self.nb2}
-        self.ions = {**self.atoms, 'LITH':'Li', 'C':'C'} #some variables: 3=>HE3; 4=>HE4
-        self.neutrals = {**self.atoms, 'LITH':'Li'}
+        #Transp : key; where key is used in the dictionary below
+        self.atoms = {'H':'H', 'D':'D', 'T':'T', '3':'HE3', '4':'HE4'}
+        self.nb2 = {'N':'N_BEAM', 'A':'A_BEAM', 'K':'K_BEAM', 'X':'X_BEAM', 'Z':'Z_BEAM'} #'High_Z or heavy ??
+        self.batoms = {'H':'H_BEAM', 'D':'D_BEAM', 'T':'T_BEAM', '3':'HE3_BEAM', '4':'HE4_BEAM'}
+        self.beams = {**self.batoms, **self.nb2}
+        self.ions = {**self.atoms, 'LITH':'LI', 'C':'C'} #some variables: 3=>HE3; 4=>HE4
+        self.neutrals = {**self.atoms, 'LITH':'LI'}
         #  NEON, ARGON, KRYPTON, XENON
-        self.fusion_ions = {'P':'H', 'P14':'H', 'T':'T', '3':'He3', '4':'He4'}
-        self.impurities = {'BE':'Be', 'W':'W', 'NE':'Ne', 'AR':'Ar'} # not used
 
-        #Transp symbol : [IDS label, a, z_n] # from transp periodic_table.f90
-        self.entries = {'P'   : ['H',    1.007276466812, 1.0], #proton
-                        'P14' : ['H',    1.007276466812, 1.0], #proton
-                        'H'   : ['H',    1.00782503207,  1.0], #hydrogen
-                        'D'   : ['D',    2.0141017778,   1.0], #deuterium
-                        'T'   : ['T',    3.0160492777,   1.0], #tritium
-                        'HE3' : ['He3',  3.016029,       2.0], #helium3
-                        'HE4' : ['He4',  4.002602,       2.0], #helium4
+        self.fusion_ions = {'P':'P_FUSION', 'P14':'P14_FUSION', 'T':'T_FUSION', '3':'HE3_FUSION', '4':'HE4_FUSION'}
+        self.impurities = {'BE':'BE', 'W':'W', 'NE':'NE', 'AR':'AR'} # not used
+
+        #Transp key : [IDS label, a, z_n] # from transp periodic_table.f90
+        self.entries = {'P_FUSION'   : ['P_FUSION',  1.007276466812, 1.0], #proton
+                        'P14_FUSION' : ['P14_FUSION',1.007276466812, 1.0], #proton
+                        'H'          : ['H',    1.00782503207,  1.0], #hydrogen
+                        'H_BEAM'     : ['H_BEAM',    1.00782503207,  1.0], #hydrogen
+                        'D'          : ['D',    2.0141017778,   1.0], #deuterium
+                        'D_BEAM'     : ['D_BEAM',    2.0141017778,   1.0], #deuterium
+                        'T'          : ['T',    3.0160492777,   1.0], #tritium
+                        'T_BEAM'     : ['T_BEAM', 3.0160492777,   1.0], #tritium
+                        'T_FUSION'   : ['T_FUSION',3.0160492777,  1.0], #tritium
+                        'HE3'        : ['He3',  3.016029,       2.0], #helium3
+                        'HE3_BEAM'   : ['HE3_BEAM',  3.016029,       2.0], #helium3
+                        'HE3_FUSION' : ['HE3_FUSION',  3.016029,       2.0], #helium3
+                        'HE4'        : ['He4',  4.002602,       2.0], #helium4
+                        'HE4_BEAM'   : ['HE4_BEAM',  4.002602,       2.0], #helium4
+                        'HE4_FUSION' : ['HE4_FUSION',  4.002602,       2.0], #helium4
                         'LITH': ['Li',   6.015122,       3.0], #lithium #Li6
                         'LI7' : ['Li',   7.016004,       3.0], #lithium #Li7
                         'AC'  : ['Ac',  227.0000,     89.0], #Ac iostope average
@@ -41,6 +51,7 @@ class atom_base():
                         'AL'  : ['Al',   26.9815,     13.0], #Al
                         'AM'  : ['Am',  243.0000,     95.0], #Am
                         'A'   : ['Ar',   39.948,      18.0], #Argon   iostope average
+                        'A_BEAM'   : ['AR_BEAM',   39.948,      18.0], #Argon   iostope average
                         'AR'  : ['Ar',   39.9480,     18.0], #Ar
                         'AS'  : ['As',   74.9216,     33.0], #As
                         'AT'  : ['At',  210.0000,     85.0], #At
@@ -86,7 +97,7 @@ class atom_base():
                         'IR'  : ['Ir',  192.2200,     77.0],
                         'K'   : ['K ',   39.0980,     19.0],
                         'KR'  : ['Kr',   83.8000,     36.0],
-                        #  'K'   : ['Kr',  83.800,       36.0], #Krypton iostope average
+                        'K_BEAM'   : ['KR_BEAM',  83.800,       36.0], #Krypton iostope average
                         'LA'  : ['La',  138.9055,     57.0],
                         'LI'  : ['Li',    6.9410,      3.0],
                         'LR'  : ['Lr',  262.0000,    103.0],
@@ -97,7 +108,7 @@ class atom_base():
                         'MO'  : ['Mo',   95.9400,     42.0],
                         'MT'  : ['Mt',  265.0000,    109.0],
                         'N'   : ['N ',   14.0067,      7.0],
-                         # 'N'   : ['Ne',  20.1790,      10.0], #Neon    iostope average
+                        'N_BEAM'   : ['NE_BEAM',    20.1790, 10.0], #Neon    iostope average
                         'NA'  : ['Na',   22.9898,     11.0],
                         'NB'  : ['Nb',   92.9064,     41.0],
                         'ND'  : ['Nd',  144.2400,     60.0],
@@ -143,12 +154,14 @@ class atom_base():
                         'U'   : ['U',   238.0290,     92.0], #U
                         'V'   : ['V',    50.9414,     23.0], #V
                         'XE'  : ['Xe',  131.300,      54.0], #Xenon
+                        'X_BEAM'  : ['XE_BEAM',  131.300, 54.0], #Xenon
                         'W'   : ['W',   183.5000,     74.0], #Tungston av
                         'Y'   : ['Y',    88.9059,     39.0], #Y
                         'YB'  : ['Yb',  173.0400,     70.0], #Yb
                         'ZN'  : ['Zn',   65.3800,     30.0], #Zn
                         'ZR'  : ['Zr',   91.2200,     40.0], #Zr
-                        'Z'   : ['Z',    -1.0,        -1.0], #Heavy. High Z
+                        'Z'   : ['Z',   183.5000,     74.0], #Heavy. High Z = W ?
+                        'Z_BEAM' : ['Z_BEAM', 183.5000,  74.0], #Heavy. High Z = W ?
                         'TOK' : ['Z',    -1.0,        -1.0], #
                         'X'   : ['X',    -1.0,        -1.0] #
                       }
@@ -157,22 +170,22 @@ class atom_base():
         self.fill_constants(symbTransp, ilab)
 
     def fill_constants(self, symbTransp, ilab:str=''):
-        lab = symbTransp
-        if lab is None or lab=='':
+        key = symbTransp
+        if key is None or key=='':
             return
-        self.label = self.entries[lab][0] + ilab
-        self.a = self.entries[lab][1]
-        self.z_n = self.entries[lab][2]
+        self.label = self.entries[key][0] + ilab
+        self.a = self.entries[key][1]
+        self.z_n = self.entries[key][2]
 
 
     def find_beam_species_data(self, bsymb:str):
         #bsymb is keys in self.beams
         if bsymb not in self.beams.keys():
             return 0,0,''
-        symb = (self.beams[bsymb]).upper()
-        label = self.entries[symb][0]
-        a = self.entries[symb][1]
-        z_n = self.entries[symb][2]
+        key = (self.beams[bsymb]).upper()
+        label = self.entries[key][0]
+        a = self.entries[key][1]
+        z_n = self.entries[key][2]
         return z_n, a, label
 
 

@@ -179,7 +179,7 @@ class nc2imas(imas_connection, netcdf_connection):
         for var in variables:
             stat = self.is_valid(var)
             if stat is False:
-               self.logger.exception(f'var {name} is invalid')
+               self.logger.exception(f'\tvar {name} is invalid')
                raise Exception(f'**ERROR**: {name} is invalid: len={len(var)}: {var}')
 
 
@@ -280,10 +280,10 @@ class nc2imas(imas_connection, netcdf_connection):
                 ids.resize(len(dat), refcheck=False)
             ids[:] = dat
           elif ind==0:
-            self.logger.info(f'{nm} is invalid')
+            self.logger.info(f'\t{nm} is invalid')
         except:
             if ind==0:
-                self.logger.info(f'{nm} is invalid')
+                self.logger.info(f'\t{nm} is invalid')
 
         #if not self.check_1dim(dat):
             #print('Check dim')
