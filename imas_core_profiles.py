@@ -27,13 +27,15 @@ class ion_data(atom_base):
         self.states = []
 
 
-    def is_valid(self):
+    def is_valid(self, logger=None):
         check1 = self.a>0 and self.z_n>0 and self.z_ion>0
         check2 = len(self.aas)>0 and len(self.zns)>0 and len(self.zions)>0
         check3 = self.atoms_n>0 and len(self.dens)>0
         valid = check3 and (check1 or check2)
-        if not valid:
-            print(f'invalid ion {self.label} {self.a}')
+        if logger:
+            if not valid:
+               logger.info(f'\t invalid: {self.label} : a {self.a}'
+                           ' z_n {self.z_n} z_ion {self.z_ion}')
         return valid
 
 class neutrals_data(atom_base):
@@ -48,7 +50,8 @@ class imas_core_profiles:
     def __init__(self, ncimas:nc2imas):
         self.im = ncimas
         self.logger = ncimas.logger
-        self.create_ids()
+        for i in range(3):
+            self.create_ids(occur=i)
 
     #ions data
     def get_ion_data(self) -> List:
@@ -83,7 +86,7 @@ class imas_core_profiles:
 
             if self.im.is_valid(ang_vel) and rmaj>0:
                 ion.rotation_frequency_tor = ang_vel / rmaj
-            if ion.is_valid():
+            if ion.is_valid(self.logger):
                ions.append(ion)
 
         #impurities
@@ -119,16 +122,19 @@ class imas_core_profiles:
                #z_ion
                ion.zions = ion.zns #ion charge, fully ionized ?
 
-            self.logger.info(f'\t{symb}: {dnames} ch: {ncs} ZIMPS_{symb} {zprof.shape}')
+            self.logger.info(f'\t{symb}: {dnames} charges: {ncs} ZIMPS_{symb} {zprof.shape}')
             #charge states. eg:NIMP_BE_4
             for dname in dnames:
                ncharge = ncs[0]
+               self.logger.info(f'\t{symb}: {dname} ch: {ncharge}')
                sdens = self.im.get_ncvar(dname, scale=1.0e6)
                istate = ion_states(sdens, f'{symb}+{ncharge}')
                ion.states.append(istate)
 
-            if ion.is_valid():
+            if ion.is_valid(self.logger):
                ions.append(ion)
+            else:
+               self.logger.info(f'\t{symb}: discarded')
         return ions
 
     def get_beam_ion_data(self) -> List:
@@ -148,7 +154,7 @@ class imas_core_profiles:
             self.logger.info(f'  {symb} => {ion.label} :')
             self.logger.info(f'\t{symb} : BDENS_{short} {ion.dens.shape}')
             self.logger.info(f'\t{symb} : EBEAM_{short} {ion.temp.shape}')
-            if ion.is_valid():
+            if ion.is_valid(self.logger):
                ions.append(ion)
         return ions
 
@@ -169,27 +175,21 @@ class imas_core_profiles:
             self.logger.info(f'  {symb} => {ion.label} :')
             self.logger.info(f'\t{symb} : FDENS_{short} {ion.dens.shape}')
             self.logger.info(f'\t{symb} : EFUSN_{short} {ion.temp.shape}')
-            if ion.is_valid():
+            if ion.is_valid(self.logger):
                ions.append(ion)
         return ions
 
-    def get_ion_data_all(self) -> List:
-        ions = self.get_ion_data()
-        beams = self.get_beam_ion_data()
-        fions = self.get_fusion_ion_data()
-        if len(beams)>0:
-           for ion in beams:
-              if ion.is_valid():
-                 ions.append(ion)
-              else:
-                 print(f'Error: invalid beam ion {ion.label}')
-        if len(fions)>0:
-           for ion in fions:
-              if ion.is_valid():
-                 ions.append(ion)
-              else:
-                 print(f'Error: invalid fusion ion {ion.label}')
-        return ions
+    def get_ion_data_occur(self, prof_id=0) -> List:
+        if prof_id==0:
+            return self.get_ion_data()
+        elif prof_id==1:
+            return self.get_beam_ion_data()
+        elif prof_id==2:
+            return self.get_fusion_ion_data()
+        else:
+            print(f' get_ion_data_occur profile id {prof_id}')
+            raise Exception(f' Error: get_ion_data_occur invalid profile id')
+        return []
 
     def get_ion_data_global(ions:ion_data) ->ion_data:
         iong = []
@@ -215,7 +215,7 @@ class imas_core_profiles:
         return neuts
 
 
-    def create_ids(self):
+    def create_ids(self, occur=0):
         self.im.logger.info('\ncore_profiles')
         cp = self.im.ids.get('core_profiles')
         cm2m = 0.01
@@ -264,7 +264,7 @@ class imas_core_profiles:
 
         #ions for profiles_1d. Also need in global_quantities
         #ions = self.get_ion_data()
-        ions = self.get_ion_data_all()
+        ions = self.get_ion_data_occur(prof_id=occur)
         #ion_glob = self.get_ion_data_global(ions)
 
         #global_quantities
@@ -518,8 +518,8 @@ class imas_core_profiles:
           self.im.fill_data(cp.profiles_1d[i].j_non_inductive, j_nonind, ind=i, name='Jnonind')
           #self.im.fill_data(cp.profiles_1d[i].j_tor, j_tor, ind=i)
 
-        self.im.putdb_imas(cp)
-        self.logger.info('Done core_profiles')
+        self.im.putdb_imas_profile(cp, occur)
+        self.logger.info(f'  Done core_profiles: occur {occur}')
 
 if __name__ == '__main__':
     print("Please use: python convert.py ")

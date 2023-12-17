@@ -3,12 +3,10 @@
 ! ifort verify.f90 -o verify -g -r8 -fpp -assume no2underscore  -fPIC
 !     `pkg-config imas-ifort --cflags` `pkg-config imas-ifort imas-lowlevel --libs`
 
-
 subroutine verify_ids(mach, shot, run, sbackend)
   use iso_c_binding, only: fp => c_double, c_int
-    use ids_schemas, only: ids_equilibrium       ! Definitions for the Physics Data Model
+    use ids_schemas    ! Definitions for the Physics Data Model
     use ids_routines      ! Access Layer routines and management of IDS structures
-
 
     implicit none
     character(len=30) :: mach
@@ -16,7 +14,8 @@ subroutine verify_ids(mach, shot, run, sbackend)
     integer :: i, ig, i1, i2, ilx, ix, j1, j2, ntot, nth
     integer :: shot, run, indx, idx
     type (ids_equilibrium)   :: eq_in ! equilibrium  
-    integer :: nt, nx, nr, nz, ir, iz, it
+    type (ids_core_profiles)   :: cp_in, cp2
+    integer :: nt, nx, nr, nz, ir, iz, it, noccur
     integer :: intime, iltime, ildata, ier, isized, istore, isizb, iaddrs
     integer :: iaddrx, iaddrd, iadr, i0
     !real(fp), parameter :: twopiinv = 1.0_fp/twopi
@@ -68,8 +67,25 @@ subroutine verify_ids(mach, shot, run, sbackend)
     xgrid = eq_in%time_slice(1)%profiles_1d%rho_tor_norm
     rgrid = 1.0e+02_fp*eq_in%time_slice(1)%profiles_2d(1)%grid%dim1
     ygrid = 1.0e+02_fp*eq_in%time_slice(1)%profiles_2d(1)%grid%dim2
-    write(*,*) 'rho_tor_norm', xgrid
-    write(*,*) 'rgrid', rgrid
+    write(*,*) 'rho_tor_norm', xgrid(1)
+    write(*,*) 'rgrid', rgrid(1)
+
+    call ids_get(idx,"core_profiles", cp_in, ier)
+    write(*,*)'cp_in ions', cp_in%profiles_1d(1)%ion(1)%label, &
+               size(cp_in%profiles_1d(1)%ion), cp_in%profiles_1d(1)%ion(1)%z_ion
+    write(*,*) 'cp_in rho_tor_norm', cp_in%profiles_1d(1)%grid%rho_tor_norm
+
+    noccur = get_max_occurrences_core_profiles(cp_in)
+    write(*,*)'noccur', noccur
+
+    call ids_get(idx,"core_profiles/1", cp2, ier)
+    write(*,*)'cp2 ions', cp2%profiles_1d(1)%ion(1)%label, &
+               size(cp2%profiles_1d(1)%ion), cp2%profiles_1d(1)%ion(1)%z_ion
+
+    call ids_deallocate(cp_in)
+    call ids_deallocate(cp2)
+    call ids_deallocate(eq_in)
+    call imas_close(idx)
 end subroutine
 
 
@@ -85,7 +101,7 @@ program verify
 
     nargs = command_argument_count()
     if (nargs<3) then
-      write(*,*) './verify machine(SMRT) shot(92210) run(622) backend(MDSPLUS)'
+      write(*,*) './verify machine(eq:SMRT) shot(eq:92210) run(eq:622) backend(MDSPLUS)/HDF5'
       stop
     endif
     allocate(args(nargs))
