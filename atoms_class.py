@@ -37,13 +37,13 @@ class atom_base():
                         'D_BEAM'     : ['D',    2.0141017778,   1.0], #deuterium
                         'T'          : ['T',    3.0160492777,   1.0], #tritium
                         'T_BEAM'     : ['T', 3.0160492777,   1.0], #tritium
-                        'T'   : ['T',3.0160492777,  1.0], #tritium
+                        'T_FUSION'   : ['T',3.0160492777,  1.0], #tritium
                         'HE3'        : ['He3',  3.016029,       2.0], #helium3
                         'HE3_BEAM'   : ['HE3',  3.016029,       2.0], #helium3
-                        'HE3' : ['HE3',  3.016029,       2.0], #helium3
+                        'HE3_FUSION' : ['HE3',  3.016029,       2.0], #helium3
                         'HE4'        : ['He4',  4.002602,       2.0], #helium4
                         'HE4_BEAM'   : ['He4',  4.002602,       2.0], #helium4
-                        'HE4' : ['HE4',  4.002602,       2.0], #helium4
+                        'HE4_FUSION' : ['HE4',  4.002602,       2.0], #helium4
                         'LITH': ['Li',   6.015122,       3.0], #lithium #Li6
                         'LI7' : ['Li',   7.016004,       3.0], #lithium #Li7
                         'AC'  : ['Ac',  227.0000,     89.0], #Ac iostope average
