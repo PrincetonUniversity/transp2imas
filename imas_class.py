@@ -115,6 +115,12 @@ class imas_connection:
 
 
     def putdb_imas(self, ids):
+        if ids:
+            ids.put(self.occur)
+        else:
+            raise TypeError('ids not valid')
+
+    def putdb_imas_(self, ids):
         for i in range(3):
            if ids:
                ids.put(i) #self.occur)

@@ -35,12 +35,15 @@ class imas_ec_launchers:
             # resize option is suitable when a scalar stand for array, not for filling times
             if dat is None:
                dat = 0.0
+
             if fill:
                arr = False
                try:
                   n = len(dat)
                   if n>0:
                      arr = True
+                  elif n==0:
+                     dat = 0.0
                except:
                   pass
 
@@ -49,6 +52,7 @@ class imas_ec_launchers:
                   raise Exception('failed to get {name} from namelist')
                if not arr:
                   dat = np.tile(np.atleast_1d(dat), ntimes)
+
             return dat
 
 
@@ -68,6 +72,7 @@ class imas_ec_launchers:
             if self.ec_nml_launch:
                if i==0:
                   print('\t..using launch data from namelist')
+               ec.beam[i].name = f'beam{i+1}'
                #r. major radius of source. XECECH in namelist
                launchx = get_namelist_data('XECECH', float, i, cm2m, ntimes, fill=True)
                self.im.fill_data(ec.beam[i].launching_position.r, launchx, name='launchX')

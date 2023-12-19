@@ -25,25 +25,30 @@ class atom_base():
         self.neutrals = {**self.atoms, 'LITH':'LI'}
         #  NEON, ARGON, KRYPTON, XENON
 
+        self.minority_ions = {'H':'H_MINI', 'D':'D_MINI', 'T':'T_MINI', '3':'HE3_MINI', '4':'HE4_MINI'}
         self.fusion_ions = {'P':'P_FUSION', 'P14':'P14_FUSION', 'T':'T_FUSION', '3':'HE3_FUSION', '4':'HE4_FUSION'}
         self.impurities = {'BE':'BE', 'W':'W', 'NE':'NE', 'AR':'AR'} # not used
 
         #Transp key : [IDS label, a, z_n] # from transp periodic_table.f90
-        self.entries = {'P_FUSION'   : ['P',  1.007276466812, 1.0], #proton
-                        'P14_FUSION' : ['P14',1.007276466812, 1.0], #proton
+        self.entries = {'P_FUSION'   : ['P_FUSION',  1.007276466812, 1.0], #proton
+                        'P14_FUSION' : ['P14_FUSION',1.007276466812, 1.0], #proton
                         'H'          : ['H',    1.00782503207,  1.0], #hydrogen
-                        'H_BEAM'     : ['H',    1.00782503207,  1.0], #hydrogen
+                        'H_BEAM'     : ['H_BEAM',    1.00782503207,  1.0], #hydrogen
+                        'H_MINI'     : ['H_MINI',    1.00782503207,  1.0], #hydrogen
                         'D'          : ['D',    2.0141017778,   1.0], #deuterium
-                        'D_BEAM'     : ['D',    2.0141017778,   1.0], #deuterium
+                        'D_BEAM'     : ['D_BEAM',    2.0141017778,   1.0], #deuterium
                         'T'          : ['T',    3.0160492777,   1.0], #tritium
-                        'T_BEAM'     : ['T', 3.0160492777,   1.0], #tritium
-                        'T_FUSION'   : ['T',3.0160492777,  1.0], #tritium
+                        'T_BEAM'     : ['T_BEAM', 3.0160492777,   1.0], #tritium
+                        'T_MINI'     : ['T_MINI', 3.0160492777,   1.0], #tritium
+                        'T_FUSION'   : ['T_FUSION',3.0160492777,  1.0], #tritium
                         'HE3'        : ['He3',  3.016029,       2.0], #helium3
-                        'HE3_BEAM'   : ['HE3',  3.016029,       2.0], #helium3
-                        'HE3_FUSION' : ['HE3',  3.016029,       2.0], #helium3
+                        'HE3_BEAM'   : ['HE3_BEAM',  3.016029,       2.0], #helium3
+                        'HE3_MINI'   : ['HE3_MINI',  3.016029,       2.0], #helium3
+                        'HE3_FUSION' : ['HE3_FUSION',  3.016029,       2.0], #helium3
                         'HE4'        : ['He4',  4.002602,       2.0], #helium4
-                        'HE4_BEAM'   : ['He4',  4.002602,       2.0], #helium4
-                        'HE4_FUSION' : ['HE4',  4.002602,       2.0], #helium4
+                        'HE4_BEAM'   : ['He4_BEAM',  4.002602,       2.0], #helium4
+                        'HE4_MINI'   : ['He4_MINI',  4.002602,       2.0], #helium4
+                        'HE4_FUSION' : ['HE4_FUSION',  4.002602,       2.0], #helium4
                         'LITH': ['Li',   6.015122,       3.0], #lithium #Li6
                         'LI7' : ['Li',   7.016004,       3.0], #lithium #Li7
                         'AC'  : ['Ac',  227.0000,     89.0], #Ac iostope average
@@ -51,7 +56,7 @@ class atom_base():
                         'AL'  : ['Al',   26.9815,     13.0], #Al
                         'AM'  : ['Am',  243.0000,     95.0], #Am
                         'A'   : ['Ar',   39.948,      18.0], #Argon   iostope average
-                        'A_BEAM'   : ['Ar',   39.948,      18.0], #Argon   iostope average
+                        'A_BEAM': ['Ar_BEAM',   39.948, 18.0], #Argon   iostope average
                         'AR'  : ['Ar',   39.9480,     18.0], #Ar
                         'AS'  : ['As',   74.9216,     33.0], #As
                         'AT'  : ['At',  210.0000,     85.0], #At
@@ -97,7 +102,7 @@ class atom_base():
                         'IR'  : ['Ir',  192.2200,     77.0],
                         'K'   : ['K ',   39.0980,     19.0],
                         'KR'  : ['Kr',   83.8000,     36.0],
-                        'K_BEAM'   : ['Kr',  83.800,       36.0], #Krypton iostope average
+                        'K_BEAM' : ['Kr_BEAM', 83.800,36.0], #Krypton iostope average
                         'LA'  : ['La',  138.9055,     57.0],
                         'LI'  : ['Li',    6.9410,      3.0],
                         'LR'  : ['Lr',  262.0000,    103.0],
@@ -108,7 +113,7 @@ class atom_base():
                         'MO'  : ['Mo',   95.9400,     42.0],
                         'MT'  : ['Mt',  265.0000,    109.0],
                         'N'   : ['N ',   14.0067,      7.0],
-                        'N_BEAM'   : ['Ne',    20.1790, 10.0], #Neon    iostope average
+                        'N_BEAM' : ['Ne_BEAM', 20.1790, 10.0], #Neon    iostope average
                         'NA'  : ['Na',   22.9898,     11.0],
                         'NB'  : ['Nb',   92.9064,     41.0],
                         'ND'  : ['Nd',  144.2400,     60.0],
@@ -154,14 +159,14 @@ class atom_base():
                         'U'   : ['U',   238.0290,     92.0], #U
                         'V'   : ['V',    50.9414,     23.0], #V
                         'XE'  : ['Xe',  131.300,      54.0], #Xenon
-                        'X_BEAM'  : ['Xe',  131.300, 54.0], #Xenon
+                        'X_BEAM' : ['Xe_BEAM', 131.300, 54.0], #Xenon
                         'W'   : ['W',   183.5000,     74.0], #Tungston av
                         'Y'   : ['Y',    88.9059,     39.0], #Y
                         'YB'  : ['Yb',  173.0400,     70.0], #Yb
                         'ZN'  : ['Zn',   65.3800,     30.0], #Zn
                         'ZR'  : ['Zr',   91.2200,     40.0], #Zr
                         'Z'   : ['Z',   183.5000,     74.0], #Heavy. High Z?
-                        'Z_BEAM' : ['Z', 131.300, 54.0], #Heavy. High Z
+                        'Z_BEAM' : ['Z_BEAM', 131.300, 54.0], #Heavy. High Z
                         'TOK' : ['Z',    12.0110,      6.0], #
                       }
 
@@ -184,7 +189,7 @@ class atom_base():
         key = (self.beams[bsymb]).upper()
         label = self.entries[key][0]
         # if label has _BEAM, remove it
-        label = label.strip().split('_BEAM')[0]
+        ##label = label.strip().split('_BEAM')[0]
         a = self.entries[key][1]
         z_n = self.entries[key][2]
         return z_n, a, label
