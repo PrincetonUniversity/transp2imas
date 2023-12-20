@@ -9,7 +9,7 @@ class imas_edge_sources:
 
         self.create_ids()
 
-    def fill_source_data(self, es, i, name, times, lst):
+    def fill_source_data(self, es, i, name, times):
         if name == 'ionization':
             dstr = 'N0SGF'
         elif name == 'recombination'    :
@@ -23,8 +23,6 @@ class imas_edge_sources:
             es.source[i].ggd[it].time = times[it].astype(float)
             es.source[i].ggd[it].neutral.resize(len(species))
             for ni, short in enumerate(species):
-               if short not in lst:
-                  continue
                key = 'HE' + short if short in ['3', '4'] else short
                atom = atom_base(key)
                es.source[i].ggd[it].neutral[ni].element.resize(1)
@@ -36,7 +34,7 @@ class imas_edge_sources:
 
                es.source[i].ggd[it].neutral[ni].particles.resize(1)
                self.im.fill_data_nc(es.source[i].ggd[it].neutral[ni].particles[0].values,
-                        f'{dstr}_{short}', ind=it, mult=1.0e-6)
+                        f'{dstr}_{short}', ind=it, mult=1.0e+6)
         return es
 
 
@@ -85,8 +83,7 @@ class imas_edge_sources:
         #DN0OUT
 
         #source(i1)
-        # list only used to cross check
-        lst = ['H', 'D', 'T','3', '4', 'L'] # L or LI ?
+        # list ['H', 'D', 'T','3'/'HE3', '4'/'HE4', 'L']
         sources = ['ionization', 'recombination']
         es.source.resize(len(sources))
         #ionization
@@ -98,7 +95,7 @@ class imas_edge_sources:
         es.source[i].species.type.name = 'neutral'
         es.source[i].species.type.index = 4
         es.source[i].species.type.description = r'Neutral species'
-        es = self.fill_source_data(es, i, name, es.time, lst)
+        es = self.fill_source_data(es, i, name, es.time)
 
         i = 1
         name = 'recombination'
@@ -108,7 +105,7 @@ class imas_edge_sources:
         es.source[i].species.type.name = 'unspecified'
         es.source[i].species.type.index = 0
         es.source[i].species.type.description = 'All ions'
-        es = self.fill_source_data(es, i, name, es.time, lst)
+        es = self.fill_source_data(es, i, name, es.time)
 
 
         self.im.putdb_imas(es)

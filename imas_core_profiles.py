@@ -475,6 +475,25 @@ class imas_core_profiles:
         #ZEFFP(TIME3, X) PLASMA COMPOSITION ZEFF PROFILE
         zeff = self.im.get_ncvar('ZEFFP')
         
+        #VRPOT(TIME3, XB); V; RADIAL ELECTRICAL POTENTIAL
+        vrpot = self.im.get_ncvar('VRPOT')
+        # RMJMP(TIME3, XB); CM ; FLUX SURFACE CTRS
+        rmjmp = self.im.get_ncvar('RMJMP', scale=0.01)
+        # RMNMP(TIME3, XB); CM; MIDPLANE RADII
+        rmnmp = self.im.get_ncvar('RMNMP', scale=0.01)
+        efield_rad = []
+        try:
+            n = vrpot.shape[1]
+            vrpot = vrpot[1:n] - vrpot[0:n-1]
+            rmjmp1 = rmjmp[1:n] + rmnmp[1:n]
+            rmjmp2 = rmjmp[0:n-1] + rmnmp[0:n-1]
+            efield_rad = np.zeros[n]
+            efield_rad[1:n] = vrpot/(rmjmp1 - rmnmp2)  # m to cm ?
+            efield_rad[0] = zefld[1]
+        except:
+            self.logger.info(f'  failed to calculate efield_rad '
+               f'sizes:: vrpot: {len(vrpot)}, rmjmp: {len(rmjmp)}, rmnmp {len(rmnmp)}')
+
         # Q profile at XB ; Q(TIME3, XB)
         qtmp = self.im.get_ncvar('Q') 
         qprof = []
@@ -554,6 +573,8 @@ class imas_core_profiles:
           self.im.fill_data(cp.profiles_1d[i].j_total, cur_tot, ind=i, name='cur_tot')
           self.im.fill_data(cp.profiles_1d[i].j_non_inductive, j_nonind, ind=i, name='Jnonind')
           #self.im.fill_data(cp.profiles_1d[i].j_tor, j_tor, ind=i)
+
+          self.im.fill_data(cp.profiles_1d[i].e_field.radial, efield_rad, ind=i, name='efield_rad')
 
         self.im.putdb_imas(cp)
         #self.im.putdb_imas_profile(cp, occur)
