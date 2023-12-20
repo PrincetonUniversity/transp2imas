@@ -536,7 +536,7 @@ class nc2imas(imas_connection, netcdf_connection):
                bzxR = np.interp(self.timep, self.timesc, bzxR)
             b_field_tor = bzxR / raxis
             rave = (raxis[0] + raxis[-1])/2.0
-            self.logger.info('Vac_tor_field')
+            self.logger.info('\tVac_tor_field')
             ids.vacuum_toroidal_field.r0 = rave.astype(float)
             self.fill_data(ids.vacuum_toroidal_field.b0, b_field_tor)
 

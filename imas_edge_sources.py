@@ -19,6 +19,7 @@ class imas_edge_sources:
 
         #ggd neutrals
         es.source[i].ggd.resize(len(times))
+        print('\n check ggd size\n\n')
         for it in range(len(times)):
             es.source[i].ggd[it].time = times[it].astype(float)
             es.source[i].ggd[it].neutral.resize(len(species))
@@ -34,7 +35,7 @@ class imas_edge_sources:
 
                es.source[i].ggd[it].neutral[ni].particles.resize(1)
                self.im.fill_data_nc(es.source[i].ggd[it].neutral[ni].particles[0].values,
-                        f'{dstr}_{short}', ind=it, mult=1.0e+6)
+                        f'{dstr}_{short}', ind=it, mult=1.0e6)
         return es
 
 

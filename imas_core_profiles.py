@@ -20,14 +20,13 @@ class ion_data(atom_base):
         self.vel_pol = []
         self.vel_par = []
         self.z_ion_1d = []
-        self.rotation_frequency_tor = []
+        self.rot_freq_tor = []
         self.aas = []
         self.zns = []
         self.zions = []
         #same as z_n
         self.z_ion = self.z_n
         self.states = []
-        self.symbol = ''
 
 
     def is_valid(self, logger=None):
@@ -37,7 +36,7 @@ class ion_data(atom_base):
         valid = check3 and (check1 or check2)
         if logger:
             if not valid:
-               logger.info(f'\t invalid: {self.label} : a {self.a}'
+               logger.info(f'\t invalid ion: {self.label} : a {self.a}'
                            f' z_n {self.z_n} z_ion {self.z_ion}')
         return valid
 
@@ -48,6 +47,16 @@ class neutrals_data(atom_base):
         self.dens = []
         self.temp = []
         self.pres = []
+     def is_valid(self, logger=None):
+        check1 = self.a>0 and self.z_n>0 and self.z_ion>0
+        check2 = self.atoms_n>0 and len(self.dens)>0
+        valid = check1 and check2
+        if logger:
+            if not valid:
+               logger.info(f'\t invalid neutral: {self.label} : a {self.a}'
+                           f' z_n {self.z_n} z_ion {self.z_ion}')
+        return valid
+
 
 class imas_core_profiles:
     def __init__(self, ncimas:nc2imas):
@@ -71,7 +80,6 @@ class imas_core_profiles:
             if len(dens) == 0:
                 continue
             ion = ion_data(key)
-            ion.symbol = symb
             self.logger.info(f'   ion: {symb}=> {ion.label}:')
             ion.dens_th = dens
             self.logger.info(f'\t{symb}: N{symb} {ion.dens_th.shape}')
@@ -86,10 +94,11 @@ class imas_core_profiles:
             self.logger.info(f'\t{symb} vel_tor {ion.vel_tor.shape}')
             #ion.vel_par = [] #UPLLHATI/(BZXR/RAXIS)*1.0D-2
             #ion.z_ion_1d = []
-            ang_vel = self.im.get_ncvar(f'OMG_{short}') #CMG_H CMG_D
+            # RAD/SEC
+            ion.rot_freq_tor = self.im.get_ncvar(f'OMEGA') #CMG_H CMG_D
 
-            if self.im.is_valid(ang_vel) and rmaj>0:
-                ion.rotation_frequency_tor = ang_vel / rmaj
+            #if self.im.is_valid(ang_vel) and rmaj>0:
+            #    ion.rot_freq_tor = ang_vel / rmaj
             if ion.is_valid(self.logger):
                ions.append(ion)
         return ions
@@ -109,7 +118,6 @@ class imas_core_profiles:
             if len(den)==0:
                continue
             ion = ion_data(symb)
-            ion.symbol = symb
             self.logger.info(f'  {symb} => {ion.label}:')
             ion.dens = den
             ion.dens_th = den
@@ -124,6 +132,9 @@ class imas_core_profiles:
             zprof = self.im.get_ncvar(f'ZIMPS_{symb}')
             ion.z_ion_1d = zprof
             #a,z_n from definition in atoms_class, except for TOK
+
+            #OMGX(TIME3, X)
+            ion.rot_freq_tor = self.im.get_ncvar('OMGX')
 
             if symb=='TOK':
                #a   AIMP(TIME)
@@ -168,16 +179,19 @@ class imas_core_profiles:
         #cat= 'beam', 'fusion', 'mini'
         #BDENS_{T,D,H,3,4}
         ionDict = ''
-        dstr, tstr = '', ''
+        dstr, tstr, freqs = '', '', ''
         if cat == 'beam': #_{T,D,H,3,4}
             ionDict = atomsDef.beams
             tstr = 'EBEAM'
+            freqs = 'OMEGB'
         elif cat == 'fusion': #_{P,P14,T,3,4}
             ionDict = atomsDef.fusion_ions
             tstr = 'EFUSN'
+            freqs = 'OMEGF'
         elif cat == 'mini': #_{T,D,H,3,4}
             ionDict = atomsDef.minority_ions
             tstr = 'TMINI'
+            freqs = 'INVALID'
         ions = []
         self.logger.info(f' {cat}-ions::')
         for short, key in ionDict.items():
@@ -187,11 +201,13 @@ class imas_core_profiles:
             if len(dens) == 0:
                continue
             ion = ion_data(key)
-            ion.symbol = symb
             ion.dens_fast = dens
             ion.dens = self.get_total_ion_density(short)
             ion.temp = self.im.get_ncvar(f'{tstr}_{short}')
-            self.logger.info(f'  {symb} => {ion.label} :')
+            # (TIME3, X) RAD/SEC
+            ion.rot_freq_tor = self.im.get_ncvar(f'{freqs}_{short}')
+
+            self.logger.info(f'\t {symb} => {ion.label} :')
             self.logger.info(f'\t{symb} : {dstr}_{short} {ion.dens_fast.shape}')
             if ion.is_valid(self.logger):
                ions.append(ion)
@@ -233,21 +249,39 @@ class imas_core_profiles:
 
 
     #volume/wall neutral density
-    def get_neutral_data(self, wall:str=None):
-        dst = "DN0W" if wall else "DN0V" #volume neutral
-        neutDict = atom_base('').neutrals
+    def get_neutral_data_type(self, atomsDef, cat) -> List:
+        dstr, tstr = '',''
+        if cat=='wall':
+            dstr = 'DN0W'
+            tstr = 'T0W'
+            neutDict = atomsDef.neutrals_wall
+        elif cat=='volume':
+            dstr = 'DN0V'
+            tstr = 'T0V'
+            neutDict = atomsDef.neutrals_volume
         neuts = []
+        self.logger.info(f' {cat}-neutrals::')
         for symb, label in neutDict.items():
-            dens = self.im.get_ncvar(f'{dst}{symb}', 1.0e6)
+            dens = self.im.get_ncvar(f'{dstr}{symb}', 1.0e6)
             if len(dens)==0:
                 continue
-            self.logger.info(f'neutral: {symb} => {label}')
+            self.logger.info(f'\tneutral: {symb} => {label}')
             neut = neutrals_data(label)
             neut.dens = dens
-            self.logger.info(f'{symb}, dens {len(neut.dens)}')
-            neut.temp = []
-            neut.pres = []
-            neuts.append(neut)
+            neut.temp = self.im.get_ncvar(f'{tstr}{symb}', 1.0e6)
+            self.logger.info(f'\t{symb}, dens {len(neut.dens)} temp {len(neut.temp)}')
+            if neut.is_valid(self.logger):
+               neuts.append(neut)
+        return neuts
+
+
+    def get_neutral_data(self):
+        atomsDef = atom_base('')
+        neuts = self.get_neutral_data_type(atomsDef, cat='wall')
+        vneuts = self.get_neutral_data_type(atomsDef, cat='volume')
+        if len(vneuts)>0:
+            for neut in vneuts:
+               neuts.append(neut)
         return neuts
 
 
@@ -298,10 +332,14 @@ class imas_core_profiles:
         #vacuum toroidal field
         self.im.fill_vac_tor_field(cp)
 
-        #ions for profiles_1d. Also need in global_quantities
+        #ions for profiles_1d
         ions = self.get_ion_data()
         #ions = self.get_ion_data_occur(prof_id=occur)
         #ion_glob = self.get_ion_data_global(ions)
+
+        # neutrals for profile_id
+        neutrals = self.get_neutral_data()
+
 
         #global_quantities
         #------------------------------------------------------------------
@@ -463,36 +501,32 @@ class imas_core_profiles:
 
         nrho = rho_tor_norm.shape[0]
 
-        self.logger.info(f'ntimep {ntimep} nrho {nrho}')
-        self.logger.info(f'bz {len(bz)} rho_tor {len(rho_tor)} bflux_tor {len(bflux_tor)}')
+        self.logger.info(f'  ntimep {ntimep} nrho {nrho}')
+        self.logger.info(f'\tbz {len(bz)} rho_tor {len(rho_tor)} bflux_tor {len(bflux_tor)}')
 
         n_i_total_over_n_e = []
         if self.im.is_valid(nion, nel):
             n_i_total_over_n_e = nion/nel
-
-        neutrals = [] #self.get_neutral_data()
 
         #ZEFFP(TIME3, X) PLASMA COMPOSITION ZEFF PROFILE
         zeff = self.im.get_ncvar('ZEFFP')
         
         #VRPOT(TIME3, XB); V; RADIAL ELECTRICAL POTENTIAL
         vrpot = self.im.get_ncvar('VRPOT')
-        # RMJMP(TIME3, XB); CM ; FLUX SURFACE CTRS
-        rmjmp = self.im.get_ncvar('RMJMP', scale=0.01)
-        # RMNMP(TIME3, XB); CM; MIDPLANE RADII
-        rmnmp = self.im.get_ncvar('RMNMP', scale=0.01)
+        # GXI(TIME3, X); 1/CM; <GRAD(XI)> FLUX SURF VOL.AVG
+        gxi = self.im.get_ncvar('GXI', scale=1/0.01)
         efield_rad = []
         try:
             n = vrpot.shape[1]
             vrpot = vrpot[1:n] - vrpot[0:n-1]
-            rmjmp1 = rmjmp[1:n] + rmnmp[1:n]
-            rmjmp2 = rmjmp[0:n-1] + rmnmp[0:n-1]
-            efield_rad = np.zeros[n]
-            efield_rad[1:n] = vrpot/(rmjmp1 - rmnmp2)  # m to cm ?
+            vol = np.cumsum(gvol)
+            area = np.cumsum(darea)
+            rminor = surface*area/(2*self.im.pi*vol)
+            efield_rad[1:n] = vrpot/(rminor*gxi)  # m to cm ?
             efield_rad[0] = zefld[1]
         except:
-            self.logger.info(f'  failed to calculate efield_rad '
-               f'sizes:: vrpot: {len(vrpot)}, rmjmp: {len(rmjmp)}, rmnmp {len(rmnmp)}')
+            self.logger.info(f'\tfailed to calculate efield_rad '
+                              f'sizes:: vrpot: {len(vrpot)}')
 
         # Q profile at XB ; Q(TIME3, XB)
         qtmp = self.im.get_ncvar('Q') 
@@ -501,7 +535,7 @@ class imas_core_profiles:
             #interpolate onto centers of zones
             qprof.append(np.interp(coord_x[i], coord_xb[i], qtmp[i]))
 
-        self.logger.info(f'Filling profile1d time slices: {ntimep}')
+        self.logger.info(f'  Filling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(ntimep)
 
         #fill profiles_1d[*].grid
@@ -529,11 +563,11 @@ class imas_core_profiles:
           #ions
           cp.profiles_1d[i].ion.resize(len(ions))
           if i==0:
-              self.logger.info(f' number of ions {len(ions)}')
+              self.logger.info(f'\tnumber of ions {len(ions)}')
           for ij in range(len(ions)):
               ion = ions[ij]
               if i==0:
-                  self.logger.info(f'* filling ion {ion.label}')
+                  self.logger.info(f'\tfilling ion {ion.label}')
               cp.profiles_1d[i].ion[ij].element.resize(1)
               cp.profiles_1d[i].ion[ij].element[0].atoms_n = ion.atoms_n
               cp.profiles_1d[i].ion[ij].label = ion.label
@@ -553,6 +587,7 @@ class imas_core_profiles:
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.radial, ion.vel_rad, ind=i, name='vel_rad')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal, ion.vel_tor, ind=i, name='vel_tor')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal, ion.vel_pol, ind=i, name='vel_pol')
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].rotation_frequency_tor, ion.rot_freq_tor, ind=i, name='rftor')
               #self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.parallel, ion.vel_par, ind=i, name='vel_par')
 
               #states
@@ -561,6 +596,23 @@ class imas_core_profiles:
               for ist, istate in enumerate(ion.states):
                   self.im.fill_data(cp.profiles_1d[i].ion[ij].state[ist].density, istate.sdens, ind=i, name='sdens')
                   cp.profiles_1d[i].ion[ij].state[ist].label = istate.label
+
+          # neutrals
+          cp.profiles_1d[i].neutral.resize(len(neutrals))
+          if i==0:
+              self.logger.info(f'\tnumber of neutrals {len(neutrals)}')
+          for j in range(len(neutrals)):
+              neut = neutrals[j]
+              if i==0:
+                  self.logger.info(f'\tfilling neutral {neut.label}')
+              cp.profiles_1d[i].neutral[j].element.resize(1)
+              cp.profiles_1d[i].neutral[j].element[0].atoms_n = neut.atoms_n
+              cp.profiles_1d[i].neutral[j].label = neut.label
+              cp.profiles_1d[i].neutral[j].element[0].a = neut.a
+              cp.profiles_1d[i].neutral[j].element[0].z_n = neut.z_n
+
+              self.im.fill_data(cp.profiles_1d[i].neutral[ij].temperature, neut.temp, ind=i, name='temp')
+              self.im.fill_data(cp.profiles_1d[i].neutral[ij].density, neut.dens, ind=i, name='dens')
 
           #
           self.im.fill_data_nc(cp.profiles_1d[i].t_i_average, 'TI', ind=i)

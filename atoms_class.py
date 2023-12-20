@@ -22,7 +22,8 @@ class atom_base():
         self.batoms = {'H':'H_BEAM', 'D':'D_BEAM', 'T':'T_BEAM', '3':'HE3_BEAM', '4':'HE4_BEAM'}
         self.beams = {**self.batoms, **self.nb2}
         self.ions = {**self.atoms, 'LITH':'LI', 'C':'C'} #some variables: 3=>HE3; 4=>HE4
-        self.neutrals = {**self.atoms, 'LITH':'LI'}
+        self.neutrals_wall = {'H':'H_WALL', 'D':'D_WALL', 'T':'T_WALL', '3':'HE3_WALL', '4':'HE4_WALL', 'LITH':'LI_WALL'}
+        self.neutrals_volume = {'H':'H_VOLUME', 'D':'D_VOLUME', 'T':'T_VOLUME', '3':'HE3_VOLUME', '4':'HE4_VOLUME', 'LITH':'LI_VOLUME'}
         #  NEON, ARGON, KRYPTON, XENON
 
         self.minority_ions = {'H':'H_MINI', 'D':'D_MINI', 'T':'T_MINI', '3':'HE3_MINI', '4':'HE4_MINI'}
@@ -34,23 +35,35 @@ class atom_base():
                         'P14_FUSION' : ['P14_FUSION',1.007276466812, 1.0], #proton
                         'H'          : ['H',    1.00782503207,  1.0], #hydrogen
                         'H_BEAM'     : ['H_BEAM',    1.00782503207,  1.0], #hydrogen
+                        'H_WALL'     : ['H_WALL',    1.00782503207,  1.0], #hydrogen
+                        'H_VOLUME'   : ['H_VOLUME',  1.00782503207,  1.0], #hydrogen
                         'H_MINI'     : ['H_MINI',    1.00782503207,  1.0], #hydrogen
                         'D'          : ['D',    2.0141017778,   1.0], #deuterium
                         'D_BEAM'     : ['D_BEAM',    2.0141017778,   1.0], #deuterium
+                        'D_WALL'     : ['D_WALL',    2.0141017778,   1.0], #deuterium
+                        'D_VOLUME'     : ['D_VOLUME',2.0141017778,   1.0], #deuterium
                         'T'          : ['T',    3.0160492777,   1.0], #tritium
                         'T_BEAM'     : ['T_BEAM', 3.0160492777,   1.0], #tritium
+                        'T_WALL'     : ['T_WALL', 3.0160492777,   1.0], #tritium
+                        'T_VOLUME'   : ['T_VOLUME', 3.0160492777,   1.0], #tritium
                         'T_MINI'     : ['T_MINI', 3.0160492777,   1.0], #tritium
                         'T_FUSION'   : ['T_FUSION',3.0160492777,  1.0], #tritium
                         'HE3'        : ['He3',  3.016029,       2.0], #helium3
                         'HE3_BEAM'   : ['HE3_BEAM',  3.016029,       2.0], #helium3
+                        'HE3_WALL'   : ['HE3_WALL',  3.016029,       2.0], #helium3
+                        'HE3_VOLUME' : ['HE3_VOLUME',  3.016029,       2.0], #helium3
                         'HE3_MINI'   : ['HE3_MINI',  3.016029,       2.0], #helium3
                         'HE3_FUSION' : ['HE3_FUSION',  3.016029,       2.0], #helium3
                         'HE4'        : ['He4',  4.002602,       2.0], #helium4
-                        'HE4_BEAM'   : ['He4_BEAM',  4.002602,       2.0], #helium4
-                        'HE4_MINI'   : ['He4_MINI',  4.002602,       2.0], #helium4
+                        'HE4_BEAM'   : ['HE4_BEAM',  4.002602,       2.0], #helium4
+                        'HE4_WALL'   : ['HE4_WALL',  4.002602,       2.0], #helium4
+                        'HE4_VOLUME' : ['HE4_VOLUME',  4.002602,       2.0], #helium4
+                        'HE4_MINI'   : ['HE4_MINI',  4.002602,       2.0], #helium4
                         'HE4_FUSION' : ['HE4_FUSION',  4.002602,       2.0], #helium4
                         'LITH': ['Li',   6.015122,       3.0], #lithium #Li6
-                        'LI7' : ['Li',   7.016004,       3.0], #lithium #Li7
+                        'LITH': ['LI_WALL',   6.015122,       3.0], #lithium #Li6
+                        'LITH': ['LI_VOLUME', 6.015122,       3.0], #lithium #Li6
+                        'LI7' : ['Li7',   7.016004,       3.0], #lithium #Li7
                         'AC'  : ['Ac',  227.0000,     89.0], #Ac iostope average
                         'AG'  : ['Ag',  107.8680,     47.0], #Ag
                         'AL'  : ['Al',   26.9815,     13.0], #Al
