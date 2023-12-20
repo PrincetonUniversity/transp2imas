@@ -135,7 +135,7 @@ def do_convert(argvs):
         #imas_core_transport(nci)
 
         #print('edge sources') #112989Z09
-        #imas_edge_sources(nci)
+        imas_edge_sources(nci)
 
         #print('sawteeth')
         #imas_sawteeth()
