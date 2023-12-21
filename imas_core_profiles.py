@@ -604,15 +604,15 @@ class imas_core_profiles:
           for j in range(len(neutrals)):
               neut = neutrals[j]
               if i==0:
-                  self.logger.info(f'\tfilling neutral {neut.label}')
+                  self.logger.info(f'\t\t {neut.label} temp {len(neut.temp)} dens {len(neut.dens)}')
               cp.profiles_1d[i].neutral[j].element.resize(1)
               cp.profiles_1d[i].neutral[j].element[0].atoms_n = neut.atoms_n
               cp.profiles_1d[i].neutral[j].label = neut.label
               cp.profiles_1d[i].neutral[j].element[0].a = neut.a
               cp.profiles_1d[i].neutral[j].element[0].z_n = neut.z_n
 
-              self.im.fill_data(cp.profiles_1d[i].neutral[ij].temperature, neut.temp, ind=i, name='temp')
-              self.im.fill_data(cp.profiles_1d[i].neutral[ij].density, neut.dens, ind=i, name='dens')
+              self.im.fill_data(cp.profiles_1d[i].neutral[j].temperature, neut.temp, ind=i, name='n0temp')
+              self.im.fill_data(cp.profiles_1d[i].neutral[j].density, neut.dens, ind=i, name='n0dens')
 
           #
           self.im.fill_data_nc(cp.profiles_1d[i].t_i_average, 'TI', ind=i)
