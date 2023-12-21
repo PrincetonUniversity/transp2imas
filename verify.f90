@@ -69,6 +69,9 @@ subroutine verify_ids(mach, shot, run, sbackend)
          do i=1,size(cp_ids%profiles_1d(1)%ion)
            write(*,*)'ion', i, cp_ids%profiles_1d(1)%ion(i)%label, &
                size(cp_ids%profiles_1d(1)%ion), cp_ids%profiles_1d(1)%ion(i)%z_ion
+           write(*,*)'el',  cp_ids%profiles_1d(1)%ion(i)%element(1)%atoms_n, &
+                            cp_ids%profiles_1d(1)%ion(i)%element(1)%a, &
+                            cp_ids%profiles_1d(1)%ion(i)%element(1)%z_n
          enddo
       endif
       if(size(cp_ids%profiles_1d(1)%grid%rho_tor_norm)>0) then

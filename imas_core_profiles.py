@@ -197,7 +197,6 @@ class imas_core_profiles:
         for short, key in ionDict.items():
             symb = 'HE' + short if short in ['3', '4'] else short
             dens = self.get_ion_density(cat, short)
-            # self.im.get_ncvar(f'{dstr}_{short}', 1.0e6)
             if len(dens) == 0:
                continue
             ion = ion_data(key)
@@ -221,7 +220,7 @@ class imas_core_profiles:
         bions = self.get_ion_data_type(atomsDef, cat='beam')
         fions = self.get_ion_data_type(atomsDef, cat='fusion')
         mions = self.get_ion_data_type(atomsDef, cat='mini')
-        for lst in [iions, bions, fions]:
+        for lst in [iions, bions, fions, mions]:
             if len(lst)>0:
                for ion in lst:
                   tions.append(ion)
