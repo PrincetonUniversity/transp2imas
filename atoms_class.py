@@ -69,7 +69,7 @@ class atom_base():
                         'AL'  : ['Al',   26.9815,     13.0], #Al
                         'AM'  : ['Am',  243.0000,     95.0], #Am
                         'A'   : ['Ar',   39.948,      18.0], #Argon   iostope average
-                        'A_BEAM': ['Ar_BEAM',   39.948, 18.0], #Argon   iostope average
+                        'A_BEAM': ['AR_BEAM',   39.948, 18.0], #Argon   iostope average
                         'AR'  : ['Ar',   39.9480,     18.0], #Ar
                         'AS'  : ['As',   74.9216,     33.0], #As
                         'AT'  : ['At',  210.0000,     85.0], #At
@@ -115,7 +115,7 @@ class atom_base():
                         'IR'  : ['Ir',  192.2200,     77.0],
                         'K'   : ['K ',   39.0980,     19.0],
                         'KR'  : ['Kr',   83.8000,     36.0],
-                        'K_BEAM' : ['Kr_BEAM', 83.800,36.0], #Krypton iostope average
+                        'K_BEAM' : ['KR_BEAM', 83.800,36.0], #Krypton iostope average
                         'LA'  : ['La',  138.9055,     57.0],
                         'LI'  : ['Li',    6.9410,      3.0],
                         'LR'  : ['Lr',  262.0000,    103.0],
@@ -126,7 +126,7 @@ class atom_base():
                         'MO'  : ['Mo',   95.9400,     42.0],
                         'MT'  : ['Mt',  265.0000,    109.0],
                         'N'   : ['N ',   14.0067,      7.0],
-                        'N_BEAM' : ['Ne_BEAM', 20.1790, 10.0], #Neon    iostope average
+                        'N_BEAM' : ['NE_BEAM', 20.1790, 10.0], #Neon    iostope average
                         'NA'  : ['Na',   22.9898,     11.0],
                         'NB'  : ['Nb',   92.9064,     41.0],
                         'ND'  : ['Nd',  144.2400,     60.0],
@@ -172,7 +172,7 @@ class atom_base():
                         'U'   : ['U',   238.0290,     92.0], #U
                         'V'   : ['V',    50.9414,     23.0], #V
                         'XE'  : ['Xe',  131.300,      54.0], #Xenon
-                        'X_BEAM' : ['Xe_BEAM', 131.300, 54.0], #Xenon
+                        'X_BEAM' : ['XE_BEAM', 131.300, 54.0], #Xenon
                         'W'   : ['W',   183.5000,     74.0], #Tungston av
                         'Y'   : ['Y',    88.9059,     39.0], #Y
                         'YB'  : ['Yb',  173.0400,     70.0], #Yb
