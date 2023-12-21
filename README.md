@@ -64,10 +64,10 @@ cd ~/
 python3 -m venv  python_venv
 (Now we can cd  to anywhere we want)
 source ~/python_venv/bin/activate
-pip install --upgrade pip
+pip install --upgrade wheel setuptools pip
 pip install flake8 matplotlib netCDF4 f90nml numpy  PyYAML scipy
 #for imas3.39, need this too
-pip install pyqt5
+pip install pyqt5 pyqtgraph
 
 ```
 
