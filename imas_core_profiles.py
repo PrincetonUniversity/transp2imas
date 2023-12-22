@@ -36,8 +36,8 @@ class ion_data(atom_base):
         valid = check3 and (check1 or check2)
         if logger:
             if not valid:
-               logger.info(f'\t invalid ion: {self.label} : a {self.a}'
-                           f' z_n {self.z_n} z_ion {self.z_ion}')
+               logger.info(f'\t invalid ion: dens {len(self.dens)} '
+                           f' {self.label} : a {self.a} z_n {self.z_n} z_ion {self.z_ion}')
         return valid
 
 class neutrals_data(atom_base):
@@ -75,14 +75,15 @@ class imas_core_profiles:
         self.logger.info(f' ions::')
         for short, key in ionDict.items():
             symb = 'HE' + short if short in ['3', '4'] else short
-            dens = self.get_ion_density('thermal', symb)
+            # only thermal; symb needed
+            dens = self.get_ion_density('thermal', ext=symb)
             if len(dens) == 0:
                 continue
             ion = ion_data(key)
             self.logger.info(f'   ion: {symb}=> {ion.label}:')
             ion.dens_th = dens
             self.logger.info(f'\t{symb}: N{symb} {ion.dens_th.shape}')
-            ion.dens =  self.get_total_ion_density(short)
+            ion.dens =  self.get_total_ion_density(short, symb)
             ion.temp = self.im.get_ncvar(f'TI')
             self.logger.info(f'\t{symb}: TI {ion.temp.shape}')
             ion.vel_rad = self.im.get_ncvar(f'VNDNC_{symb}', 0.01)
@@ -155,7 +156,7 @@ class imas_core_profiles:
                ions.append(ion)
         return ions
 
-    def get_ion_density(self, cat, short):
+    def get_ion_density(self, cat, ext):
         if cat == 'thermal':
            dstr = 'N'
         elif cat == 'beam':
@@ -164,10 +165,10 @@ class imas_core_profiles:
            dstr = 'FDENS_'
         elif cat == 'mini':
            dstr = 'NMINI_'
-        return self.im.get_ncvar(f'{dstr}{short}', 1.0e6)
+        return self.im.get_ncvar(f'{dstr}{ext}', 1.0e6)
 
-    def get_total_ion_density(self, short):
-        tdens = self.get_ion_density('thermal', short)
+    def get_total_ion_density(self, short, symb):
+        tdens = self.get_ion_density('thermal', symb)
         bdens = self.get_ion_density('beam', short)
         fdens = self.get_ion_density('fusion', short)
         mdens = self.get_ion_density('mini', short)
@@ -195,12 +196,13 @@ class imas_core_profiles:
         self.logger.info(f' {cat}-ions::')
         for short, key in ionDict.items():
             symb = 'HE' + short if short in ['3', '4'] else short
+            # no thermal called from here; short is needed
             dens = self.get_ion_density(cat, short)
             if len(dens) == 0:
                continue
             ion = ion_data(key)
             ion.dens_fast = dens
-            ion.dens = self.get_total_ion_density(short)
+            ion.dens = self.get_total_ion_density(short, symb)
             ion.temp = self.im.get_ncvar(f'{tstr}_{short}')
             # (TIME3, X) RAD/SEC
             ion.rot_freq_tor = self.im.get_ncvar(f'{freqs}_{short}')
