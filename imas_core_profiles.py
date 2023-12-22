@@ -75,8 +75,7 @@ class imas_core_profiles:
         self.logger.info(f' ions::')
         for short, key in ionDict.items():
             symb = 'HE' + short if short in ['3', '4'] else short
-            dens = self.get_ion_density('thermal', short)
-            # self.im.get_ncvar(f'N{symb}', 1.0e6)
+            dens = self.get_ion_density('thermal', symb)
             if len(dens) == 0:
                 continue
             ion = ion_data(key)
