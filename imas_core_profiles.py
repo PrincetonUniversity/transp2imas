@@ -121,7 +121,6 @@ class imas_core_profiles:
             self.logger.info(f'  {symb} => {ion.label}:')
             ion.dens = den
             ion.dens_th = den
-            self.logger.info(f'\t{symb}: {dens} {ion.dens.shape}')
             #temperature
             ion.temp = self.im.get_ncvar('TX')
             #charge states. Only if NIMP_symb_n is present
@@ -136,15 +135,21 @@ class imas_core_profiles:
             #OMGX(TIME3, X)
             ion.rot_freq_tor = self.im.get_ncvar('OMGX')
 
+            ai, zn = 0,0
             if symb=='TOK':
                #a   AIMP(TIME)
                ion.aas = self.im.get_ncvar(f'AIMP', interp=True)
                #z_n  XZIMP(TIME)
                ion.zns = self.im.get_ncvar(f'XZIMP', interp=True)
+               if len(ion.aas)>0:
+                  ai = ion.aas[0]
+               if len(ion.zns)>0:
+                  zn = ion.zns[0]
                #z_ion
                ion.zions = ion.zns #ion charge, fully ionized ?
 
-            self.logger.info(f'\t{symb}: {dnames} charges: {ncs} ZIMPS_{symb} {zprof.shape}')
+            self.logger.info(f'\t{symb}: {ai}, {zn}, {dens} {ion.dens.shape}')
+            self.logger.info(f'\t{symb}: charges: {ncs} NIMP_ {dnames} ZIMPS_{symb} {zprof.shape}')
             #charge states. eg:NIMP_BE_4
             for dname in dnames:
                ncharge = ncs[0]
@@ -156,7 +161,7 @@ class imas_core_profiles:
                ions.append(ion)
         return ions
 
-    def get_ion_density(self, cat, ext):
+    def get_ion_density(self, cat, ext, name_only=False):
         if cat == 'thermal':
            dstr = 'N'
         elif cat == 'beam':
@@ -165,6 +170,8 @@ class imas_core_profiles:
            dstr = 'FDENS_'
         elif cat == 'mini':
            dstr = 'NMINI_'
+        if name_only is True:
+           return dstr
         return self.im.get_ncvar(f'{dstr}{ext}', 1.0e6)
 
     def get_total_ion_density(self, short, symb):
@@ -198,6 +205,7 @@ class imas_core_profiles:
             symb = 'HE' + short if short in ['3', '4'] else short
             # no thermal called from here; short is needed
             dens = self.get_ion_density(cat, short)
+            dstr = self.get_ion_density(cat, short, name_only=True)
             if len(dens) == 0:
                continue
             ion = ion_data(key)
@@ -208,7 +216,7 @@ class imas_core_profiles:
             ion.rot_freq_tor = self.im.get_ncvar(f'{freqs}_{short}')
 
             self.logger.info(f'\t {symb} => {ion.label} :')
-            self.logger.info(f'\t{symb} : {dstr}_{short} {ion.dens_fast.shape}')
+            self.logger.info(f'\t{symb} : {dstr}{short} {ion.dens_fast.shape}')
             if ion.is_valid(self.logger):
                ions.append(ion)
         return ions

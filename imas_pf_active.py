@@ -70,9 +70,12 @@ class imas_pf_active:
             self.im.fill_data_nc(pfc.supply[i].voltage.data, 'VS_'+coil)
 
 
-        if ncoils > 0:
-            self.im.putdb_imas(pfc)
-            self.logger.info('Done')
+        if ncoils==0:
+            # use this to exclude pf_coils, since size of coils=1 if empty in trdat_ids !
+            pfc.time = np.array([-999])
+        #if ncoils > 0: # error if empty; so filling with invalid times, to use it to skip this
+        self.im.putdb_imas(pfc)
+        self.logger.info('Done')
 
 
 if __name__ == '__main__':
