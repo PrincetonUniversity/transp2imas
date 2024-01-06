@@ -389,7 +389,7 @@ class imas_equilibrium:
 
         phi = self.im.get_ncvar('TRFLX', 2.*pi)
         qpsi = self.im.get_ncvar('Q')
-        pres = self.im.get_ncvar('PPLAS') #'PMHD')
+        pres = self.im.get_ncvar('PTOWB') #PPLAS'
         fbz = self.im.get_ncvar('GFUN')
 
         nprof1d = 0
