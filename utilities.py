@@ -117,6 +117,8 @@ def get_args(argv=None):
     parser.add_argument('-m', '--machine', type=str, help='machine. eg: ITER')
     parser.add_argument('-mom', '--moments', type=str, choices=['yes', 'no'], default='no',
          help='convert moments to equilibrium, default is no')
+    parser.add_argument('-zones', '--nzones', type=int, default='profile NR',
+         help='num poloidal grid points per flux surface = max(65,min(251,(2*nzones+1)))')
     parser.add_argument('-ecnml', '--ec-nml-launch', type=str, choices=['yes', 'no'], default='no',
          help='get EC launch position from namelist (for testing)')
     # -h is added by default for help
@@ -179,6 +181,7 @@ def get_args(argv=None):
     log = 'debug'  #for logger
     machine = None
     moments = False
+    nzones = 0
     ec_nml = False
     debug = 0
     if args.backend:
@@ -195,6 +198,8 @@ def get_args(argv=None):
         machine = args.machine
     if args.moments and args.moments=='yes':
         moments = True
+    if args.nzones:
+        nzones = int(args.nzones)
     if args.ec_nml_launch and args.ec_nml_launch=='yes':
         ec_nml = True
     if args.debug:
@@ -205,5 +210,5 @@ def get_args(argv=None):
     user = args.user if args.user else None
     #new_db = True if occur == 0 else False
 
-    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, debug, ec_nml
+    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, nzones, debug, ec_nml
 

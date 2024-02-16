@@ -24,16 +24,6 @@ from imas_core_sources import *
 from imas_waves import *
 #from imas_core_transport import *
 
-#example use: python convert.py -i 147634G14 -r 1 -b MDS -new -o 0 -l debug
-
-#example. These will be replaced below
-nput_cdf = '147634G14.CDF'
-run = 1
-backend = 'MDS'
-newdb = True
-occur = 0
-user = os.getenv('USER')
-log = 'debug'  #for logger
 
 np.seterr(all='raise')
 all_ = True
@@ -42,13 +32,12 @@ def do_convert(argvs):
     #if -i all -d <dir> ;instead of CDF file name, then search for all CDF files in that dir,
     #and run in a loop
     backend, run, occur, user, machine, newdb, ncfile, nml, log, \
-      moments, deb, ec_nml_launch = get_args(argvs) #(sys.argv)
+      moments, nzones, deb, ec_nml_launch = get_args(argvs) #(sys.argv)
 
     nci = nc2imas(backend=backend, run=run, occur=occur, user=user,
          machine=machine, new_db=newdb, ncfile=ncfile, nml_file=nml, log=log, debug=deb)
     nci.logger.info(f'{"-"*30} \n{ncfile}, {nml}')
 
-    #test using 97781K31 different profile size
 
     if all_:
         print('wall')
@@ -120,7 +109,7 @@ def do_convert(argvs):
          # rho_tor_norm is incorrect
          # psi is COCOS dependent (both 1D and 2D)
         print('equilibrium') #142202U01.CDF
-        imas_equilibrium(nci, conv_moments=moments)
+        imas_equilibrium(nci, conv_moments=moments, nzones_in=nzones)
 
         # to be fixed: everything
 #        print('imas_core_sources') # 112989Z09(NSTX), 175286T57

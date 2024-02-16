@@ -8,7 +8,7 @@ from matplotlib.collections import LineCollection
 
 
 class imas_equilibrium:
-    def __init__(self, ncimas:nc2imas, conv_moments=False):
+    def __init__(self, ncimas:nc2imas, conv_moments=False, nzones_in=0):
         self.im = ncimas
         self.logger = ncimas.logger
         self. debug_max = self.im.debug_max
@@ -18,6 +18,7 @@ class imas_equilibrium:
         self.ymsb = []
         self.conv_moments = conv_moments
         self.nmoments = 0
+        self.nzones_in = nzones_in
         self.coskth = None
         self.sinkth = None
         self.dtheta = None
@@ -436,8 +437,17 @@ class imas_equilibrium:
 
         #RSURF - flux surface R locations
 
-        #why this should be = to #RMAJ ? Some error is reshape?
-        ntheta = 101 #201  # this should be set case by case ?
+        '''
+         Number of poloidal grid points per flux surface, ntheta, should be
+         equal to MTH in TRANSP. MTH is calculated using namelist variable NZONES,
+         which is nr=the number of radial grids in the moments or profile data.
+         ntheta = max(65,min(251,(2*nzones+1)))
+         But user can override this by namelist variable NTH_RZ.
+
+        '''
+        nzones_ = self.nzones_in if self.nzones_in>1 else nr
+        ntheta = max(65,min(251,(2*nzones_+1)))
+
         self.dtheta = 2*pi/ntheta
 
         nthetab = 128
