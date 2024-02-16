@@ -117,8 +117,8 @@ def get_args(argv=None):
     parser.add_argument('-m', '--machine', type=str, help='machine. eg: ITER')
     parser.add_argument('-mom', '--moments', type=str, choices=['yes', 'no'], default='no',
          help='convert moments to equilibrium, default is no')
-    parser.add_argument('-zones', '--nzones', type=int, default='profile NR',
-         help='num poloidal grid points per flux surface = max(65,min(251,(2*nzones+1)))')
+    parser.add_argument('-zones', '--nzones', type=int, default=0,
+         help='num poloidal grid points per flux surface = max(65,min(251,(2*nzones+1))). Default is NR')
     parser.add_argument('-ecnml', '--ec-nml-launch', type=str, choices=['yes', 'no'], default='no',
          help='get EC launch position from namelist (for testing)')
     # -h is added by default for help
