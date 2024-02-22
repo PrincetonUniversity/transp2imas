@@ -84,8 +84,8 @@ class imas_equilibrium:
          rsin = np.zeros(shape=(nmoments, ncoord_xb))
          ycos = np.zeros(shape=(nmoments, ncoord_xb))
          ysin = np.zeros(shape=(nmoments, ncoord_xb))
-         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=0)
-         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=0)
+         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=time)
+         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=time)
 
          inv_grid_theta = np.zeros(ntheta)
          inv_grid_theta[ntheta-1] = self.im.pi
