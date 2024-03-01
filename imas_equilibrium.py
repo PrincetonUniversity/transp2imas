@@ -445,7 +445,7 @@ class imas_equilibrium:
          But user can override this by namelist variable NTH_RZ.
 
         '''
-        nzones_ = self.nzones_in if self.nzones_in>1 else nr
+        nzones_ = self.nzones_in if self.nzones_in>1 else nprof1d
         ntheta = max(65,min(251,(2*nzones_+1)))
 
         self.dtheta = 2*pi/ntheta

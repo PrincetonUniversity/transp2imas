@@ -496,6 +496,7 @@ class imas_core_profiles:
             #interpolate onto centers of zones
             psi.append(np.interp(coord_x[i], coord_xb[i], psib[i]))
         psi = np.array(psi)
+        psi = psib
 
         #PSI0_TR(TIME)  Wb/rad
         psi_axis = self.im.get_ncvar('PSI0_TR')
@@ -542,8 +543,8 @@ class imas_core_profiles:
                               f'sizes:: vrpot: {len(vrpot)}')
 
         # Q profile at XB ; Q(TIME3, XB)
-        qtmp = self.get_ncvar('Q')
-        q0 = self.get_ncvar('Q0')
+        qtmp = self.im.get_ncvar('Q')
+        q0 = self.im.get_ncvar('Q0')
         qprof = []
         if len(qtmp)>1:
            for i in range(ntimep):
