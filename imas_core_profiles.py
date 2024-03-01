@@ -488,9 +488,14 @@ class imas_core_profiles:
             self.im.logger.info('error calculating rho_tor')
 
         #(TIME3, XB)
-        psi = self.im.get_ncvar('PLFLX2PI')
-        if not self.im.is_valid(psi):
-            psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
+        psib = self.im.get_ncvar('PLFLX2PI')
+        if not self.im.is_valid(psib):
+            psib = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
+        psi = []
+        for i in range(ntimep):
+            #interpolate onto centers of zones
+            psi.append(np.interp(coord_x[i], coord_xb[i], psib[i]))
+        psi = np.array(psi)
 
         #PSI0_TR(TIME)  Wb/rad
         psi_axis = self.im.get_ncvar('PSI0_TR')
@@ -537,11 +542,18 @@ class imas_core_profiles:
                               f'sizes:: vrpot: {len(vrpot)}')
 
         # Q profile at XB ; Q(TIME3, XB)
-        qtmp = self.im.get_ncvar('Q') 
+        qtmp = self.get_ncvar('Q')
+        q0 = self.get_ncvar('Q0')
         qprof = []
-        for i in range(ntimep):
-            #interpolate onto centers of zones
-            qprof.append(np.interp(coord_x[i], coord_xb[i], qtmp[i]))
+        if len(qtmp)>1:
+           for i in range(ntimep):
+              #interpolate onto centers of zones
+              qprof.append(np.interp(coord_x[i], coord_xb[i], qtmp[i]))
+        qprof = np.array(qprof)
+        try:
+           qprof[:,0] = q0
+        except:
+           pass
 
         self.logger.info(f'  Filling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(ntimep)
@@ -562,7 +574,7 @@ class imas_core_profiles:
           if len(psi_axis) > i:
               cp.profiles_1d[i].grid.psi_magnetic_axis = psi_axis[i].astype(float)
           if len(psi) > i:
-              cp.profiles_1d[i].grid.psi_boundary = psi[i,-1].astype(float)
+              cp.profiles_1d[i].grid.psi_boundary = psib[i,-1].astype(float)
 
           #electrons
           self.im.fill_data(cp.profiles_1d[i].electrons.temperature, tel, ind=i, name='tel')
