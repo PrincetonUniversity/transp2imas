@@ -496,7 +496,6 @@ class imas_core_profiles:
             #interpolate onto centers of zones
             psi.append(np.interp(coord_x[i], coord_xb[i], psib[i]))
         psi = np.array(psi)
-        psi = psib
 
         #PSI0_TR(TIME)  Wb/rad
         psi_axis = self.im.get_ncvar('PSI0_TR')

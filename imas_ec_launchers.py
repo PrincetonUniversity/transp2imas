@@ -133,7 +133,7 @@ class imas_ec_launchers:
             # check for None in case the above is removed
             if phi is not None and theta is not None:
                beta = np.arcsin(np.sin(theta)*np.sin(phi-pi))
-               cosbeta = np.cos(beta)
+               cosbeta = -np.cos(beta)
                alpha = np.where(abs(cosbeta)>eps, np.arcsin(np.cos(pi-theta)/cosbeta), 0)
                self.im.fill_data(ec.beam[i].steering_angle_tor, beta)
                self.im.fill_data(ec.beam[i].steering_angle_pol, alpha)
