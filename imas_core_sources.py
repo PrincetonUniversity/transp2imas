@@ -816,7 +816,7 @@ class imas_core_sources:
     def create_ids(self):
         self.im.logger.info('\ncore_sources')
 
-        csc = self.im.ids.core_sources
+        csc = self.im.ids.get('core_sources')
         #exact imas source term names in core_sources
         src_lst = ['nbi', 'ec', 'lh', 'ic', 'fusion', 'ohmic', 'bremsstrahlung', 'ic_nbi',
                   'line_radiation', 'impurity_radiation', 'collisional_equipartition',

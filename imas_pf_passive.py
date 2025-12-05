@@ -11,7 +11,7 @@ class imas_pf_passive:
 
     def create_ids(self):
         self.im.logger.info('\npf_passive')
-        pfc = self.im.ids.pf_passive
+        pfc = self.im.ids.get('pf_passive')
         sgn = -1 if self.im.iter_ else 1
 
         #scalar time

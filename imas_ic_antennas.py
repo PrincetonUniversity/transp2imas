@@ -10,7 +10,7 @@ class imas_ic_antennas:
 
     def create_ids(self):
         self.im.logger.info('\nic_antennas')
-        ica = self.im.ids.ic_antennas
+        ica = self.im.ids.get('ic_antennas')
 
         #scalar time
         timesc = self.im.get_ncvar('TIME')

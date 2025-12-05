@@ -11,7 +11,7 @@ class imas_sawteeth:
 
     def create_ids(self):
         self.im.logger.info('\nsawteeth')
-        ids = self.im.ids.sawteeth
+        ids = self.im.ids.get('sawteeth')
         sgn = -1 if self.im.iter_ else 1
 
         #scalar time

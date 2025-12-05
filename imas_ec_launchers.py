@@ -11,7 +11,7 @@ class imas_ec_launchers:
     def create_ids(self):
         self.im.logger.info('\nec_launchers')
 
-        ec = self.im.ids.ec_launchers
+        ec = self.im.ids.get('ec_launchers')
         cm2m = 0.01
         pi = self.im.pi
 

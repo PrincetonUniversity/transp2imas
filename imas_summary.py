@@ -10,7 +10,7 @@ class imas_summary:
     #from TRANSP output CDF file
     def create_ids(self):
         self.im.logger.info('\nsummary')
-        sid = self.im.ids.summary
+        sid = self.im.ids.get('summary')
         iter_ = self.im.iter_
         sgn = -1 if iter_ else 1
         src = 'Calculated'

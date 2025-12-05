@@ -10,7 +10,7 @@ class imas_pf_active:
 
     def create_ids(self):
         self.im.logger.info('\npf_active')
-        pfc = self.im.ids.pf_active
+        pfc = self.im.ids.get('pf_active')
         cm2m = 0.01
         vol_inv = 1.e6
         sgn = -1 if self.im.iter_ else 1

@@ -199,7 +199,7 @@ class imas_radiation:
 
     def create_ids(self):
         self.im.logger.info('\n radiation')
-        ids = self.im.ids.radiation
+        ids = self.im.ids.get('radiation')
         sgn = -1 if self.im.iter_ else 1
 
         #scalar time

@@ -266,7 +266,7 @@ class imas_equilibrium:
 
     def create_ids(self):
         self.im.logger.info('\nequilibrium')
-        eqm = self.im.ids.equilibrium
+        eqm = self.im.ids.get('equilibrium')
         cm2m = 0.01
         pi = constants.pi  #scipy
         #scalar time
