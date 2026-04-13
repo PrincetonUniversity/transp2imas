@@ -10,7 +10,7 @@ class imas_core_transport:
 
     def create_ids(self):
         self.im.logger.info('\ncore transport')
-        ct = self.im.ids.core_transport
+        ct = self.im.ids.get('core_transport')
         cm2m = 0.01
         sgn = -1 if self.im.iter_ else 1
 

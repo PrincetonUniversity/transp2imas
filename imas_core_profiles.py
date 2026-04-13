@@ -161,7 +161,7 @@ class imas_core_profiles:
 
     def create_ids(self):
         self.im.logger.info('\ncore_profiles')
-        cp = self.im.ids.core_profiles
+        cp = self.im.ids.get('core_profiles')
         cm2m = 0.01
         aconv = 1.0e-4
         vconv = 1.0e-6
@@ -437,9 +437,9 @@ class imas_core_profiles:
               #self.im.fill_data(cp.profiles_1d[i].ion[ij].z_ion_1d, ion.z_ion_1d, ind=i, name='z_ion_1d')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].temperature, ion.temp, ind=i, name='temp')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].density, ion.dens, ind=i, name='dens')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.radial, ion.vel_rad, ind=i, name='vel_rad')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal, ion.vel_tor, ind=i, name='vel_tor')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal, ion.vel_pol, ind=i, name='vel_pol')
+              #self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.radial, ion.vel_rad, ind=i, name='vel_rad')
+              #self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal, ion.vel_tor, ind=i, name='vel_tor')
+              #self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal, ion.vel_pol, ind=i, name='vel_pol')
               #self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.parallel, ion.vel_par, ind=i, name='vel_par')
 
               #states

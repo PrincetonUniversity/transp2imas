@@ -8,7 +8,7 @@ class imas_tf:
 
     def create_ids(self):
         self.im.logger.info('\ntf')
-        tf = self.im.ids.tf
+        tf = self.im.ids.get('tf')
         #scalar time
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)

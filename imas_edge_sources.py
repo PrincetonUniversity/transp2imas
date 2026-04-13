@@ -12,7 +12,7 @@ class imas_edge_sources:
     def create_ids(self):
         self.im.logger.info('\nedge_sources')
 
-        ids = self.im.ids.edge_sources
+        ids = self.im.ids.get('edge_sources')
         cm2m = 0.01
 
         #scalar time

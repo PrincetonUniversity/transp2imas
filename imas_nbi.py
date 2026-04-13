@@ -26,7 +26,7 @@ class imas_nbi:
 
     def create_ids(self):
         self.im.logger.info('\nnbi')
-        nbi = self.im.ids.nbi
+        nbi = self.im.ids.get('nbi')
         #scalar time
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)

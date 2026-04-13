@@ -13,7 +13,7 @@ class imas_wall:
 
     def create_ids(self):
         self.im.logger.info('\nwall')
-        wall = self.im.ids.wall
+        wall = self.im.ids.get('wall')
         cm2m = 0.01
 
         #scalar time

@@ -17,6 +17,8 @@ class imas_connection:
         self.create_new = new_db
         self.user = user
         self.backend = backend
+        self.dd_version = str(os.getenv('IMAS_VERSION'))
+        self.dd_major_version = str(os.getenv('IMAS_VERSION')[0])
         self.ids = None
         self.outdir = ''
         self.iter_ = True if db[:4].upper()=='ITER' else False
@@ -38,8 +40,7 @@ class imas_connection:
             diry = os.path.expanduser('~') + '/public/imasdb'
 
         dbpath = diry + '/' + self.imas_dbname
-        version = str(os.getenv('IMAS_VERSION')[0])
-        dbpath = dbpath + '/' + version
+        dbpath = dbpath + '/' + self.dd_major_version
         if self.backend == imas.imasdef.HDF5_BACKEND:
             dbpath = dbpath + '/' + str(self.shot) + '/' + str(self.run)
         elif self.backend == imas.imasdef.MDSPLUS_BACKEND:
@@ -74,7 +75,15 @@ class imas_connection:
                 os.makedirs(self.outdir) #only for MDS+
 
             try:
-                self.ids = imas.ids(self.shot, self.run, 0, 0)
+                #self.ids = imas.ids(self.shot, self.run, 0, 0)
+                self.ids = imas.DBEntry(
+                     self.backend,
+                     self.imas_dbname,
+                     self.shot,
+                     self.run,
+                     self.user,
+                     data_version=self.dd_major_version,
+                )                
             except:
                 raise Exception('Error initializing IMAS database')
 
@@ -84,8 +93,9 @@ class imas_connection:
 
         if self.create_new:
             try:
-                status, idx = self.ids.create_env_backend(self.user,self.imas_dbname,
-                                            os.environ['IMAS_VERSION'], self.backend)
+                #status, idx = self.ids.create_env_backend(self.user,self.imas_dbname,
+                #                            os.environ['IMAS_VERSION'], self.backend)
+                status, idx = self.ids.create()
             except Exception:
                 status = 1
                 import traceback
@@ -94,8 +104,9 @@ class imas_connection:
                 self.print_debug('Error creating new databse using input:')
                 raise sys.exit(1)
         else:
-            status, idx = self.ids.open_env_backend(self.user,self.imas_dbname,
-                                       os.environ['IMAS_VERSION'], self.backend)
+            #status, idx = self.ids.open_env_backend(self.user,self.imas_dbname,
+            #                           os.environ['IMAS_VERSION'], self.backend)
+            status, idx = self.ids.open()
             self.print_debug(f'Attempting to open existing databse for run {self.run}')
             if status != 0:
                 mes = f'\n ***Error opening database for run {self.run}.'
@@ -103,9 +114,9 @@ class imas_connection:
                 raise Exception(mes)
 
 
-    def putdb_imas(self, ids):
-        if ids:
-            ids.put(self.occur)
+    def putdb_imas(self, zids):
+        if zids:
+            self.ids.put(zids, occurrence=self.occur)
         else:
             raise TypeError('ids not valid')
 

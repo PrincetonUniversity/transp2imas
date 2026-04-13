@@ -8,7 +8,7 @@ class imas_waves:
 
     def create_ids(self):
         self.im.logger.info('\nwaves')
-        ids = self.im.ids.waves
+        ids = self.im.ids.get('waves')
         #scalar time
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)
