@@ -114,12 +114,28 @@ class imas_connection:
                 raise Exception(mes)
 
 
-    def putdb_imas(self, zids):
-        if zids:
-            self.ids.put(zids, occurrence=self.occur)
+    def putdb_imas(self, ids):
+        if ids:
+            ids.put(self.occur)
         else:
             raise TypeError('ids not valid')
 
+    def putdb_imas_(self, ids):
+        for i in range(3):
+           if ids:
+               ids.put(i) #self.occur)
+           else:
+               raise TypeError('ids not valid')
+
+    def putdb_imas_profile(self, ids, occur):
+        '''
+         Write each profile using occurrence
+         NOTE: this overrides self.occur
+        '''
+        if ids and isinstance(occur, int):
+            ids.put(occur)
+        else:
+            raise TypeError('ids/occur not valid')
 
     def close_imas_database(self):
         if self.ids:

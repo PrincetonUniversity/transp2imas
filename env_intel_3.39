@@ -8,7 +8,7 @@ module load netcdf-c
 module load netcdf-fortran
 module load imas/3.39.0-4.11.5
 
-#module load imas-viz/2.   #doesn't work with 3.39
+module load imas-viz/2.6.1
 #python  /usr/pppl/imas-viz/2.6.1/imasviz/VizGUI/QtVIZ_GUI.py
 #shot list in https://nstx.pppl.gov/nstx/Software/WebTools/index.html
 # module load mod_nstx nstx nstx/epics nstx/python nstx/mdsplus/mdsplus_git_4.26.22 

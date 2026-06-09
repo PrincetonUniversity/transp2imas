@@ -64,10 +64,10 @@ cd ~/
 python3 -m venv  python_venv
 (Now we can cd  to anywhere we want)
 source ~/python_venv/bin/activate
-pip install --upgrade pip
+pip install --upgrade wheel setuptools pip
 pip install flake8 matplotlib netCDF4 f90nml numpy  PyYAML scipy
 #for imas3.39, need this too
-pip install pyqt5
+pip install pyqt5 pyqtgraph
 
 ```
 
@@ -94,10 +94,12 @@ Remember to use -new if creating fresh, to avoid accumulating old copies making 
 Excluding this option may causes error sometimes, which is being fixed.
 
 All options:
- convert.py [-h] [-i INPUT_CDF] [-d INPUT_DIR] [-b {MDS,MDSPLUS,HDF,HDF5}] [-r RUN] [-new] [-o OCCUR] [-u USER]
-                  [-v] [-l {debug,info,warn,error,critical}]
+usage: convert.py [-h] [-i INPUT_CDF] [-d INPUT_DIR] [-b {MDS,MDSPLUS,HDF,HDF5}] [-r RUN] [-new] [-o OCCUR]  \
+       [-u USER] [-m MACHINE] [-mom {yes,no}] [-zones NZONES] [-ecnml {yes,no}]  \
+       [--debug] [--debug-max] [-v] [-l {debug,info,warn,error,critical}]
 
-options:
+Convert TRANSP output CDF to IMAS IDS (To run all CDF files in <dir_path> and its subdirs: -i all -d <dir_path>)
+
 options:
   -h, --help            show this help message and exit
   -i INPUT_CDF, --input-cdf INPUT_CDF
@@ -115,6 +117,10 @@ options:
                         machine. eg: ITER
   -mom {yes,no}, --moments {yes,no}
                         convert moments to equilibrium, default is no
+  -zones NZONES, --nzones NZONES
+                        num poloidal grid points per flux surface = max(65,min(251,(2*nzones+1))). Default is NR
+  -ecnml {yes,no}, --ec-nml-launch {yes,no}
+                        get EC launch position from namelist (for testing)
   --debug               extra debug prints
   --debug-max           All possible debug output including plots
   -v, --verbose         increase output verbosity

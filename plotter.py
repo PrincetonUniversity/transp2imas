@@ -1,9 +1,18 @@
 
 import numpy as np
 from matplotlib import pyplot as plt
+import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 from matplotlib.backends.backend_pdf import PdfPages
 
+colorlist = ['white','gray','black', 'indigo', 'blue','cyan','green','yellow',
+     'orange','pink','olive','magenta','brown','purple','violet','red']
+cmap = mpl.colors.LinearSegmentedColormap.from_list('my_colormap', colorlist,256)
+cmap2 =  mpl.colors.LinearSegmentedColormap.from_list('my_colormap', colorlist*10,256)
+cmap = mpl.cm.viridis
+
+def format_cursor_data(data):
+   return "[" + str(data) + "]"
 
 def check_valid(ids, pre, name):
     pre = pre if pre else ''
@@ -201,6 +210,73 @@ def plot_equilibrium_1d(times, psi, qpsi, pres, torflux_phi, rho_tor_norm,
     plt = plot_tslice_grid(nr, nc, times, fdp_dspi, pre, 'fdp_dspi', xtime)
     plt = plot_tslice_grid(nr, nc, times, dpressure_dpsi, pre, 'dpressure_dpsi', xtime)
 
+def plot_equil_psi1d_interactive(eq, times):
+   if np.isscalar(times):
+      times = [times]
+   for time in times:
+      dat = eq.time_slice[time].profiles_1d.psi
+      fig, ax = plt.subplots()
+      fig.set_figheight(10)
+      fig.set_figwidth(10)
+      ax.plot(dat)
+      ax.grid()
+      ax.set_title(f'psi1d t={time}')
+      plt.show()
+
+
+def plot_equil_2d_interact(rr, zz, dat,time,  ncontour=30, img=False):
+
+   ext = [rr[time], rr[-1], zz[time], zz[-1]]
+   levels = [i for i in np.arange(np.min(dat), np.max(dat), (np.max(dat)-np.min(dat))/ncontour)]
+   fig, ax = plt.subplots()
+   fig.set_figheight(10)
+   fig.set_figwidth(10)
+   cont = ax.contour(dat, levels=levels, extent=ext, origin='lower', colors='grey')
+   if img is True:
+       image = plt.imshow(dat, extent=ext, interpolation='nearest', cmap = cmap, origin='lower')
+       cbar = fig.colorbar(image, ax=ax)
+       cbar.add_lines(cont)
+       image.format_cursor_data = format_cursor_data
+
+   xmajor_ticks = np.arange(rr[0], rr[-1], 5*abs(rr[0]-rr[1]))
+   xminor_ticks = np.arange(rr[0], rr[-1], abs(rr[0]-rr[1]))
+   ymajor_ticks = np.arange(zz[0], zz[-1], 5*abs(zz[0]-zz[1]))
+   yminor_ticks = np.arange(zz[0], zz[-1], abs(zz[0]-zz[1]))
+
+   ax.set_xticks(xmajor_ticks)
+   ax.set_xticks(xminor_ticks, minor=True)
+   ax.set_yticks(ymajor_ticks)
+   ax.set_yticks(yminor_ticks, minor=True)
+   ##ax.grid(which='both')
+   ax.grid(which='minor', alpha=0.4)
+   ax.grid(which='major', alpha=0.6)
+
+
+def plot_equil2d_interactive(eq, name, times, ncontour=30, img=False):
+   if np.isscalar(times):
+      times = [times]
+
+   nm = name.lower()
+   for time in times:
+      rr = eq.time_slice[time].profiles_2d[0].grid.dim1
+      zz = eq.time_slice[time].profiles_2d[0].grid.dim2
+      if nm=='psirz':
+         dat = eq.time_slice[time].profiles_2d[0].psi
+         rinv = eq.time_slice[time].coordinate_system.r
+         zinv = eq.time_slice[time].coordinate_system.z
+         plot_equil_2d_interact(rr, zz, dat, time, ncontour, img)
+
+      elif nm=='bfield' or nm=='b_field':
+         for i in range(3):
+            if i==0:
+               dat = eq.time_slice[time].profiles_2d[0].b_field_r
+            elif i==1:
+               dat = eq.time_slice[time].profiles_2d[0].b_field_tor
+            elif i==2:
+               dat = eq.time_slice[time].profiles_2d[0].b_field_z
+            plot_equil_2d_interact(rr, zz, dat, time, ncontour, img)
+      plt.show()
+
 def plot_equilibrium_2d(times, rgrid, zgrid, rinv, zinv, psirz, rz_range:bool=True,
       save=True, pre:str=None, ni:int=0, image2d:bool=False, ncontour:int=10):
 
@@ -254,7 +330,7 @@ def plot_equilibrium_2d(times, rgrid, zgrid, rinv, zinv, psirz, rz_range:bool=Tr
         print('rz_inv', rinv.shape, zinv.shape)
         if len(rinv)>1 and len(zinv)>1:
             rg, zg = rinv[t] , zinv[t]
-            plt.scatter(rg[30], zg[30], color='C0') #, 'ro')
+            plt.scatter(rg[30], zg[30])
         ax.grid()
 
     #name = f'psirz_{1+int(rz_range==True)}'

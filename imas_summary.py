@@ -139,7 +139,7 @@ class imas_summary:
         #Plasma diamagnetic energy content = 3/2*integral over the plasma volume of
         #  the total perpendicular pressure [J].
         #PPLAS(TIME3, X) PASCALS PLASMA PRESSURE
-        pplas = self.im.get_ncvar('PPLAS') #TODO
+        pplas = self.im.get_ncvar('PTOWB') #PPLAS
         if self.im.is_valid(pplas):
             edia = self.im.np_multiply_sum(pplas, gvol, axis=1, scale=1.5*1.0e-6) #cm3 to m3
             self.im.fill_value(sid.global_quantities.energy_diamagnetic, edia)

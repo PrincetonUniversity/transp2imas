@@ -8,7 +8,7 @@ from matplotlib.collections import LineCollection
 
 
 class imas_equilibrium:
-    def __init__(self, ncimas:nc2imas, conv_moments=False):
+    def __init__(self, ncimas:nc2imas, conv_moments=False, nzones_in=0):
         self.im = ncimas
         self.logger = ncimas.logger
         self. debug_max = self.im.debug_max
@@ -18,6 +18,7 @@ class imas_equilibrium:
         self.ymsb = []
         self.conv_moments = conv_moments
         self.nmoments = 0
+        self.nzones_in = nzones_in
         self.coskth = None
         self.sinkth = None
         self.dtheta = None
@@ -84,8 +85,8 @@ class imas_equilibrium:
          rsin = np.zeros(shape=(nmoments, ncoord_xb))
          ycos = np.zeros(shape=(nmoments, ncoord_xb))
          ysin = np.zeros(shape=(nmoments, ncoord_xb))
-         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=0)
-         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=0)
+         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=time)
+         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=time)
 
          inv_grid_theta = np.zeros(ntheta)
          inv_grid_theta[ntheta-1] = self.im.pi
@@ -106,6 +107,8 @@ class imas_equilibrium:
 
          rsurf = np.zeros(shape=(ncoord_xb, ntheta))
          ysurf = np.zeros(shape=(ncoord_xb, ntheta))
+
+         axis_err = 0
 
          if nmoments>1:
             for j in range(ncoord_xb):
@@ -131,20 +134,20 @@ class imas_equilibrium:
                   pts[k,1] = ysurf[j,k]
 
                pth = path.Path(pts)
-               has_axis = pth.contains_point((raxis,yaxis))
-               if has_axis is False:
-                  print(f'Error: axis {raxis}, {yaxis} outside equil surface {j}')
-                  raise Exception(f'Error: axis outside equil surface')
+               if not pth.contains_point((raxis,yaxis)):
+                  axis_err += 1
 
             #DEBUG all
-            if self.debug_max is True:
+            if self.debug_max and axis_err>0:
                data = np.stack((rsurf,ysurf), axis=2)
                fig, ax = plt.subplots()
                ax.add_collection(LineCollection(data))
                plt.plot(raxis, yaxis, 'ro')
                plt.show()
-         return np.array(rsurf), np.array(ysurf), np.array(inv_grid_theta)
 
+            if axis_err > 0:
+               print('time', time, f'Error: axis {raxis}, {yaxis} outside one/more flux surfaces')
+         return np.array(rsurf), np.array(ysurf), np.array(inv_grid_theta)
 
     #to be called per time frame
     def get_moments_bdry(self):
@@ -287,8 +290,9 @@ class imas_equilibrium:
         raxis = self.im.get_ncvar('RAXIS', scale=cm2m, interp=True) #RAXISEQ
         yaxis = self.im.get_ncvar('YAXIS', scale=cm2m, interp=True) #YAXISEQ
 
-        psi_axis = self.im.get_ncvar('PSI0_TR', scale=2*pi, interp=True) # Wb/rad
-        #psi_bdry =
+        # PSI0_TR(TIME); Wb/rad ; Psi_poloidal(axis) in simulation
+        psi_axis = self.im.get_ncvar('PSI0_TR', scale=2*pi, interp=True)
+
         q95 = self.im.get_ncvar('Q95', interp=True)
         qaxis  = self.im.get_ncvar('Q0', interp=True)
         li3 = self.im.get_ncvar('LI_3', interp=True)
@@ -379,9 +383,14 @@ class imas_equilibrium:
         psi = self.im.get_ncvar('PLFLX2PI')
         if not self.im.is_valid(psi):
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
+
+        # add psi at axis PSI0_TR(TIME)
+        if self.im.is_valid(psi, psi_axis, ind=ntimes-1):
+            psi = psi + np.tile(psi_axis[None,:].T, nprof)
+
         phi = self.im.get_ncvar('TRFLX', 2.*pi)
         qpsi = self.im.get_ncvar('Q')
-        pres = self.im.get_ncvar('PPLAS') #'PMHD')
+        pres = self.im.get_ncvar('PTOWB') #PPLAS'
         fbz = self.im.get_ncvar('GFUN')
 
         nprof1d = 0
@@ -427,7 +436,18 @@ class imas_equilibrium:
         self.logger.info(f'rgrid {rgrid.shape}')
 
         #RSURF - flux surface R locations
-        ntheta = 101 #201  # TODO this is wrong
+
+        '''
+         Number of poloidal grid points per flux surface, ntheta, should be
+         equal to MTH in TRANSP. MTH is calculated using namelist variable NZONES,
+         which is nr=the number of radial grids in the moments or profile data.
+         ntheta = max(65,min(251,(2*nzones+1)))
+         But user can override this by namelist variable NTH_RZ.
+
+        '''
+        nzones_ = self.nzones_in if self.nzones_in>1 else nprof1d
+        ntheta = max(65,min(251,(2*nzones_+1)))
+
         self.dtheta = 2*pi/ntheta
 
         nthetab = 128
@@ -567,14 +587,15 @@ class imas_equilibrium:
                     self.logger.info(f't {it}: wrote 2d profile : rgrid {nr}, zgrid {nz} psi {prof2.psi.shape}')
 
             bfield = self.im.get_ncvar('B_FIELD', ind=it)
+
             if self.im.is_valid(bfield, name='bfield'):
-                bfield = bfield.reshape((3,rsh[1],zsh[1]))
+                bfield = bfield.reshape((3,nz,nr))
                 prof2.b_field_r.resize((nr, nz))
-                prof2.b_field_r = bfield[0]
+                prof2.b_field_r = bfield[0].T
                 prof2.b_field_tor.resize((nr, nz))
-                prof2.b_field_tor = bfield[1]
+                prof2.b_field_tor = bfield[1].T
                 prof2.b_field_z.resize((nr, nz))
-                prof2.b_field_z = bfield[2]
+                prof2.b_field_z = bfield[2].T
                 if it==ntimep-1:
                     self.logger.info(f't {it}: wrote B_FIELD {bfield.shape}')
 

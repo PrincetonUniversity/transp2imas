@@ -9,25 +9,51 @@ class imas_edge_sources:
 
         self.create_ids()
 
+    def fill_source_data(self, es, i, name, times):
+        if name == 'ionization':
+            dstr = 'N0SGF'
+        elif name == 'recombination'    :
+            dstr = 'N0SRC'
+        species = self.im.get_var_names(f'{dstr}_?', cut=f'{dstr}_')
+        self.logger.info(f'{name}: {species}')
+
+        #ggd neutrals
+        es.source[i].ggd.resize(len(times))
+        print('\n check ggd size\n\n')
+        for it in range(len(times)):
+            es.source[i].ggd[it].time = times[it].astype(float)
+            es.source[i].ggd[it].neutral.resize(len(species))
+            for ni, short in enumerate(species):
+               key = 'HE' + short if short in ['3', '4'] else short
+               atom = atom_base(key)
+               es.source[i].ggd[it].neutral[ni].element.resize(1)
+               es.source[i].ggd[it].neutral[ni].element[0].a = atom.a
+               es.source[i].ggd[it].neutral[ni].element[0].z_n = atom.z_n
+               es.source[i].ggd[it].neutral[ni].element[0].atoms_n = atom.atoms_n
+
+               es.source[i].ggd[it].neutral[ni].label = key
+
+               es.source[i].ggd[it].neutral[ni].particles.resize(1)
+               self.im.fill_data_nc(es.source[i].ggd[it].neutral[ni].particles[0].values,
+                        f'{dstr}_{short}', ind=it, mult=1.0e6)
+        return es
+
+
     def create_ids(self):
         self.im.logger.info('\nedge_sources')
+        es = self.im.ids.edge_sources
 
-        ids = self.im.ids.get('edge_sources')
-        cm2m = 0.01
+        es = self.im.fill_properties(es)
+        self.im.fill_code_properties(es)
+        es.ids_properties.homogeneous_time = 1
+        es.time.resize(self.im.ntimep)
+        es.time = self.im.timep
+        ntime = self.im.ntimep
 
-        #scalar time
-        timesc = self.im.get_ncvar('TIME')
-        ntimes = len(timesc)
-        timep = self.im.get_ncvar('TIME3')
-        ntimep = len(timep)
-        self.im.checkErrExit(timesc, timep)
-
-
-        self.logger.info(f'edge sources')
-        ids.midplane.name = 'magnetic_axis'
-        ids.midplane.index = 1
+        es.midplane.name = 'magnetic_axis'
+        es.midplane.index = 1
         txt = r'Midplane defined by the height of magnetic axis'
-        esc.midplane.description = txt + r' equilibrium/time_slice/global_quantities/magnetic_axis/z'
+        es.midplane.description = txt + r' equilibrium/time_slice/global_quantities/magnetic_axis/z'
 
         #GASIZ(TIME)ATOMS/SEC; H+D+T EDGE NTRL SCE IONIZATIONS (heatlib/source)
 
@@ -58,43 +84,32 @@ class imas_edge_sources:
         #DN0OUT
 
         #source(i1)
-        #recombination=recycling+.. ?
+        # list ['H', 'D', 'T','3'/'HE3', '4'/'HE4', 'L']
         sources = ['ionization', 'recombination']
-        ids.source.resize(len(sources))
-
+        es.source.resize(len(sources))
         #ionization
+        i = 0
         name = 'ionization'
-        es = ids.source[0]
-        es.name = name
-        es.index = 709
-        es.description = r'Source from ionization (combined)'
-        es.species.type.name = 'neutral'
-        es.species.type.index = 4
-        es.species.type.description = r'Neutral species of H+D+T'
-        es.species.neutral.label = ''
-        es.species.neutral.element.resize(3)
-        for e, symb in enumerate(['H', 'D', 'T']):
-            at = atom_base(symb)
-            es.species.neutral.element[e].a = at.a
-            es.species.neutral.element[e].z_n = at.z_n
-            es.species.neutral.element[e].atoms_n = at.atoms_n
+        es.source[i].identifier.name = name
+        es.source[i].identifierindex = 709
+        es.source[i].identifier.description = r'Source from ionization (combined)'
+        es.source[i].species.type.name = 'neutral'
+        es.source[i].species.type.index = 4
+        es.source[i].species.type.description = r'Neutral species'
+        es = self.fill_source_data(es, i, name, es.time)
 
+        i = 1
         name = 'recombination'
-        es = ids.source[1]
-        es.name = name
-        es.index = 710
-        es.description = r'Source from recombination'
-        es.species.type.name = 'unspecified'
-        es.species.type.index = 0
-        es.species.type.description = 'All ions'
+        es.source[i].identifier.name = name
+        es.source[i].identifier.index = 710
+        es.source[i].identifier.description = r'Source from recombination'
+        es.source[i].species.type.name = 'unspecified'
+        es.source[i].species.type.index = 0
+        es.source[i].species.type.description = 'All ions'
+        es = self.fill_source_data(es, i, name, es.time)
 
 
-
-
-
-
-
-        self.im.putdb_imas(esc)
+        self.im.putdb_imas(es)
         self.logger.info('Done')
 
 

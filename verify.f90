@@ -1,14 +1,9 @@
-
-
-! ifort verify.f90 -o verify -g -r8 -fpp -assume no2underscore  -fPIC
-!     `pkg-config imas-ifort --cflags` `pkg-config imas-ifort imas-lowlevel --libs`
-
+! ifort verify.f90 -o verify -g `pkg-config imas-ifort --cflags` `pkg-config imas-ifort imas-lowlevel --libs`
 
 subroutine verify_ids(mach, shot, run, sbackend)
   use iso_c_binding, only: fp => c_double, c_int
-    use ids_schemas, only: ids_equilibrium       ! Definitions for the Physics Data Model
+    use ids_schemas    ! Definitions for the Physics Data Model
     use ids_routines      ! Access Layer routines and management of IDS structures
-
 
     implicit none
     character(len=30) :: mach
@@ -16,7 +11,9 @@ subroutine verify_ids(mach, shot, run, sbackend)
     integer :: i, ig, i1, i2, ilx, ix, j1, j2, ntot, nth
     integer :: shot, run, indx, idx
     type (ids_equilibrium)   :: eq_in ! equilibrium  
-    integer :: nt, nx, nr, nz, ir, iz, it
+    type (ids_core_profiles)   :: cp_ids, cp2
+    type(ids_edge_sources) :: edge_ids
+    integer :: nt, nx, nr, nz, ir, iz, it, noccur
     integer :: intime, iltime, ildata, ier, isized, istore, isizb, iaddrs
     integer :: iaddrx, iaddrd, iadr, i0
     !real(fp), parameter :: twopiinv = 1.0_fp/twopi
@@ -45,31 +42,89 @@ subroutine verify_ids(mach, shot, run, sbackend)
     !call imas_open_env(treename,shot,run,idx,trim(usr), trim(mach),'3')
 
     call ids_get(idx,"equilibrium", eq_in)
-    write(*,*) 'reading eq ids'
-    write(*,*) 'grid type',eq_in%time_slice(1)%profiles_2d(1)%grid_type%index
-    nt = size(eq_in%time)
-    nr = size(eq_in%time_slice(1)%profiles_2d(1)%grid%dim1)
-    nz = size(eq_in%time_slice(1)%profiles_2d(1)%grid%dim2)
-    nx = size(eq_in%time_slice(1)%profiles_1d%rho_tor_norm)
+    write(*,*) 'reading eq ids time SLICE'
+    if(size(eq_in%time_slice)>0)then
+       if(size(eq_in%time_slice(1)%profiles_2d)>0)then
+         write(*,*) 'grid type',eq_in%time_slice(1)%profiles_2d(1)%grid_type%index
+         if(size(eq_in%time_slice(1)%profiles_2d(1)%grid%dim1)>0)then
+            write(*,*) 'rgrid',1.0e+02_fp*eq_in%time_slice(1)%profiles_2d(1)%grid%dim1(1)
+            write(*,*) 'ygrid', 1.0e+02_fp*eq_in%time_slice(1)%profiles_2d(1)%grid%dim2(1)
+         else
+           write(*,*)'empty eq_in%time_slice(1)%profiles_2d(1)%grid%dim1'
+        endif
+      endif
+      if(size(eq_in%time)>0) write(*,*) 'time', eq_in%time(1)
+      if(size(eq_in%time_slice(1)%profiles_1d%rho_tor_norm)>0)then
+         write(*,*) 'rho_tor_norm', eq_in%time_slice(1)%profiles_1d%rho_tor_norm(1)
+      else
+         write(*,*) 'eq_ids has no time_slice'
+      endif
+    endif
 
-    if (allocated(rgrid)) deallocate(rgrid)
-    if (allocated(ygrid)) deallocate(ygrid)
-    if (allocated(psirz)) deallocate(psirz)
-    if (allocated(psirz_tg1)) deallocate(psirz_tg1)
-    if (allocated(psirz_tg2)) deallocate(psirz_tg2)
-    allocate(rgrid(nr))
-    allocate(ygrid(nz))
-    allocate(psirz(nr,nz))
-    allocate(psirz_tg1(nr,nz))
-    allocate(psirz_tg2(nr,nz))
-    if (.not.allocated(time))  allocate(time(nt))
-    if (.not.allocated(xgrid))  allocate(xgrid(nx))
-    time = eq_in%time
-    xgrid = eq_in%time_slice(1)%profiles_1d%rho_tor_norm
-    rgrid = 1.0e+02_fp*eq_in%time_slice(1)%profiles_2d(1)%grid%dim1
-    ygrid = 1.0e+02_fp*eq_in%time_slice(1)%profiles_2d(1)%grid%dim2
-    write(*,*) 'rho_tor_norm', xgrid
-    write(*,*) 'rgrid', rgrid
+
+    call ids_get(idx,"core_profiles", cp_ids, ier)
+    if(size(cp_ids%profiles_1d)>0)then
+      write(*,*)'cp_ids ions', size(cp_ids%profiles_1d(1)%ion)
+      if(size(cp_ids%profiles_1d(1)%ion)>0) then
+         do i=1,size(cp_ids%profiles_1d(1)%ion)
+           write(*,*)'ion', i, cp_ids%profiles_1d(1)%ion(i)%label, &
+               size(cp_ids%profiles_1d(1)%ion), cp_ids%profiles_1d(1)%ion(i)%z_ion
+           write(*,*)'el',  cp_ids%profiles_1d(1)%ion(i)%element(1)%atoms_n, &
+                            cp_ids%profiles_1d(1)%ion(i)%element(1)%a, &
+                            cp_ids%profiles_1d(1)%ion(i)%element(1)%z_n
+         enddo
+      endif
+      if(size(cp_ids%profiles_1d(1)%grid%rho_tor_norm)>0) then
+        write(*,*) 'cp_ids rho_tor_norm', size(cp_ids%profiles_1d(1)%grid%rho_tor_norm)
+      endif
+      ! neutrals
+      if(size(cp_ids%profiles_1d(1)%neutral)>0) then
+         write(*,*)'cp_ids neutrals', size(cp_ids%profiles_1d(1)%neutral)
+         do i=1,size(cp_ids%profiles_1d(1)%neutral)
+            write(*,*) cp_ids%profiles_1d(1)%neutral(i)%label
+            write(*,*)'temp,dens', &
+                     size(cp_ids%profiles_1d(1)%neutral(i)%temperature), &
+                     size(cp_ids%profiles_1d(1)%neutral(i)%density)
+         enddo
+      endif
+      if(size(cp_ids%profiles_1d(1)%grid%rho_tor_norm)>0) then
+        write(*,*) 'cp_ids rho_tor_norm', size(cp_ids%profiles_1d(1)%grid%rho_tor_norm)
+      endif
+    endif
+    noccur = get_max_occurrences_core_profiles(cp_ids)
+    write(*,*)'noccur', noccur
+    call ids_get(idx,"core_profiles/1", cp2, ier)
+    if(size(cp2%profiles_1d)>0)then
+      if(size(cp2%profiles_1d(1)%ion)>0) then
+        write(*,*)'cp2 ions', cp2%profiles_1d(1)%ion(1)%label, &
+               size(cp2%profiles_1d(1)%ion), cp2%profiles_1d(1)%ion(1)%z_ion
+      endif
+    endif
+
+    call ids_deallocate(cp_ids)
+    call ids_deallocate(cp2)
+    call ids_deallocate(eq_in)
+
+
+    call ids_get(idx,"edge_sources", edge_ids)
+    if(size(edge_ids%source)>0) then
+      write(*,*)"edge_sources"
+      if(size(edge_ids%source(1)%ggd)>0 .and. &
+           size(edge_ids%source(1)%ggd(1)%neutral)>0) then
+        if(size(edge_ids%source(1)%ggd(1)%neutral(1)%particles)>0) then
+          if (size(edge_ids%source(1)%ggd(1)%neutral(1)%particles(1)%values)>0) then
+            write(*,*)'edge', size(edge_ids%source(1)%ggd(1)%neutral(1)%particles(1)%values), &
+                           edge_ids%source(1)%ggd(1)%neutral(1)%particles(1)%values(1:2)
+          else
+            write(*,*)'edge_ids neutral particles empty'
+          endif
+        endif
+      else
+         write(*,*)'edge_ids%source(1)%ggd size0'
+      endif
+    endif
+
+    call imas_close(idx)
 end subroutine
 
 
@@ -85,7 +140,7 @@ program verify
 
     nargs = command_argument_count()
     if (nargs<3) then
-      write(*,*) './verify machine(SMRT) shot(92210) run(622) backend(MDSPLUS)'
+      write(*,*) './verify machine(eq:SMRT) shot(eq:92210) run(eq:622) backend(MDSPLUS)/HDF5'
       stop
     endif
     allocate(args(nargs))
