@@ -15,6 +15,8 @@ policy, and release process in more detail.
   checks require an installed IMAS Data Dictionary.
 - [Mapping workflow](mapping-workflow.md) -- the group-by-group procedure used to
   extend TRANSP variable coverage without guessing IMAS semantics.
+  This document also describes `examples/audit_mapping_coverage.py` and the
+  generated Markdown/CSV/JSON source-coverage reports used to select the next group.
 - [Release process](release-process.md) -- version files, Conventional Commits,
   Release Please, GitHub settings, and how the initial `v0.9.0` baseline is
   established.

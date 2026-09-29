@@ -62,6 +62,10 @@ that touch schema-dependent code.
 - Add a source-side numerical check whenever TRANSP contains an independent
   identity, integral, component sum, or redundant representation that can
   validate the mapping.
+- Avoid wildcard imports in production entry points; import writer classes and shared helpers explicitly.
+- Do not change NumPy floating-point behavior process-wide with `np.seterr`; use a narrowly scoped `np.errstate` or safe `np.divide(..., where=...)` around converter-owned arithmetic.
+- Do not use bare `except:` in converter code. Catch the expected exception types, keep the guarded block small, and log enough context to diagnose malformed optional data. A broader `except Exception` is acceptable only for deliberately isolated compatibility/optional-data fallbacks where the failure is logged or converted to a documented absence.
+- Dictionary literals used for physics/atomic metadata must not contain duplicate keys; Python silently retains only the last value.
 
 ## Git workflow
 

@@ -34,3 +34,18 @@ make verify-all
 Run `make verify-dd` in an IMAS environment for DD-sensitive changes.
 
 The pull-request template contains the complete checklist.
+
+## Mapping coverage audit
+
+When a pull request adds or materially changes a TRANSP-to-IMAS mapping, run
+`make audit CASE=<representative-run>` in addition to the normal source
+verification. Review the generated `build/audit/*-mapping-coverage.md` report
+for variables that move between `unclassified`, `deferred`, validation-only, and
+converter-referenced states. The generated reports are development artifacts
+and do not need to be committed.
+
+If a source quantity is reviewed but intentionally not mapped, add a concise
+reason to the maintained deferred registry in
+`examples/audit_mapping_coverage.py` and document the physics rationale in the
+technical reference. Do not mark a quantity as mapped solely to improve the
+coverage percentage.

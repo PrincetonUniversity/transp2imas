@@ -3,44 +3,38 @@
 
 
 
-import os
 import sys
-import numpy as np
 
 from nc2imas import nc2imas, get_args, TRANSP2IMAS_VERSION
-from utilities import *
-from imas_summary import *
-from imas_equilibrium import *
-from imas_wall import *
-from imas_core_profiles import *
-from imas_ec_launchers import *
-from imas_lh_antennas import *
-from imas_ic_antennas import *
-from imas_nbi import *
+from utilities import find_all_files
+from imas_summary import imas_summary
+from imas_equilibrium import imas_equilibrium
+from imas_wall import imas_wall
+from imas_core_profiles import imas_core_profiles
+from imas_ec_launchers import imas_ec_launchers
+from imas_lh_antennas import imas_lh_antennas
+from imas_ic_antennas import imas_ic_antennas
+from imas_nbi import imas_nbi
 from imas_tf import imas_tf
-from imas_pf_active import *
-from imas_pf_passive import *
-from imas_edge_sources import *
-from imas_sawteeth import *
-from imas_radiation import *
-from imas_core_sources import *
-from imas_waves import *
-from imas_workflow import *
-from imas_dataset_fair import *
-from imas_distribution_sources import *
+from imas_pf_active import imas_pf_active
+from imas_pf_passive import imas_pf_passive
+from imas_edge_sources import imas_edge_sources
+from imas_radiation import imas_radiation
+from imas_core_sources import imas_core_sources
+from imas_waves import imas_waves
+from imas_workflow import imas_workflow
+from imas_dataset_fair import imas_dataset_fair
+from imas_distribution_sources import imas_distribution_sources
+from imas_core_transport import imas_core_transport
 
 TRANSP2IMAS_DD4_PATCHLEVEL = TRANSP2IMAS_VERSION
-from imas_core_transport import *
-
-
-np.seterr(all='raise')
 all_ = True
 def do_convert(argvs):
     print(f'transp2imas patchlevel {TRANSP2IMAS_DD4_PATCHLEVEL}')
     #get arguments from command line
     #if -i all -d <dir> ;instead of CDF file name, then search for all CDF files in that dir,
     #and run in a loop
-    parsed_args = get_args(argvs)  # supports both pre-v8 and v8 utilities.py
+    parsed_args = get_args(argvs)
     if len(parsed_args) == 16:
         backend, run, occur, user, machine, newdb, ncfile, nml, log, \
           moments, nzones, deb, ec_nml_launch, ip_direction, bt_direction, dd_version = parsed_args

@@ -347,54 +347,68 @@ class nc2imas(imas_connection, netcdf_connection):
         return True
 
     def sum_arrays(self, *arrays):
+        """Return the element-wise sum of non-empty array-like inputs.
+
+        Shape/type errors are treated as invalid optional source data, while
+        programming and process-control exceptions are allowed to propagate.
+        """
         res = []
         init = False
         try:
             for arr in arrays:
-                if len(arr)==0:
+                if len(arr) == 0:
                     continue
                 if init:
-                    res = res+arr
+                    res = res + arr
                 else:
                     res = arr
                     init = True
-        except:
-            self.logger.info(f' sum arrays error')
+        except (TypeError, ValueError) as exc:
+            self.logger.info(f' sum arrays error: {exc}')
         return res
 
 
     def operate_arrays(self, arr1, op:str, arr2=None, name1:str='', name2:str=''):
-        if not self.is_valid(arr1, arr2):
+        """Apply a supported element-wise operation with local NumPy error policy."""
+        unary = op == 'sqrt'
+        valid = self.is_valid(arr1) if unary else self.is_valid(arr1, arr2)
+        if not valid:
             self.logger.info(f' operate_arrays error: {name1} {op} {name2}')
             return np.array([])
 
-        err = False
         try:
-            if op == '-':
-                return arr1 - arr2
-            elif op == '+':
-                return arr1 + arr2
-            elif op == '/':
-                return np.divide(arr1, arr2, out=np.zeros_like(arr1), where=arr2!=0)
-            elif op == '*':
-                return arr1 * arr2
-            elif op == 'sqrt':
-                if isinstance(arr1, np.ndarray):
-                    return np.sqrt(arr1)
-                elif isinstance(arr1, list):
-                    return [math.sqrt(x) for x in arr1]
-                elif isinstance(arr1, set):
-                    return {math.sqrt(x) for x in arr1}
-                elif isinstance(arr1, tuple):
-                    return tuple(math.sqrt(x) for x in arr1)
-            else:
-                err = True
-        except:
-            err = True
-
-        if err:
-            self.logger.info(f' operate_arrays error:: {name1} {op} {name2}')
+            with np.errstate(divide='raise', invalid='raise', over='raise'):
+                if op == '-':
+                    return arr1 - arr2
+                if op == '+':
+                    return arr1 + arr2
+                if op == '/':
+                    a1 = np.asarray(arr1)
+                    a2 = np.asarray(arr2)
+                    dtype = np.result_type(a1.dtype, a2.dtype, np.float64)
+                    shape = np.broadcast_shapes(a1.shape, a2.shape)
+                    return np.divide(
+                        a1, a2,
+                        out=np.zeros(shape, dtype=dtype),
+                        where=a2 != 0,
+                    )
+                if op == '*':
+                    return arr1 * arr2
+                if op == 'sqrt':
+                    if isinstance(arr1, np.ndarray):
+                        return np.sqrt(arr1)
+                    if isinstance(arr1, list):
+                        return [math.sqrt(x) for x in arr1]
+                    if isinstance(arr1, set):
+                        return {math.sqrt(x) for x in arr1}
+                    if isinstance(arr1, tuple):
+                        return tuple(math.sqrt(x) for x in arr1)
+        except (TypeError, ValueError, FloatingPointError, OverflowError, ZeroDivisionError) as exc:
+            self.logger.info(f' operate_arrays error:: {name1} {op} {name2}: {exc}')
             return np.array([])
+
+        self.logger.info(f' operate_arrays error:: unsupported operation {op!r}')
+        return np.array([])
 
     def np_multiply_sum(self, arr1, arr2, axis:int, name1:str='', name2:str='', scale=None):
         if not self.is_valid(arr1, arr2):
@@ -405,12 +419,11 @@ class nc2imas(imas_connection, netcdf_connection):
             self.logger.info(f'{mes}: {name1}:{s1} {name2}: {s2}')
             return np.array([])
         try:
-            if scale is not None:
-                return scale * np.sum(np.multiply(arr1, arr2), axis=axis)
-            else:
-                return np.sum(np.multiply(arr1, arr2), axis=axis)
-        except:
-            self.logger.info(f' np_multiply_sum error:: {name1} {name2}')
+            with np.errstate(invalid='raise', over='raise'):
+                result = np.sum(np.multiply(arr1, arr2), axis=axis)
+                return result if scale is None else scale * result
+        except (TypeError, ValueError, FloatingPointError, OverflowError) as exc:
+            self.logger.info(f' np_multiply_sum error:: {name1} {name2}: {exc}')
             return np.array([])
 
 

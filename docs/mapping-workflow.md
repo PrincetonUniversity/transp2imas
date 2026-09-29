@@ -30,6 +30,46 @@ For each candidate group:
    claims support for both.
 10. **Document the mapping.** Update the technical reference and this roadmap.
 
+
+## Mapping coverage audit
+
+Use `examples/audit_mapping_coverage.py` to turn the group-by-group objective into
+a reproducible source inventory. The audit scans every variable in a TRANSP CDF
+and compares it with static references in the converter and source-side
+verification programs. It classifies each variable as:
+
+- `mapped/consumed` -- referenced by converter code;
+- `support/derived-input` -- a grid, geometry, normalization, or integration
+  input used to construct another mapped quantity;
+- `metadata/provenance` -- used only by metadata/provenance code;
+- `validation-only` -- known to a verifier but not the converter;
+- `deferred` -- reviewed and deliberately left unmapped with a recorded reason;
+- `unclassified` -- no static converter/verification/deferral reference was
+  found and the quantity remains a candidate for review.
+
+Run the standard report with:
+
+```bash
+make audit CASE=141711Y01
+```
+
+This writes Markdown, CSV, and JSON inventories below `build/audit/`. A direct
+invocation can be used for any external TRANSP CDF:
+
+```bash
+python examples/audit_mapping_coverage.py /path/to/run.CDF \
+    --markdown build/audit/run.md \
+    --csv build/audit/run.csv \
+    --json build/audit/run.json
+```
+
+The coverage percentage is intentionally conservative and must not be treated
+as a physics-completeness metric. Static analysis can miss dynamically composed
+CDF names, and a referenced quantity may serve only as a grid or normalization.
+The full table is meant to drive the next manual physics audit, not replace it.
+When a previously unclassified quantity is investigated, either map it, add a
+source-side validation reference, or record a specific deferral reason.
+
 ## Current broad status at the 0.9.0 baseline
 
 ### Substantially covered

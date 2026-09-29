@@ -17,7 +17,7 @@ PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not 
 
 .DEFAULT_GOAL := help
 
-.PHONY: help venv install convert check check-shebang test verify verify-all verify-dd inspect plot-ids fortran clean
+.PHONY: help venv install convert check check-shebang check-literals test verify verify-all verify-dd audit inspect plot-ids fortran clean
 
 help:
 	@echo "TRANSP-to-IMAS developer commands"
@@ -30,6 +30,7 @@ help:
 	@echo "  make verify       Run source diagnostics for CASE"
 	@echo "  make verify-all   Run source diagnostics for both NSTX cases"
 	@echo "  make verify-dd    Check supported IMAS Data Dictionary layouts"
+	@echo "  make audit        Write CDF mapping-coverage reports for CASE"
 	@echo "  make inspect      Plot the final six q profiles from CDF"
 	@echo "  make plot-ids     Print usage for the converted-IDS plotting example"
 	@echo "  make fortran      Build the optional Fortran Access Layer verifier"
@@ -62,7 +63,10 @@ check-shebang:
 	if [ $$bad -ne 0 ]; then exit 1; fi
 	@echo "Python header policy OK: $$(printf '%s\n' $(PYTHON_FILES) | wc -l) files"
 
-check: check-shebang
+check-literals:
+	$(PYTHON) examples/verify_python_literals.py
+
+check: check-shebang check-literals
 	$(PYTHON) -m compileall -q -x '(^|/)(\.venv|build)/' .
 	$(MAKE) -C examples quick PYTHON="$(PYTHON)"
 
@@ -80,6 +84,9 @@ verify-all:
 
 verify-dd:
 	$(MAKE) -C examples verify-dd PYTHON="$(PYTHON)"
+
+audit:
+	$(MAKE) -C examples audit PYTHON="$(PYTHON)" CDF="$(CDF)" CASE="$(CASE)"
 
 inspect:
 	$(MAKE) -C examples inspect PYTHON="$(PYTHON)" CDF="$(CDF)"

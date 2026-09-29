@@ -324,7 +324,7 @@ controls, use `--ip-direction {ccw,cw}` and `--bt-direction {ccw,cw}`.
 
 Run `python examples/verify_cocos17.py <run>.CDF` for a source-side sign sanity check.
 
-## Selecting the IMAS Data Dictionary (v8.3)
+## Selecting the IMAS Data Dictionary (v0.3)
 
 TRANSP2IMAS can now populate either a legacy DD3.39 schema or a DD4 schema
 explicitly.  Use, for example:
@@ -348,9 +348,9 @@ the complete mapping table and run
 `python examples/verify_dd_compat.py 3.39.0 4.1.1` to inspect the schemas available in
 your IMAS-Python installation.
 
-## Extended CDF mapping and provenance (v8.4)
+## Extended CDF mapping and provenance (v0.4)
 
-Version v8.4 expands `core_profiles`, `equilibrium`, and `summary` with
+Version v0.4 expands `core_profiles`, `equilibrium`, and `summary` with
 high-confidence TRANSP CDF quantities and embeds the original TRANSP/model input
 files in IMAS `code.parameters` XML when the IDS has a `code` structure.
 
@@ -373,15 +373,38 @@ present, they are embedded verbatim and also represented as parsed namelist XML;
 if missing, their reference and missing status remain in the provenance payload.
 
 
+
+### Audit CDF mapping coverage
+
+To inventory which variables in a TRANSP CDF are referenced, validation-only,
+intentionally deferred, or still unclassified, run:
+
+```bash
+make audit CASE=141711Y01
+```
+
+The command writes full Markdown, CSV, and JSON reports under `build/audit/`.
+For a CDF outside the bundled regression-data tree, call the tool directly:
+
+```bash
+python examples/audit_mapping_coverage.py /path/to/run.CDF \
+    --markdown build/audit/run.md --csv build/audit/run.csv
+```
+
+The audit is static and intentionally conservative: it is a planning tool for
+choosing the next mapping group, not a claim that every referenced variable has
+a complete one-to-one IMAS mapping. See
+[the mapping workflow](docs/mapping-workflow.md) for interpretation and policy.
+
 ## Pre-0.9.0 development milestones
 
 The following 8.x labels were internal development snapshots created before the
 first public pre-1.0 baseline. They are retained here only to document the
 evolution of the converter.
 
-### v8.6.3: NBI parallel current
+### v0.6.3: NBI parallel current
 
-v8.6.3 populates `core_sources/source[nbi]/profiles_1d/j_parallel` from the
+v0.6.3 populates `core_sources/source[nbi]/profiles_1d/j_parallel` from the
 TRANSP beam-driven toroidal current `CURB`. The converter changes A/cm² to
 A/m², applies the physical plasma-current sign, and converts to the IMAS
 `<J.B>/B0` representation using `CONPLJB/BZ`. The same shared conversion is
@@ -396,9 +419,9 @@ For `174783Q32`, `CURB` agrees with the sum of the fourteen `BDCnn` beam-current
 profiles with correlation 0.9999993, and the resulting parallel-current profile
 is finite.
 
-### v8.6.2: workflow and provenance API fix
+### v0.6.2: workflow and provenance API fix
 
-v8.6.2 fixes the metadata/provenance workflow path for DD 4.1.1.  The
+v0.6.2 fixes the metadata/provenance workflow path for DD 4.1.1.  The
 workflow writer now uses `build_code_parameters_xml()` (the actual nc2imas
 API) and the new `get_ncattr_text()` helper instead of the nonexistent
 `build_transp_parameters_xml()` and `_decode_attr()` names.  The latter bug
@@ -411,10 +434,10 @@ Run `python examples/verify_writer_api.py` as a no-IMAS regression check; it sta
 verifies every `self.im.<method>()` call made by writer modules against the
 methods implemented by `nc2imas` and its local base classes.
 
-### v8.6.1: distribution_sources namelist accessor fix
+### v0.6.1: distribution_sources namelist accessor fix
 
-v8.6.1 fixes the per-beam species lookup in `imas_distribution_sources.py`.
-The v8.6.0 writer accidentally called a nonexistent `get_namelist_value()`
+v0.6.1 fixes the per-beam species lookup in `imas_distribution_sources.py`.
+The v0.6.0 writer accidentally called a nonexistent `get_namelist_value()`
 method. It now uses the established `get_namelist_var()` API with the correct
 zero-based index (`ib-1`) and treats missing species namelist metadata as
 optional rather than aborting conversion. `distribution_sources` remains
@@ -422,9 +445,9 @@ independent of the full fast-ion `distributions` IDS: NBI birth/deposition
 source moments can be exported from `BDEPnn_*` even when FBM phase-space output
 was not saved.
 
-### v8.6.0: NBI distribution sources and metadata/provenance
+### v0.6.0: NBI distribution sources and metadata/provenance
 
-v8.6.0 adds `distribution_sources` for NUBEAM birth/deposition moments when
+v0.6.0 adds `distribution_sources` for NUBEAM birth/deposition moments when
 `BDEPnn_*` is present, including per-beam particle, energy, toroidal-momentum,
 global power/torque, and shinethrough bookkeeping.  It does not synthesize a
 full `distributions` IDS if FBM phase-space arrays are absent.

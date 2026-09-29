@@ -28,6 +28,20 @@ Examples of useful validation patterns include:
 - radial-grid compatibility;
 - sign relationships implied by the TRANSP input controls.
 
+
+### Mapping-coverage inventory
+
+`make audit CASE=<runid>` runs `examples/audit_mapping_coverage.py` for one CDF
+and writes complete Markdown, CSV, and JSON reports to `build/audit/`. This is a
+development inventory rather than a pass/fail regression: a large unclassified
+set is expected while coverage is being expanded.
+
+The audit uses the same SciPy NetCDF reader as the portable source verifiers and
+does not require IMAS. It performs static source-reference discovery, so its
+`mapped/consumed` count is deliberately conservative for dynamically generated
+TRANSP variable names. Do not make CI fail on the unclassified count unless the
+project later adopts a maintained complete mapping registry.
+
 ### 3. Data Dictionary/API checks
 
 `make verify-dd` inspects the installed IMAS object structure. It is intended to

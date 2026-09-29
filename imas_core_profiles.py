@@ -474,11 +474,21 @@ class imas_core_profiles:
             pvol_pt = self.im.interp1d_time(self.im.timep, self.im.timesc, pvol_pt)
 
         te0_tev = []
-        try:
-            tev = np.sum(np.multiply(tel, gvol), axis=1) / pvol_pt
-            te0_tev = te0/tev
-        except:
-            pass
+        if self.im.is_valid(tel, gvol, pvol_pt, te0):
+            with np.errstate(divide='ignore', invalid='ignore', over='raise'):
+                thermal_energy = np.sum(np.multiply(tel, gvol), axis=1)
+                tev = np.divide(
+                    thermal_energy,
+                    pvol_pt,
+                    out=np.zeros_like(thermal_energy, dtype=float),
+                    where=np.asarray(pvol_pt) != 0,
+                )
+                te0_tev = np.divide(
+                    te0,
+                    tev,
+                    out=np.zeros_like(np.asarray(te0), dtype=float),
+                    where=np.asarray(tev) != 0,
+                )
 
         self.im.fill_data(cp.global_quantities.t_e_peaking, te0_tev)
 
