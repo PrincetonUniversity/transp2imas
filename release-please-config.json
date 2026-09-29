@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "c96b7c4c98e4ca8fe830cb899d4ee8d3f93c3db1",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "transp2imas",
+      "version-file": "version.txt",
+      "include-component-in-tag": false,
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "nc2imas.py"
+        }
+      ]
+    }
+  }
+}

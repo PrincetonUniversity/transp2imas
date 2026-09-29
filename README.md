@@ -1,8 +1,104 @@
-## transp2imas
+# transp2imas
+
+`transp2imas` converts a TRANSP NetCDF output file and its optional `TR.DAT`
+namelist into an IMAS database entry. It supports HDF5 and MDSplus storage and
+schema-aware output for the IMAS DD3 and DD4 families.
+
+## Quick start
+
+Activate an environment containing IMAS-Python, NumPy, SciPy, netCDF4, and
+f90nml. If a legacy IMAS Access Layer has populated `PYTHONPATH`, clear it so
+that the active virtual environment supplies the `imas` package:
+
+```bash
+unset IMAS_PREFIX IMAS_VERSION IMAS_HOME IMAS_PATH PYTHONPATH
+source "$HOME/venvs/imas/bin/activate"
+make test PYTHON="$HOME/venvs/imas/bin/python"
+```
+
+Run `make help` for the supported developer workflows. In particular,
+`make check` runs fast static checks, `make verify-all` audits both NSTX
+fixtures, and `make verify-dd` inspects the installed Data Dictionary layouts.
+
+
+The static checks also reject duplicate Python dictionary literal keys and bare `except:` handlers. Converter resources are managed explicitly: `convert.py` runs `nc2imas` as a context manager so both the IMAS database entry and the source NetCDF file are closed even if a writer fails.
+
+For a repository-managed environment instead, run `make install`; it creates
+`.venv` and installs [requirements.txt](requirements.txt).
+
+## Repository layout
+
+- `convert.py` is the command-line converter.
+- `nc2imas.py`, `netcdf_class.py`, and `imas_*.py` implement the conversion.
+- `examples/` contains inspection, plotting, and verification programs with a
+  dedicated Makefile.
+- `examples/data/nstx/<runid>/` contains the active NSTX regression cases, one
+  directory per CDF/TR.DAT pair.
+- `docs/` contains architecture, development, testing, mapping, release, and
+  detailed technical-reference documentation.
+- `.github/workflows/` contains the committed GitHub Actions CI and release
+  workflows. GitHub only discovers repository workflows from this directory.
+
+## Documentation
+
+Start with [docs/README.md](docs/README.md). The main references are:
+
+- [architecture](docs/architecture.md);
+- [development guide](docs/development.md);
+- [testing and validation](docs/testing.md);
+- [mapping workflow and roadmap](docs/mapping-workflow.md);
+- [release process](docs/release-process.md);
+- [technical mapping reference](docs/technical-reference.md);
+- [contribution guide](CONTRIBUTING.md).
+
+## Repository Python policy
+
+All tracked Python files, including examples and verification programs, begin
+with exactly `#!/usr/bin/python` and include a module-level docstring. The
+header convention is enforced by `make check` and GitHub CI. The project itself
+requires Python 3; on systems where `/usr/bin/python` is not installed, invoke
+programs explicitly with the active Python 3 interpreter.
+
+## License
+
+This project is licensed under the BSD-3-Clause-LBNL (PPPL Revision). See
+[LICENSE](LICENSE) for the complete terms.
+
+## IMAS-Python interface
+
+This version uses the current **IMAS-Python** object API rather than the legacy
+Access-Layer Python calling pattern. In particular:
+
+- backend constants are taken from `imas.ids_defs`;
+- empty IDS objects are created from `DBEntry.factory.new(...)`;
+- IDSs are written with `DBEntry.put(ids, occurrence=...)`;
+- `DBEntry.create()` and `DBEntry.open()` use exception-based error handling;
+- `IMAS_VERSION` (or `IMAS_DD_VERSION`) is treated as an optional Data Dictionary
+  version. If neither is set, IMAS-Python uses its configured default.
+
+The code is intended for IMAS-Python 2.x. The pulse/run form of `DBEntry` is kept
+because it maps directly to the existing `transp2imas` command-line interface and
+remains supported by current IMAS-Python.
+
+## Conversion corrections
+
+The following TRANSP-to-IMAS corrections are included:
+
+- `CUR`, `CUROH`, and `CURBS` are converted from A/cm^2 to A/m^2 using `1.0e4`.
+  The previous code accidentally used the cm^2-to-m^2 area factor (`1.0e-4`),
+  making current densities smaller by `1.0e8`.
+- TRANSP `DVOL` and `DAREA` are per-zone quantities. IMAS `volume` and `area` grid
+  fields are enclosed/cumulative quantities, so cumulative sums are written. Raw
+  zone values are still used internally for volume and area integrations.
+- The existing ITER direction convention (`sgn=-1`) is applied consistently to
+  plasma current, toroidal magnetic field, current-density profiles, and signed
+  magnetic flux quantities in `core_profiles` and `equilibrium`.
+
  
 The application transp2imas converts a TRANSP NetCDF output file (\<runid\>.CDF), aided
 by information and data from the namelist file, to populate an IMAS tree.
-The namelist is used if available in the current directroy in the format  \<runid\>TR.DAT.
+The namelist is used if available in the current directory in the format
+`<runid>TR.DAT`.
 
 There are two backends supported for IMAS IDS storage: MDSPLUS and HDF5.
 The MDSPLUS storage has 3 types of files: .tree, .datafile, and .characteristics.
@@ -12,8 +108,8 @@ For HDF5, the default location is the current directory, and each IDS is stored 
 as an .h5 file within \<machine\>/\<version\>/\<shot\>/\<run\> directory.
 
 
-The python tool can be used as follows.
-Please note that this is tested using only Python 3.10.7 and 3.11.4. Other versions are being tested.
+The converter requires Python 3.10 or newer and has been exercised with Python
+3.10, 3.11, and 3.12.
 
 The environment modules valid on PPPL portal are listed here.
 
@@ -46,19 +142,19 @@ module load imas/3.39.0-4.11.5
 
 ```
 
-#### Convert CDF to IDS
+## Convert CDF to IDS
 TRANSP run output CDF file or its symlink is required to be present in the current directory. Only one CDF file is converted at a time. The input \<runid\>.CDF file and corresponding namelist \<runid\>TR.DAT (if available) are used in some data structures. An IDS is written out only if relevant input is present as valid CDF file; otherwise a message is added in a log.out file.
 
 
-Python virtual environment with numpy, scipy, netcdf_class, and imass_class or system installations of these are required. Here the \<python_venv\> is the name of the virtual environment directory. The machine name (eg. ITER, D3D) and shot number are retrieved from the input CDF file, in order to avoid errors of passing in mismatched arguments.
+A Python virtual environment with NumPy, SciPy, netCDF4, f90nml, and
+IMAS-Python is required. The machine name (for example, ITER or D3D) and shot
+number are read from the CDF to avoid mismatched command-line metadata.
 
 The first step is to load modules.
 
 source \<intel_or_gcc_imas_modules\>
 
 If python virtual environment is already setup, skip this this section (of 6 lines).
-Please note that this is tested using only Python 3.10.7 and 3.11.4. Other versions are being tested.
-
 ```
 cd ~/
 python3 -m venv  python_venv
@@ -153,9 +249,9 @@ The fixed boundary equilibrium is calculated from moments using option -mom or -
 -mom yes  (OR, --moments yes)
 ```
 
-### IMAS VIZ for visualization
+## IMAS VIZ for visualization
 
-#### use module in pppl portal
+### Use the PPPL portal module
 
 ```
 source <python_venv>/bin/activate
@@ -183,7 +279,7 @@ On the "Array of time_slice" view also shows the same 1D profile 'plugin' option
 
 The widget can be freely taken out from the main window by clicking undock (box) button.
 
-#### Use local VIZ
+### Use a local VIZ checkout
 Steps used to use local copy of imasviz.
 ```
 git clone ssh://git@git.iter.org/vis/viz.git
@@ -206,16 +302,185 @@ make
 python $VIZ_HOME/imasviz/VizGUI/QtVIZ_GUI.py
 ```
 
-### Troubleshooting
-#### SyntaxError: invalid syntax
+## Troubleshooting
+
+### SyntaxError: invalid syntax
 This error could be due to missing virtual environment. Activate the venv,
 $ source <path_to_venv>/bin/activate
 
-#### python: error while loading shared libraries
+### Python error while loading shared libraries
 Load python module, or install python
 
-#### ModuleNotFoundError: No module named 'imas'
+### ModuleNotFoundError: No module named `imas`
 Load list of modules including IMAS module.
 
 https://wpcd-workflows.github.io/IMASviz/index.html
 https://docs.psnc.pl/display/WFMS/IMASViz+v2?preview=/17146892/17147822/IMASViz.pdf
+
+## IMAS DD4 / COCOS17 note
+
+When writing IMAS Data Dictionary major version 4, `transp2imas` targets COCOS17.
+It reads `NLJCCW` and `NLBCCW` from the TRANSP TR.DAT file to determine the
+physical plasma-current and toroidal-field directions.  See
+the COCOS 17 sign-policy section for the full sign table.  For old runs without those
+controls, use `--ip-direction {ccw,cw}` and `--bt-direction {ccw,cw}`.
+
+Run `python examples/verify_cocos17.py <run>.CDF` for a source-side sign sanity check.
+
+## Selecting the IMAS Data Dictionary (v0.3)
+
+TRANSP2IMAS can now populate either a legacy DD3.39 schema or a DD4 schema
+explicitly.  Use, for example:
+
+```bash
+python convert.py -i examples/data/nstx/141711Y01/141711Y01.CDF -new -b HDF5 --dd-version 3.39.0
+python convert.py -i examples/data/nstx/141711Y01/141711Y01.CDF -new -b HDF5 --dd-version 4.1.1
+```
+
+With `--dd-version auto` (default), the converter follows the IMAS environment
+or the default Data Dictionary bundled with IMAS-Python.  The exact selected
+version is printed at startup.  IDSs are created from the DBEntry factory for
+that same version rather than creating one DD and relying on cross-major
+conversion at write time.
+
+The EC launcher mapping is explicitly schema-aware: DD3 uses
+`beam.identifier` + descriptive `beam.name` + `beam.mode`; DD4 uses the short
+identifier in `beam.name`, descriptive text in `beam.description`, and (DD4.1+)
+`beam.polarization.o_mode_fraction`.  See the Data Dictionary compatibility section for
+the complete mapping table and run
+`python examples/verify_dd_compat.py 3.39.0 4.1.1` to inspect the schemas available in
+your IMAS-Python installation.
+
+## Extended CDF mapping and provenance (v0.4)
+
+Version v0.4 expands `core_profiles`, `equilibrium`, and `summary` with
+high-confidence TRANSP CDF quantities and embeds the original TRANSP/model input
+files in IMAS `code.parameters` XML when the IDS has a `code` structure.
+
+Run the source-side checks for both active regression cases before conversion:
+
+```bash
+make verify-all
+make verify-dd
+```
+
+The source-only verifiers do not require IMAS. `examples/verify_dd_compat.py` exercises
+the target DD object structure and therefore must be run in an environment with
+the requested IMAS Data Dictionary versions installed.  Detailed source
+mappings are documented in the core sources and transport mapping section,
+the radiation mapping section, the edge sources mapping section, and the waves mapping section.
+
+Referenced namelist templates (for example `PT_TEMPLATE`, `MMM_TEMPLATE`,
+`TGLF_TEMPLATE`, etc.) are resolved relative to the TRANSP input directory.  If
+present, they are embedded verbatim and also represented as parsed namelist XML;
+if missing, their reference and missing status remain in the provenance payload.
+
+
+
+### Audit CDF mapping coverage
+
+To inventory which variables in a TRANSP CDF are referenced, validation-only,
+intentionally deferred, or still unclassified, run:
+
+```bash
+make audit CASE=141711Y01
+```
+
+The command writes full Markdown, CSV, and JSON reports under `build/audit/`.
+For a CDF outside the bundled regression-data tree, call the tool directly:
+
+```bash
+python examples/audit_mapping_coverage.py /path/to/run.CDF \
+    --markdown build/audit/run.md --csv build/audit/run.csv
+```
+
+The audit is static and intentionally conservative: it is a planning tool for
+choosing the next mapping group, not a claim that every referenced variable has
+a complete one-to-one IMAS mapping. See
+[the mapping workflow](docs/mapping-workflow.md) for interpretation and policy.
+
+## Pre-0.9.0 development milestones
+
+The following 8.x labels were internal development snapshots created before the
+first public pre-1.0 baseline. They are retained here only to document the
+evolution of the converter.
+
+### v0.8.3: NBI parallel current
+
+v0.8.3 populates `core_sources/source[nbi]/profiles_1d/j_parallel` from the
+TRANSP beam-driven toroidal current `CURB`. The converter changes A/cm² to
+A/m², applies the physical plasma-current sign, and converts to the IMAS
+`<J.B>/B0` representation using `CONPLJB/BZ`. The same shared conversion is
+used for the bootstrap-current source.
+
+This release also appends completed `core_sources` entries instead of shrinking
+a preallocated IMAS array of structures. IMAS-Python recreates elements during
+`resize()`, which previously left the correct number of source slots but erased
+their populated contents before writing.
+
+For `174783Q32`, `CURB` agrees with the sum of the fourteen `BDCnn` beam-current
+profiles with correlation 0.9999993, and the resulting parallel-current profile
+is finite.
+
+### v0.8.2: workflow and provenance API fix
+
+v0.8.2 fixes the metadata/provenance workflow path for DD 4.1.1.  The
+workflow writer now uses `build_code_parameters_xml()` (the actual nc2imas
+API) and the new `get_ncattr_text()` helper instead of the nonexistent
+`build_transp_parameters_xml()` and `_decode_attr()` names.  The latter bug
+had silently suppressed TRANSP/TGLF/GLF23 component metadata because `_attr()`
+caught the exception; the former aborted conversion when `workflow` was
+reached.  `dataset_fair` also goes through the common code-property helper when
+the target DD supplies a code node.
+
+Run `python examples/verify_writer_api.py` as a no-IMAS regression check; it statically
+verifies every `self.im.<method>()` call made by writer modules against the
+methods implemented by `nc2imas` and its local base classes.
+
+### v0.8.1: distribution_sources namelist accessor fix
+
+v0.8.1 fixes the per-beam species lookup in `imas_distribution_sources.py`.
+The v0.8.0 writer accidentally called a nonexistent `get_namelist_value()`
+method. It now uses the established `get_namelist_var()` API with the correct
+zero-based index (`ib-1`) and treats missing species namelist metadata as
+optional rather than aborting conversion. `distribution_sources` remains
+independent of the full fast-ion `distributions` IDS: NBI birth/deposition
+source moments can be exported from `BDEPnn_*` even when FBM phase-space output
+was not saved.
+
+### v0.8.0: NBI distribution sources and metadata/provenance
+
+v0.8.0 adds `distribution_sources` for NUBEAM birth/deposition moments when
+`BDEPnn_*` is present, including per-beam particle, energy, toroidal-momentum,
+global power/torque, and shinethrough bookkeeping.  It does not synthesize a
+full `distributions` IDS if FBM phase-space arrays are absent.
+
+The converter also writes `workflow` and `dataset_fair` where supported, and
+attaches whole-IDS source provenance to `ids_properties/provenance`.  Full
+TR.DAT/template text and parsed XML remain in `code.parameters`.  See
+the NBI kinetic-source mapping section and the metadata and provenance section.
+
+
+
+## Documentation
+
+Detailed mapping audits, compatibility notes, provenance design, and migration history are maintained in [the technical reference](docs/technical-reference.md).
+
+## Versioning and releases
+
+The public baseline version is `0.9.0`. Runtime provenance uses
+`nc2imas.__version__`; `VERSION` and `TRANSP2IMAS_VERSION` are aliases.
+
+Release Please uses the `simple` strategy because this repository is a
+script-based Python project rather than an installable package with
+`pyproject.toml`/`setup.py`. The canonical release file is `version.txt`; the
+annotated version in `nc2imas.py` is updated in the same release PR.
+
+- Conventional Commits such as `fix: ...` and `feat: ...` determine the next
+  semantic version.
+- Pushes to `main` update a release pull request and `CHANGELOG.md`.
+- Merging that release pull request updates `version.txt`, `nc2imas.py`, and the
+  manifest, then creates the corresponding `vX.Y.Z` GitHub release/tag.
+- `0.9.0` is the bootstrap baseline. After the one-time `v0.9.0` GitHub release
+  exists, routine development should not edit version files or the manifest
+  manually.

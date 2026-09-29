@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Populate the IMAS core_profiles IDS from TRANSP profiles and metadata."""
+
 from typing import List
 from nc2imas import *
 
@@ -90,12 +93,12 @@ class imas_core_profiles:
             self.logger.info(f'\t{symb} vel_rad {ion.vel_rad.shape}')
             ion.vel_pol = self.im.get_ncvar(f'VPOL{short}_NC', 0.01)
             self.logger.info(f'\t{symb} vel_pol {ion.vel_pol.shape}')
-            ion.vel_tor = self.im.get_ncvar(f'VTOR{short}_NC', 0.01)
+            ion.vel_tor = self.im.toroidal_rotation_sign * self.im.get_ncvar(f'VTOR{short}_NC', 0.01)
             self.logger.info(f'\t{symb} vel_tor {ion.vel_tor.shape}')
             #ion.vel_par = [] #UPLLHATI/(BZXR/RAXIS)*1.0D-2
             #ion.z_ion_1d = []
             # RAD/SEC
-            ion.rot_freq_tor = self.im.get_ncvar(f'OMEGA') #CMG_H CMG_D
+            ion.rot_freq_tor = self.im.toroidal_rotation_sign * self.im.get_ncvar(f'OMEGA') #CMG_H CMG_D
 
             #if self.im.is_valid(ang_vel) and rmaj>0:
             #    ion.rot_freq_tor = ang_vel / rmaj
@@ -133,7 +136,7 @@ class imas_core_profiles:
             #a,z_n from definition in atoms_class, except for TOK
 
             #OMGX(TIME3, X)
-            ion.rot_freq_tor = self.im.get_ncvar('OMGX')
+            ion.rot_freq_tor = self.im.toroidal_rotation_sign * self.im.get_ncvar('OMGX')
 
             ai, zn = 0,0
             if symb=='TOK':
@@ -213,7 +216,7 @@ class imas_core_profiles:
             ion.dens = self.get_total_ion_density(short, symb)
             ion.temp = self.im.get_ncvar(f'{tstr}_{short}')
             # (TIME3, X) RAD/SEC
-            ion.rot_freq_tor = self.im.get_ncvar(f'{freqs}_{short}')
+            ion.rot_freq_tor = self.im.toroidal_rotation_sign * self.im.get_ncvar(f'{freqs}_{short}')
 
             self.logger.info(f'\t {symb} => {ion.label} :')
             self.logger.info(f'\t{symb} : {dstr}{short} {ion.dens_fast.shape}')
@@ -250,10 +253,6 @@ class imas_core_profiles:
                for ion in ions:
                   res.append(ion)
         return res
-
-    def get_ion_data_global(ions:ion_data) ->ion_data:
-        iong = []
-        #for ion in ions:
 
 
     #volume/wall neutral density
@@ -295,12 +294,15 @@ class imas_core_profiles:
 
     def create_ids(self): #, occur=0):
         self.im.logger.info('\ncore_profiles')
-        cp = self.im.ids.get('core_profiles')
+        cp = self.im.new_ids('core_profiles')
         cm2m = 0.01
         aconv = 1.0e-4
         vconv = 1.0e-6
         pi = constants.pi  #scipy
-        sgn = 1 #-1 if self.im.iter_ else 1 TODO
+        ip_sign = self.im.ip_sign
+        bt_sign = self.im.bt_sign
+        psi_sign = self.im.psi_sign
+        q_sign = self.im.q_sign
 
         #scalar time  len(TIME)
         ntimes = self.im.ntimes
@@ -329,11 +331,15 @@ class imas_core_profiles:
         # Geometry related quantities
         # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
         grid_area = self.im.get_ncvar('DAREA', aconv)
-        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        area_boundary = self.im.cumulative_zone_quantity(grid_area)
+        area_enclosed = self.im.interp_radial_profiles(area_boundary, coord_xb, coord_x, axis_value=0.0)
+        #DVOL(TIME3, X) CM**3  ZONE VOLUME. Cumulative values live at XB.
         gvol = self.im.get_ncvar('DVOL', vconv)
-        #Surface area of the toroidal flux surface
-        #FLUX SURFACE AREA (TIME3,X) cm^2
-        surface = self.im.get_ncvar('SURF', aconv)
+        volume_boundary = self.im.cumulative_zone_quantity(gvol)
+        volume_enclosed = self.im.interp_radial_profiles(volume_boundary, coord_xb, coord_x, axis_value=0.0)
+        #SURF is defined on XB; map it to the X grid used by core_profiles.
+        surface_boundary = self.im.get_ncvar('SURF', aconv)
+        surface = self.im.interp_radial_profiles(surface_boundary, coord_xb, coord_x, axis_value=0.0)
         # PAREA(TIME) - plasma CS area[cm^2]
         parea = self.im.get_ncvar('PAREA', aconv)
 
@@ -343,7 +349,6 @@ class imas_core_profiles:
         #ions for profiles_1d
         ions = self.get_ion_data()
         #ions = self.get_ion_data_occur(prof_id=occur)
-        #ion_glob = self.get_ion_data_global(ions)
 
         # neutrals for profile_id
         neutrals = self.get_neutral_data()
@@ -351,29 +356,76 @@ class imas_core_profiles:
 
         #global_quantities
         #------------------------------------------------------------------
-        self.im.fill_data_nc(cp.global_quantities.ip, 'PCURC', mult=sgn, interp=True)
+        self.im.fill_data_nc(cp.global_quantities.ip, 'PCURC', mult=ip_sign, interp=True)
 
-        # current_non_inductive. Toroidal component.
-        # CUR(TIME3,X) AMPS/CM2. TOTAL PLASMA CURRENT
-        cur_tot = self.im.get_ncvar('CUR', aconv)
+        # TRANSP CUR/CUROH/CURBS are TOROIDAL current densities [A/cm^2].
+        # Keep them for toroidal/global-current quantities.  DD4 core_profiles
+        # j_total/j_ohmic/j_non_inductive/j_bootstrap, however, are PARALLEL
+        # current densities defined as <J.B>/B0.  Use PLJB/PLJBOH for those
+        # fields and write CUR separately to j_phi.
+        cur_phi = self.im.get_ncvar('CUR', self.im.area_inv)
+        if self.im.is_valid(cur_phi):
+            cur_phi = ip_sign * cur_phi
 
-        #CUROH(TIME3, X)
-        j_ohmic = self.im.get_ncvar('CUROH', aconv)
-        j_nonind = []
-        if self.im.is_valid(cur_tot, j_ohmic, grid_area):
-            j_nonind = self.im.operate_arrays(cur_tot, '-', j_ohmic)
-            curt =  self.im.np_multiply_sum(j_nonind, grid_area, axis=1)
-            self.im.fill_data(cp.global_quantities.current_non_inductive, curt, mult=sgn)
+        curoh_phi = self.im.get_ncvar('CUROH', self.im.area_inv)
+        if self.im.is_valid(curoh_phi):
+            curoh_phi = ip_sign * curoh_phi
 
-        #Bootstrap current (toroidal component). CURBS(TIME3, X) AMPS/CM2
-        # check surface integration
-        curbs = self.im.get_ncvar('CURBS', aconv)
-        if len(curbs) > 0:
-            curbsxa = sgn * self.im.np_multiply_sum(curbs, grid_area, axis=1)
+        # Global non-inductive current is explicitly the toroidal component.
+        j_nonind_phi = []
+        if self.im.is_valid(cur_phi, curoh_phi, grid_area):
+            j_nonind_phi = self.im.operate_arrays(cur_phi, '-', curoh_phi)
+            curt = self.im.np_multiply_sum(j_nonind_phi, grid_area, axis=1)
+            self.im.fill_data(cp.global_quantities.current_non_inductive, curt)
+
+        # Bootstrap global current is also a toroidal component.
+        curbs_phi = self.im.get_ncvar('CURBS', self.im.area_inv)
+        if self.im.is_valid(curbs_phi):
+            curbs_phi = ip_sign * curbs_phi
+        if len(curbs_phi) > 0:
+            curbsxa = self.im.np_multiply_sum(curbs_phi, grid_area, axis=1)
             self.im.fill_data(cp.global_quantities.current_bootstrap, curbsxa)
 
+        # Parallel current profiles. TRANSP PLJB* are <J.B> in A*T/cm^2.
+        # TRANSP's scalar BZ is an unsigned/internal toroidal-field magnitude;
+        # dividing by it and multiplying by ip_sign gives the IMAS definition
+        # <J.B>/B0 in the physical +phi convention.
+        bz_parallel = self.im.get_ncvar('BZ')
+        if ntimep != ntimes:
+            bz_parallel = self.im.interp1d_time(self.im.timep, self.im.timesc, bz_parallel)
+
+        def _parallel_from_jdotb(varname):
+            jb = self.im.get_ncvar(varname, self.im.area_inv)
+            if not self.im.is_valid(jb, bz_parallel):
+                return []
+            try:
+                return self.im.jparallel_sign * np.divide(jb, bz_parallel[:,None])
+            except Exception:
+                return []
+
+        j_total = _parallel_from_jdotb('PLJB')
+        j_ohmic = _parallel_from_jdotb('PLJBOH')
+        j_nonind = []
+        if self.im.is_valid(j_total, j_ohmic):
+            j_nonind = self.im.operate_arrays(j_total, '-', j_ohmic)
+
+        # CURBS is the bootstrap model actually used by TRANSP. Convert that
+        # selected toroidal profile to the approximate <J.B>/B0 representation
+        # with CONPLJB = approximate <J.B>/Jtor.  This avoids accidentally using
+        # a diagnostic PLJBSNC/PLJBSNEO profile from a bootstrap model that was
+        # not selected for the run.
+        conpljb = self.im.get_ncvar('CONPLJB')
+        j_bootstrap = []
+        if self.im.is_valid(curbs_phi, conpljb, bz_parallel):
+            try:
+                # curbs_phi already has the physical Ip sign. CONPLJB and BZ
+                # are internal magnitudes, so their ratio only supplies geometry.
+                j_bootstrap = curbs_phi * np.divide(conpljb, bz_parallel[:,None])
+            except Exception:
+                j_bootstrap = []
+
         #vloop VSURC(TIME)
-        self.im.fill_data_nc(cp.global_quantities.v_loop, 'VSURC', interp=True)
+        self.im.fill_data_nc(cp.global_quantities.v_loop, 'VSURC', mult=self.im.vloop_sign, interp=True)
 
         #li  LI_3(TIME)
         self.im.fill_data_nc(cp.global_quantities.li_3, 'LI_3', interp=True)
@@ -388,10 +440,11 @@ class imas_core_profiles:
         try:
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
             #PCURC(TIME)
-            currents = self.im.get_ncvar('PCURC')
+            currents = ip_sign * self.im.get_ncvar('PCURC')
+            bz_signed = bt_sign * bz
             a = np.sqrt(parea/pi)
-            beta_tor_norm = 100.*btor*a*bz/currents
-        except:
+            beta_tor_norm = 1.0e8*btor*a*bz_signed/currents
+        except (ValueError, TypeError, FloatingPointError):
             pass
 
         #beta_pol BETAT(TIME)
@@ -416,11 +469,21 @@ class imas_core_profiles:
             pvol_pt = self.im.interp1d_time(self.im.timep, self.im.timesc, pvol_pt)
 
         te0_tev = []
-        try:
-            tev = np.sum(np.multiply(tel, gvol), axis=1) / pvol_pt
-            te0_tev = te0/tev
-        except:
-            pass
+        if self.im.is_valid(tel, gvol, pvol_pt, te0):
+            with np.errstate(divide='ignore', invalid='ignore', over='raise'):
+                thermal_energy = np.sum(np.multiply(tel, gvol), axis=1)
+                tev = np.divide(
+                    thermal_energy,
+                    pvol_pt,
+                    out=np.zeros_like(thermal_energy, dtype=float),
+                    where=np.asarray(pvol_pt) != 0,
+                )
+                te0_tev = np.divide(
+                    te0,
+                    tev,
+                    out=np.zeros_like(np.asarray(te0), dtype=float),
+                    where=np.asarray(tev) != 0,
+                )
 
         self.im.fill_data(cp.global_quantities.t_e_peaking, te0_tev)
 
@@ -457,7 +520,8 @@ class imas_core_profiles:
 
         #IONS
         #NI(TIME3, X)
-        nion = self.im.get_ncvar('NI')
+        # NI is stored in N/cm^3 in TRANSP; IMAS requires m^-3.
+        nion = self.im.get_ncvar('NI', self.im.vol_inv)
         cp.global_quantities.ion.resize(1)
         #t_i_volume_average
         if len(tiv) >0:
@@ -483,33 +547,42 @@ class imas_core_profiles:
             bz = self.im.interp1d_time(self.im.timep, self.im.timesc, bz)
 
         try:
-            rho_tor = np.sqrt(bflux_tor/(pi*np.tile(bz[None,:].T, bflux_tor.shape[1])))
-        except:
+            bflux_tor_x = self.im.interp_radial_profiles(bflux_tor, coord_xb, coord_x, axis_value=0.0)
+            rho_tor = np.sqrt(np.clip(bflux_tor_x/(pi*bz[:,None]), 0.0, None))
+        except Exception:
             self.im.logger.info('error calculating rho_tor')
 
         #(TIME3, XB)
         psib = self.im.get_ncvar('PLFLX2PI')
         if not self.im.is_valid(psib):
             psib = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
-        psi = []
+        if self.im.is_valid(psib):
+            psib = psi_sign * psib
+        psi_rel = []
         for i in range(ntimep):
-            #interpolate onto centers of zones
-            psi.append(np.interp(coord_x[i], coord_xb[i], psib[i]))
-        psi = np.array(psi)
+            # PLFLX/PLFLX2PI is the enclosed poloidal-flux increment relative
+            # to the magnetic axis. Interpolate that increment onto X centers.
+            psi_rel.append(np.interp(coord_x[i],
+                                      np.concatenate(([0.0], coord_xb[i])),
+                                      np.concatenate(([0.0], psib[i]))))
+        psi_rel = np.array(psi_rel)
 
-        #PSI0_TR(TIME)  Wb/rad
-        psi_axis = self.im.get_ncvar('PSI0_TR')
+        # PSI0_TR is the magnetic-axis offset in Wb/rad. Convert to full Wb
+        # and apply the target COCOS sign before constructing absolute psi.
+        psi_axis = psi_sign * self.im.get_ncvar('PSI0_TR', 2.*pi)
         if ntimep != ntimes:
             psi_axis = self.im.interp1d_time(self.im.timep, self.im.timesc, psi_axis)
 
-        #Normalised poloidal flux coordinate
-        # = sqrt((psi(rho)-psi(magnetic_axis)) / (psi(LCFS)-psi(magnetic_axis)))
-        #rho_pol_norm
-        plflx = psi
+        psi = psi_rel + psi_axis[:,None] if self.im.is_valid(psi_rel, psi_axis) else psi_rel
+        psi_boundary = psib[:,-1] + psi_axis if self.im.is_valid(psib, psi_axis) else []
+
+        # Normalised poloidal flux coordinate.  The ratio is positive for both
+        # COCOS11 and COCOS17 because numerator and denominator transform alike.
         rho_pol_norm = []
         try:
-            rho_pol_norm = np.sqrt(abs((psi - psi[0])/(psi[-1]-psi[0])))
-        except:
+            denom = psi_boundary - psi_axis
+            rho_pol_norm = np.sqrt(np.clip((psi - psi_axis[:,None]) / denom[:,None], 0.0, None))
+        except Exception:
             pass
 
         nrho = rho_tor_norm.shape[0]
@@ -521,39 +594,81 @@ class imas_core_profiles:
         if self.im.is_valid(nion, nel):
             n_i_total_over_n_e = nion/nel
 
+        # High-confidence thermodynamic quantities directly available in the CDF.
+        # UE/UI/UTHRM are energy densities in J/cm^3.  For an isotropic thermal
+        # species p = 2/3 U.  PPLAS is the TRANSP thermal plasma pressure and
+        # agrees numerically with 2/3*UTHRM for the bundled verification case.
+        ue_m3 = self.im.get_ncvar('UE', self.im.vol_inv)
+        ui_m3 = self.im.get_ncvar('UI', self.im.vol_inv)
+        utherm_m3 = self.im.get_ncvar('UTHRM', self.im.vol_inv)
+        pressure_e_thermal = (2.0/3.0) * ue_m3 if self.im.is_valid(ue_m3) else []
+        pressure_i_total = (2.0/3.0) * ui_m3 if self.im.is_valid(ui_m3) else []
+        pressure_thermal = self.im.get_ncvar('PPLAS')
+        if not self.im.is_valid(pressure_thermal) and self.im.is_valid(utherm_m3):
+            pressure_thermal = (2.0/3.0) * utherm_m3
+
+        # TRANSP UFASTPP is perpendicular fast-ion kinetic energy density; for
+        # two perpendicular degrees of freedom this equals p_perp. UFASTPA is
+        # the parallel kinetic energy density = p_parallel/2.
+        ufast_perp_m3 = self.im.get_ncvar('UFASTPP', self.im.vol_inv)
+        ufast_parallel_m3 = self.im.get_ncvar('UFASTPA', self.im.vol_inv)
+        pressure_perpendicular = []
+        pressure_parallel = []
+        if self.im.is_valid(pressure_thermal, ufast_perp_m3):
+            pressure_perpendicular = pressure_thermal + ufast_perp_m3
+        if self.im.is_valid(pressure_thermal, ufast_parallel_m3):
+            pressure_parallel = pressure_thermal + 2.0*ufast_parallel_m3
+
+        # Additional profile quantities with direct IMAS counterparts.
+        magnetic_shear = self.im.get_ncvar('SHAT')
+        eta_parallel = self.im.get_ncvar('ETA_USE', 0.01)  # ohm*cm -> ohm*m
+        conductivity_parallel = []
+        e_field_parallel = []
+        if self.im.is_valid(eta_parallel):
+            with np.errstate(divide='ignore', invalid='ignore'):
+                conductivity_parallel = np.where(np.abs(eta_parallel) > 0.0, 1.0/eta_parallel, 0.0)
+            if self.im.is_valid(j_ohmic):
+                try:
+                    e_field_parallel = eta_parallel * j_ohmic
+                except Exception:
+                    e_field_parallel = []
+
+        # Total toroidal angular-momentum density.  PPHI is the time/radius
+        # profile (AMOM is only a scalar placeholder in some CDFs, including
+        # 174783Q32).  TRANSP Nt*m*s/cm^3 converts by 1e6 to
+        # kg*m^-1*s^-1, exactly the IMAS momentum_phi unit.
+        momentum_phi = self.im.toroidal_rotation_sign * self.im.get_ncvar('PPHI', self.im.vol_inv)
+
         #ZEFFP(TIME3, X) PLASMA COMPOSITION ZEFF PROFILE
         zeff = self.im.get_ncvar('ZEFFP')
-        
-        #VRPOT(TIME3, XB); V; RADIAL ELECTRICAL POTENTIAL
-        vrpot = self.im.get_ncvar('VRPOT')
-        # GXI(TIME3, X); 1/CM; <GRAD(XI)> FLUX SURF VOL.AVG
-        gxi = self.im.get_ncvar('GXI', scale=1/0.01)
-        efield_rad = []
-        try:
-            n = vrpot.shape[1]
-            vrpot = vrpot[1:n] - vrpot[0:n-1]
-            vol = np.cumsum(gvol)
-            area = np.cumsum(darea)
-            rminor = surface*area/(2*self.im.pi*vol)
-            efield_rad[1:n] = vrpot/(rminor*gxi)  # m to cm ?
-            efield_rad[0] = zefld[1]
-        except:
-            self.logger.info(f'\tfailed to calculate efield_rad '
-                              f'sizes:: vrpot: {len(vrpot)}')
+
+        #VRPOT(TIME3, XB); V; RADIAL ELECTRICAL POTENTIAL. Map XB -> X.
+        vrpot_b = self.im.get_ncvar('VRPOT')
+        phi_potential = []
+        if self.im.is_valid(vrpot_b):
+            try:
+                phi_potential = self.im.interp_radial_profiles(
+                    vrpot_b, coord_xb, coord_x, axis_value=vrpot_b[:,0])
+            except Exception:
+                phi_potential = []
+        # A radial electric field is deliberately not reconstructed here.
+        # VRPOT is preserved as phi_potential; converting -grad(phi) to a
+        # physical radial component requires an explicit metric convention.
+        # The older implementation mixed zone area/volume factors and could
+        # generate inconsistent shapes, so it has been removed.
 
         # Q profile at XB ; Q(TIME3, XB)
-        qtmp = self.im.get_ncvar('Q')
-        q0 = self.im.get_ncvar('Q0')
+        qtmp = q_sign * self.im.get_ncvar('Q')
+        q0 = q_sign * self.im.get_ncvar('Q0')
+        if ntimep != ntimes:
+            q0 = self.im.interp1d_time(self.im.timep, self.im.timesc, q0)
         qprof = []
         if len(qtmp)>1:
            for i in range(ntimep):
-              #interpolate onto centers of zones
-              qprof.append(np.interp(coord_x[i], coord_xb[i], qtmp[i]))
+              qprof.append(np.interp(coord_x[i],
+                                     np.concatenate(([0.0], coord_xb[i])),
+                                     np.concatenate(([q0[i]], qtmp[i]))))
         qprof = np.array(qprof)
-        try:
-           qprof[:,0] = q0
-        except:
-           pass
 
         self.logger.info(f'  Filling profile1d time slices: {ntimep}')
         cp.profiles_1d.resize(ntimep)
@@ -566,19 +681,54 @@ class imas_core_profiles:
           self.im.fill_data(cp.profiles_1d[i].grid.rho_tor_norm, rho_tor_norm, ind=i, name='tho_tor_norm')
           self.im.fill_data(cp.profiles_1d[i].grid.rho_tor, rho_tor, ind=i, name='rho_tor')
           self.im.fill_data(cp.profiles_1d[i].grid.rho_pol_norm, rho_pol_norm, ind=i, name='rho_pol_norm')
-          self.im.fill_data(cp.profiles_1d[i].grid.volume, gvol, ind=i, name='gvol')
+          self.im.fill_data(cp.profiles_1d[i].grid.volume, volume_enclosed, ind=i, name='volume_enclosed')
           self.im.fill_data(cp.profiles_1d[i].grid.psi, psi, ind=i, name='psi')
-          self.im.fill_data(cp.profiles_1d[i].grid.area, grid_area, ind=i, name='grid_area')
+          self.im.fill_data(cp.profiles_1d[i].grid.area, area_enclosed, ind=i, name='area_enclosed')
           self.im.fill_data(cp.profiles_1d[i].grid.surface, surface, ind=i, name='surface')
 
           if len(psi_axis) > i:
               cp.profiles_1d[i].grid.psi_magnetic_axis = psi_axis[i].astype(float)
           if len(psi) > i:
-              cp.profiles_1d[i].grid.psi_boundary = psib[i,-1].astype(float)
+              cp.profiles_1d[i].grid.psi_boundary = psi_boundary[i].astype(float)
 
           #electrons
           self.im.fill_data(cp.profiles_1d[i].electrons.temperature, tel, ind=i, name='tel')
           self.im.fill_data(cp.profiles_1d[i].electrons.density, nel, ind=i, name='nel')
+          eprof = cp.profiles_1d[i].electrons
+          if hasattr(eprof, 'pressure_thermal'):
+              self.im.fill_data(eprof.pressure_thermal, pressure_e_thermal, ind=i, name='pe_thermal')
+          if hasattr(eprof, 'pressure'):
+              # No separate non-thermal electron population is represented here.
+              self.im.fill_data(eprof.pressure, pressure_e_thermal, ind=i, name='pe')
+
+          # Aggregate thermal/anisotropic quantities.
+          p1d = cp.profiles_1d[i]
+          if hasattr(p1d, 't_i_average'):
+              self.im.fill_data(p1d.t_i_average, tion, ind=i, name='t_i_average')
+          if hasattr(p1d, 'n_i_thermal_total'):
+              self.im.fill_data(p1d.n_i_thermal_total, nion, ind=i, name='n_i_thermal_total')
+          if hasattr(p1d, 'pressure_ion_total'):
+              self.im.fill_data(p1d.pressure_ion_total, pressure_i_total, ind=i, name='pressure_ion_total')
+          if hasattr(p1d, 'pressure_thermal'):
+              self.im.fill_data(p1d.pressure_thermal, pressure_thermal, ind=i, name='pressure_thermal')
+          if hasattr(p1d, 'pressure_perpendicular'):
+              self.im.fill_data(p1d.pressure_perpendicular, pressure_perpendicular, ind=i, name='pressure_perpendicular')
+          if hasattr(p1d, 'pressure_parallel'):
+              self.im.fill_data(p1d.pressure_parallel, pressure_parallel, ind=i, name='pressure_parallel')
+          if hasattr(p1d, 'magnetic_shear'):
+              self.im.fill_data(p1d.magnetic_shear, magnetic_shear, ind=i, name='magnetic_shear')
+          if hasattr(p1d, 'conductivity_parallel'):
+              self.im.fill_data(p1d.conductivity_parallel, conductivity_parallel, ind=i, name='conductivity_parallel')
+          if hasattr(p1d, 'e_field') and hasattr(p1d.e_field, 'parallel'):
+              self.im.fill_data(p1d.e_field.parallel, e_field_parallel, ind=i, name='e_field_parallel')
+          if hasattr(p1d, 'phi_potential'):
+              self.im.fill_data(p1d.phi_potential, phi_potential, ind=i, name='phi_potential')
+          # momentum_tor was renamed momentum_phi in DD 3.42.
+          if self.im.dd_at_least(3, 42, 0):
+              if hasattr(p1d, 'momentum_phi'):
+                  self.im.fill_data(p1d.momentum_phi, momentum_phi, ind=i, name='momentum_phi')
+          elif hasattr(p1d, 'momentum_tor'):
+              self.im.fill_data(p1d.momentum_tor, momentum_phi, ind=i, name='momentum_tor')
 
           #ions
           cp.profiles_1d[i].ion.resize(len(ions))
@@ -590,24 +740,65 @@ class imas_core_profiles:
                   self.logger.info(f'\tfilling ion {ion.label}')
               cp.profiles_1d[i].ion[ij].element.resize(1)
               cp.profiles_1d[i].ion[ij].element[0].atoms_n = ion.atoms_n
-              cp.profiles_1d[i].ion[ij].label = ion.label
+              self.im.set_species_name(cp.profiles_1d[i].ion[ij], ion.label)
               arr = len(ion.aas)>i and len(ion.zns)>i and len(ion.zions)>i
               aa = ion.aas[i].astype(float) if arr else ion.a
               z_n = ion.zns[i].astype(float) if arr else ion.z_n
               zion = ion.zions[i].astype(float) if arr else ion.z_ion
               cp.profiles_1d[i].ion[ij].z_ion = zion
               cp.profiles_1d[i].ion[ij].element[0].a = aa
-              cp.profiles_1d[i].ion[ij].element[0].z_n = z_n
+              self.im.set_nuclear_charge(cp.profiles_1d[i].ion[ij].element[0], z_n)
 
               #self.im.fill_data(cp.profiles_1d[i].ion[ij].z_ion_1d, ion.z_ion_1d, ind=i, name='z_ion_1d')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].temperature, ion.temp, ind=i, name='temp')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].density, ion.dens, ind=i, name='dens')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].density_fast, ion.dens_fast, ind=i, name='densf')
               self.im.fill_data(cp.profiles_1d[i].ion[ij].density_thermal, ion.dens_th, ind=i, name='densth')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.radial, ion.vel_rad, ind=i, name='vel_rad')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal, ion.vel_tor, ind=i, name='vel_tor')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal, ion.vel_pol, ind=i, name='vel_pol')
-              self.im.fill_data(cp.profiles_1d[i].ion[ij].rotation_frequency_tor, ion.rot_freq_tor, ind=i, name='rftor')
+              # Thermal species pressure p=n*T, with T in eV and n in m^-3.
+              ion_node = cp.profiles_1d[i].ion[ij]
+              if hasattr(ion_node, 'pressure_thermal') and self.im.is_valid(ion.dens_th, ion.temp):
+                  try:
+                      pth = ion.dens_th * ion.temp * constants.e
+                      self.im.fill_data(ion_node.pressure_thermal, pth, ind=i, name='ion_pressure_thermal')
+                  except Exception:
+                      pass
+              # Radial NCLASS velocity is stored by TRANSP on the XB grid and has
+              # the same number of points as the core-profile X grid.  Keep it for
+              # now; a later cleanup can interpolate XB -> X explicitly.
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.radial,
+                                ion.vel_rad, ind=i, name='vel_rad', chk=len(rho_tor_norm[i]))
+
+              # VPOL*_NC and VTOR*_NC are not X-grid flux profiles in TRANSP.
+              # They are written on RMAJM, the 101-point equatorial-midplane grid
+              # (inboard edge -> magnetic axis -> outboard edge), whereas IMAS
+              # core_profiles ion velocity components use the profiles_1d radial
+              # flux coordinate (50 X points for this run).  Older access layers
+              # accepted the inconsistent shapes, but IMAS-Python DD4 validation
+              # correctly rejects them.  Do not invent a midplane-to-flux-surface
+              # averaging convention here: only fill them if a future TRANSP CDF
+              # provides them directly on the core-profile grid.
+              # Be explicit here rather than relying on fill_data(chk=...).  This
+              # keeps the converter safe even if nc2imas.py from an older checkout
+              # is accidentally mixed with this file.
+              _nr = len(rho_tor_norm[i])
+              _vtor = ion.vel_tor[i] if self.im.is_valid(ion.vel_tor) and len(ion.vel_tor) > i else None
+              _vpol = ion.vel_pol[i] if self.im.is_valid(ion.vel_pol) and len(ion.vel_pol) > i else None
+              if _vtor is not None and not np.isscalar(_vtor) and len(_vtor) == _nr:
+                  self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.toroidal,
+                                    ion.vel_tor, ind=i, name='vel_tor')
+              elif i == 0 and _vtor is not None and not np.isscalar(_vtor):
+                  self.logger.info(f'\t\tskipping vel_tor: source grid has {len(_vtor)} points, core_profiles grid has {_nr}')
+
+              if _vpol is not None and not np.isscalar(_vpol) and len(_vpol) == _nr:
+                  self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.poloidal,
+                                    ion.vel_pol, ind=i, name='vel_pol')
+              elif i == 0 and _vpol is not None and not np.isscalar(_vpol):
+                  self.logger.info(f'\t\tskipping vel_pol: source grid has {len(_vpol)} points, core_profiles grid has {_nr}')
+
+              # OMEGA/OMEGF/OMEGB are TRANSP X-grid quantities and therefore map
+              # directly to the IMAS radial coordinate.
+              self.im.fill_data(cp.profiles_1d[i].ion[ij].rotation_frequency_tor,
+                                ion.rot_freq_tor, ind=i, name='rftor', chk=len(rho_tor_norm[i]))
               #self.im.fill_data(cp.profiles_1d[i].ion[ij].velocity.parallel, ion.vel_par, ind=i, name='vel_par')
 
               #states
@@ -615,7 +806,7 @@ class imas_core_profiles:
               cp.profiles_1d[i].ion[ij].state.resize(nstates)
               for ist, istate in enumerate(ion.states):
                   self.im.fill_data(cp.profiles_1d[i].ion[ij].state[ist].density, istate.sdens, ind=i, name='sdens')
-                  cp.profiles_1d[i].ion[ij].state[ist].label = istate.label
+                  self.im.set_species_name(cp.profiles_1d[i].ion[ij].state[ist], istate.label)
 
           # neutrals
           cp.profiles_1d[i].neutral.resize(len(neutrals))
@@ -627,9 +818,9 @@ class imas_core_profiles:
                   self.logger.info(f'\t\t {neut.label} temp {len(neut.temp)} dens {len(neut.dens)}')
               cp.profiles_1d[i].neutral[j].element.resize(1)
               cp.profiles_1d[i].neutral[j].element[0].atoms_n = neut.atoms_n
-              cp.profiles_1d[i].neutral[j].label = neut.label
+              self.im.set_species_name(cp.profiles_1d[i].neutral[j], neut.label)
               cp.profiles_1d[i].neutral[j].element[0].a = neut.a
-              cp.profiles_1d[i].neutral[j].element[0].z_n = neut.z_n
+              self.im.set_nuclear_charge(cp.profiles_1d[i].neutral[j].element[0], neut.z_n)
 
               self.im.fill_data(cp.profiles_1d[i].neutral[j].temperature, neut.temp, ind=i, name='n0temp')
               self.im.fill_data(cp.profiles_1d[i].neutral[j].density, neut.dens, ind=i, name='n0dens')
@@ -640,13 +831,20 @@ class imas_core_profiles:
           self.im.fill_data(cp.profiles_1d[i].zeff, zeff, ind=i, name='zeff')
           self.im.fill_data(cp.profiles_1d[i].n_i_total_over_n_e, n_i_total_over_n_e, ind=i,name='ni_o_ne')
 
-          self.im.fill_data(cp.profiles_1d[i].j_bootstrap, curbs, ind=i, name='curbs')
-          self.im.fill_data(cp.profiles_1d[i].j_ohmic, j_ohmic, ind=i, name='johmic')
-          self.im.fill_data(cp.profiles_1d[i].j_total, cur_tot, ind=i, name='cur_tot')
-          self.im.fill_data(cp.profiles_1d[i].j_non_inductive, j_nonind, ind=i, name='Jnonind')
-          #self.im.fill_data(cp.profiles_1d[i].j_tor, j_tor, ind=i)
+          self.im.fill_data(cp.profiles_1d[i].j_bootstrap, j_bootstrap, ind=i, name='j_bootstrap_parallel')
+          self.im.fill_data(cp.profiles_1d[i].j_ohmic, j_ohmic, ind=i, name='j_ohmic_parallel')
+          self.im.fill_data(cp.profiles_1d[i].j_total, j_total, ind=i, name='j_total_parallel')
+          self.im.fill_data(cp.profiles_1d[i].j_non_inductive, j_nonind, ind=i, name='j_nonind_parallel')
+          # Total toroidal current density was renamed j_tor -> j_phi
+          # in late DD3.  DD3.39 uses j_tor; DD4.1.1 uses j_phi.
+          if self.im.dd_at_least(3, 42, 0):
+              self.im.fill_data(cp.profiles_1d[i].j_phi, cur_phi, ind=i, name='j_phi')
+          else:
+              self.im.fill_data(cp.profiles_1d[i].j_tor, cur_phi, ind=i, name='j_tor')
 
-          self.im.fill_data(cp.profiles_1d[i].e_field.radial, efield_rad, ind=i, name='efield_rad')
+          # e_field.radial intentionally left empty: VRPOT is preserved as
+          # phi_potential, but converting -grad(phi) requires an explicit
+          # radial metric convention.
 
         self.im.putdb_imas(cp)
         #self.im.putdb_imas_profile(cp, occur)

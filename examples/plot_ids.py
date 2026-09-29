@@ -1,7 +1,15 @@
+#!/usr/bin/python
+"""Example plotting utility for selected quantities in converted IMAS IDSs."""
+
 import os
 import sys
 import numpy as np
 from matplotlib import pyplot as plt
+
+# Keep the example directly runnable without installing transp2imas as a package.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 import imas
 # import MDSplus
@@ -18,9 +26,9 @@ class Tests:
 
     def init_database(self, db, shot, run, backend=None, user=None):
         if backend == 'MDS' or backend =='MDSPLUS':
-            backend = imas.imasdef.MDSPLUS_BACKEND
+            backend = imas.ids_defs.MDSPLUS_BACKEND
         elif backend == 'HDF' or backend == 'HDF5':
-            backend = imas.imasdef.HDF5_BACKEND
+            backend = imas.ids_defs.HDF5_BACKEND
 
         if user is None:
             user = os.getenv('USER')
@@ -116,7 +124,8 @@ class Tests:
 
 if __name__ == '__main__':
     if(len(sys.argv)<3):
-        print('usage: python tests.py  <runid/CDFname> <db(NSTX)> <backend/HDF,MDS> [<name>]')
+        print('usage: python examples/plot_ids.py <runid/CDFname> <db(NSTX)> '
+              '<backend/HDF,MDS> [<name>]')
         sys.exit(1)
 
     runid = sys.argv[1]

@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Populate the IMAS nbi IDS from TRANSP/NUBEAM injector configuration and time traces."""
+
 from nc2imas import *
 
 class imas_nbi:
@@ -26,7 +29,7 @@ class imas_nbi:
 
     def create_ids(self):
         self.im.logger.info('\nnbi')
-        nbi = self.im.ids.get('nbi')
+        nbi = self.im.new_ids('nbi')
         #scalar time
         timesc = self.im.get_ncvar('TIME')
         ntimes = len(timesc)
@@ -61,12 +64,18 @@ class imas_nbi:
             nbu = nbi.unit[i]
             ib = i+1
             stn = f'0{ib}' if ib<=9 else f'{ib}'
-            nbu.name = f"unit {ib}"
+            self.im.set_nbi_unit_identity(
+                nbu, f'unit_{ib}', f'TRANSP NBI unit {ib}'
+            )
 
             if self.im.is_valid(sp_a, sp_zn):
-                nbu.species.a = sp_a
-                nbu.species.z_n = sp_zn
-                nbu.species.label = sp_label
+                nbu.species.a = float(sp_a)
+                # z_n is INT_0D in DD4 (it was FLT_0D in older DDs).
+                self.im.set_nuclear_charge(nbu.species, sp_zn)
+                # 'label' was renamed to 'name' in DD 3.42.
+                # Strip the TRANSP bookkeeping suffix from names such as D_BEAM.
+                sp_name = str(sp_label).replace('_BEAM', '')
+                self.im.set_species_name(nbu.species, sp_name)
 
             beam_times = self.find_beam_times(stn, timesc, nlines)
 

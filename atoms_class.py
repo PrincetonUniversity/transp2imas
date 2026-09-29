@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Atomic-species helpers used while translating TRANSP composition data to IMAS."""
+
 
 from typing import Dict
 import numpy as np
@@ -21,7 +24,7 @@ class atom_base():
         self.nb2 = {'N':'N_BEAM', 'A':'A_BEAM', 'K':'K_BEAM', 'X':'X_BEAM', 'Z':'Z_BEAM'} #'High_Z or heavy ??
         self.batoms = {'H':'H_BEAM', 'D':'D_BEAM', 'T':'T_BEAM', '3':'HE3_BEAM', '4':'HE4_BEAM'}
         self.beams = {**self.batoms, **self.nb2}
-        self.ions = {**self.atoms, 'LITH':'LI', 'C':'C'} #some variables: 3=>HE3; 4=>HE4
+        self.ions = {**self.atoms, 'LITH':'LITH', 'C':'C'} #some variables: 3=>HE3; 4=>HE4
         self.neutrals_wall = {'H':'H_WALL', 'D':'D_WALL', 'T':'T_WALL', '3':'HE3_WALL', '4':'HE4_WALL', 'LITH':'LI_WALL'}
         self.neutrals_volume = {'H':'H_VOLUME', 'D':'D_VOLUME', 'T':'T_VOLUME', '3':'HE3_VOLUME', '4':'HE4_VOLUME', 'LITH':'LI_VOLUME'}
         #  NEON, ARGON, KRYPTON, XENON
@@ -60,9 +63,9 @@ class atom_base():
                         'HE4_VOLUME' : ['HE4_VOLUME',  4.002602,       2.0], #helium4
                         'HE4_MINI'   : ['HE4_MINI',  4.002602,       2.0], #helium4
                         'HE4_FUSION' : ['HE4_FUSION',  4.002602,       2.0], #helium4
-                        'LITH': ['Li',   6.015122,       3.0], #lithium #Li6
-                        'LITH': ['LI_WALL',   6.015122,       3.0], #lithium #Li6
-                        'LITH': ['LI_VOLUME', 6.015122,       3.0], #lithium #Li6
+                        'LITH'      : ['Li',        6.015122, 3.0], # lithium-6 used by TRANSP LITH
+                        'LI_WALL'   : ['LI_WALL',   6.015122, 3.0], # lithium-6 wall neutral
+                        'LI_VOLUME' : ['LI_VOLUME', 6.015122, 3.0], # lithium-6 volume neutral
                         'LI7' : ['Li7',   7.016004,       3.0], #lithium #Li7
                         'AC'  : ['Ac',  227.0000,     89.0], #Ac iostope average
                         'AG'  : ['Ag',  107.8680,     47.0], #Ag
@@ -93,7 +96,7 @@ class atom_base():
                         'CS'  : ['Cs',  132.9054,     55.0], #Cs
                         'CU'  : ['Cu',   63.5460,     29.0], #Cu
                         'DB'  : ['Db',  262.0000,    105.0],
-                        'BY'  : ['Dy',  162.5000,     66.0],
+                        'DY'  : ['Dy',  162.5000,     66.0],
                         'ER'  : ['Er',  167.2600,     68.0],
                         'ES'  : ['Es',  252.0000,     99.0],
                         'EU'  : ['Eu',  151.9600,     63.0],
@@ -104,12 +107,11 @@ class atom_base():
                         'GA'  : ['Ga',   69.7200,     31.0],
                         'GD'  : ['Gd',  157.2500,     64.0],
                         'GE'  : ['Ge',   72.5900,     32.0],
-                        'H'   : ['H ',    1.0079,      1.0],
                         'HE'  : ['He',    4.0026,      2.0],
                         'HF'  : ['Hf',  178.4900,     72.0],
                         'HG'  : ['Hg',  200.5900,     80.0],
                         'HO'  : ['Ho',  164.9304,     67.0],
-                        'HO'  : ['Hs',  265.0000,    108.0],
+                        'HS'  : ['Hs',  265.0000,    108.0],
                         'I'   : ['I ',  126.9045,     53.0],
                         'IN'  : ['In',  114.8200,     49.0],
                         'IR'  : ['Ir',  192.2200,     77.0],
@@ -163,7 +165,7 @@ class atom_base():
                         'SR'  : ['Sr',   87.6200,     38.0], #Sr
                         'TA'  : ['Ta',  180.9479,     73.0], #Ta
                         'TB'  : ['Tb',  158.9254,     65.0], #Tb
-                        'TC'  : ['Tc',   47.9000,     22.0], #Tc
+                        'TC'  : ['Tc',   98.0000,     43.0], #Tc
                         'TE'  : ['Te',  127.6000,     52.0], #Te
                         'TH'  : ['Th',  232.0381,     90.0], #Th
                         'TI'  : ['Ti',   47.9000,     22.0], #Ti

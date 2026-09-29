@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Populate the IMAS lh_antennas IDS from TRANSP lower-hybrid antenna data."""
+
 
 from nc2imas import *
 
@@ -10,7 +13,7 @@ class imas_lh_antennas:
 
     def create_ids(self):
         self.im.logger.info('\nlh_antennas')
-        lha = self.im.ids.get('lh_antennas')
+        lha = self.im.new_ids('lh_antennas')
         sgn = -1 if self.im.iter_ else 1
 
         #scalar time

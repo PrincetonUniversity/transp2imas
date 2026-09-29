@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Populate the IMAS ec_launchers IDS from TRANSP EC launcher inputs and outputs."""
+
 
 
 from nc2imas import *
@@ -12,7 +15,7 @@ class imas_ec_launchers:
     def create_ids(self):
         self.im.logger.info('\nec_launchers')
 
-        ec = self.im.ids.get('ec_launchers')
+        ec = self.im.new_ids('ec_launchers')
         cm2m = 0.01
         pi = self.im.pi
 
@@ -44,7 +47,7 @@ class imas_ec_launchers:
                      arr = True
                   elif n==0:
                      dat = 0.0
-               except:
+               except TypeError:
                   pass
 
                if arr:
@@ -56,37 +59,43 @@ class imas_ec_launchers:
             return dat
 
 
-        self.logger.info(f'#EC beams {nbeams}')
+        self.logger.info(f'#EC beams {nbeams}; target DD {self.im.dd_version}')
         for i in range(nbeams):
             ib = i+1
+            beam = ec.beam[i]
+            self.im.set_ec_beam_identity(
+                beam, f'beam{ib}', f'TRANSP electron-cyclotron beam {ib}'
+            )
+            # DD3 and DD4 both use beam/time as the coordinate for launch
+            # position and steering-angle arrays.
+            beam.time = np.asarray(timesc, dtype=np.float64)
             #frequency. search either FREQECH or FREQECH(i)
             freq = get_namelist_data('FREQECH', float, i, ntimes=ntimes, fill=True)
-            self.im.fill_data(ec.beam[i].frequency.data, freq)
-#           self.im.fill_data(ec.beam[i].frequency.time, timesc)
+            self.im.fill_data(beam.frequency.data, freq)
+            beam.frequency.time = np.asarray(timesc, dtype=np.float64)
 
             #PECIN+1..n(TIME)
-            self.im.fill_data_nc(ec.beam[i].power_launched.data, 'PECIN'+str(ib))
-#            self.im.fill_data(ec.beam[i].power_launched.time, timesc)
+            self.im.fill_data_nc(beam.power_launched.data, 'PECIN'+str(ib))
+            beam.power_launched.time = np.asarray(timesc, dtype=np.float64)
 
             # Only for testing. Disabled by default
             if self.ec_nml_launch:
                if i==0:
                   print('\t..using launch data from namelist')
-               ec.beam[i].name = f'beam{i+1}'
                #r. major radius of source. XECECH in namelist
                launchx = get_namelist_data('XECECH', float, i, cm2m, ntimes, fill=True)
-               self.im.fill_data(ec.beam[i].launching_position.r, launchx, name='launchX')
+               self.im.fill_data(beam.launching_position.r, launchx, name='launchX')
                # height above midplane of source. ZECECH
                launchz = get_namelist_data('ZECECH', float, i, cm2m, ntimes, fill=True)
-               self.im.fill_data(ec.beam[i].launching_position.z, launchz, name='launchZ')
+               self.im.fill_data(beam.launching_position.z, launchz, name='launchZ')
                #Phi location of source (degrees). PHECECH
                launch_phi = get_namelist_data('PHECECH', float, ind=-1, scale=constants.pi/180.0,
                                                 ntimes=ntimes, fill=True)
-               self.im.fill_data(ec.beam[i].launching_position.phi, launch_phi, name='launchPHI')
+               self.im.fill_data(beam.launching_position.phi, launch_phi, name='launchPHI')
 
                angle = 0.0
                angles = np.full(ntimes, angle)
-               self.im.fill_data(ec.beam[i].spot.angle, angles)
+               self.im.fill_data(beam.spot.angle, angles)
                si, sj = 0, 1
                if math.cos(angle)**2>0.5 :
                   si, sj = 1, 0
@@ -96,24 +105,26 @@ class imas_ec_launchers:
                curv_hor = get_namelist_data('ECB_CURV_HOR', float, i, cm2m, ntimes, fill=True)
                curv_vert = get_namelist_data('ECB_CURV_VERT', float, i, cm2m, ntimes, fill=True)
                if self.im.is_valid(spot_hor, spot_vert, ind=ntimes-1):
-                  ec.beam[i].spot.size.resize((2,ntimes));
-                  ec.beam[i].spot.size[si,:] = spot_hor
-                  ec.beam[i].spot.size[sj,:] = spot_vert
+                  beam.spot.size.resize((2,ntimes));
+                  beam.spot.size[si,:] = spot_hor
+                  beam.spot.size[sj,:] = spot_vert
 
                if self.im.is_valid(curv_hor, curv_vert, ind=ntimes-1):
                   if np.all(curv_hor) and np.all(curv_vert) :
                      curv_hor = -1.0/curv_hor
                      curv_vert = -1.0/curv_vert
-                  ec.beam[i].phase.curvature.resize((2,ntimes));
-                  ec.beam[i].phase.curvature[si,:] = curv_hor
-                  ec.beam[i].phase.curvature[sj,:] = curv_vert
+                  beam.phase.curvature.resize((2,ntimes));
+                  beam.phase.curvature[si,:] = curv_hor
+                  beam.phase.curvature[sj,:] = curv_vert
             # --- above for testing only ---
 
-            # using mode from namelist
+            # RFMODECH is the launched O-mode power fraction in TRANSP.
+            # DD3.39 represents the dominant mode with beam/mode (and later
+            # DD3 revisions also have beam/o_mode_fraction).  DD4 removes mode;
+            # DD4.1 stores the fraction under beam/polarization.
             rfmode = get_namelist_data('RFMODECH', float, i)
             if rfmode is not None:
-               # extra ordinary mode -1; ordinary mode 1
-               ec.beam[i].mode = -1 if (rfmode<0.01) else 1
+               self.im.set_ec_mode(beam, rfmode, timesc)
 
             # fmp needs to check the code below for a number of cases with different B, I geometry
             #steering_angle_tor [rad]. Azimuthal launch angle
@@ -135,8 +146,8 @@ class imas_ec_launchers:
                beta = np.arcsin(np.sin(theta)*np.sin(phi-pi))
                cosbeta = -np.cos(beta)
                alpha = np.where(abs(cosbeta)>eps, np.arcsin(np.cos(pi-theta)/cosbeta), 0)
-               self.im.fill_data(ec.beam[i].steering_angle_tor, beta)
-               self.im.fill_data(ec.beam[i].steering_angle_pol, alpha)
+               self.im.fill_data(beam.steering_angle_tor, beta)
+               self.im.fill_data(beam.steering_angle_pol, alpha)
 
         self.im.putdb_imas(ec)
         self.logger.info('Done')

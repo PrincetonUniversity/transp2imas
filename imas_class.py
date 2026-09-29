@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""IMAS database-entry helpers shared by the individual IDS writer modules."""
+
 import os
 import sys
 from datetime import datetime
@@ -9,7 +12,7 @@ import imas
 
 class imas_connection:
     def __init__(self, db:str, shot:int, run:int=0, backend:str=None,
-                 occur:int=0, user:str=None, new_db:bool=False):
+                 occur:int=0, user:str=None, new_db:bool=False, dd_version:str=None):
         self.imas_dbname = db
         self.shot = shot
         self.run = run
@@ -17,13 +20,51 @@ class imas_connection:
         self.create_new = new_db
         self.user = user
         self.backend = backend
-        self.dd_version = str(os.getenv('IMAS_VERSION'))
-        self.dd_major_version = str(os.getenv('IMAS_VERSION')[0])
+        # Select the target Data Dictionary explicitly when requested.  This is
+        # independent of the installed IMAS-Python version: modern IMAS-Python
+        # can create/write IDS objects for several DD versions in one environment.
+        requested_dd = None if dd_version in (None, '', 'auto') else str(dd_version)
+        env_dd = os.getenv('IMAS_VERSION') or os.getenv('IMAS_DD_VERSION')
+        if requested_dd:
+            self.dd_version = requested_dd
+        elif env_dd:
+            self.dd_version = env_dd
+        else:
+            # Use the actual IMAS-Python default instead of assuming DD4.
+            self.dd_version = str(imas.IDSFactory().version)
+        self.dd_version_tuple = self._parse_dd_version(self.dd_version)
+        self.dd_major_version = str(self.dd_version_tuple[0])
         self.ids = None
         self.outdir = ''
         self.iter_ = True if db[:4].upper()=='ITER' else False
         self.init_imas_database()
         self.get_imas_database()
+
+
+    @staticmethod
+    def _parse_dd_version(version):
+        """Convert a DD version string such as 3.39.0 or 4.1.1 to a tuple."""
+        vals = []
+        for token in str(version).split('.')[:3]:
+            digits = ''.join(ch for ch in token if ch.isdigit())
+            vals.append(int(digits) if digits else 0)
+        while len(vals) < 3:
+            vals.append(0)
+        return tuple(vals)
+
+    def dd_at_least(self, major, minor=0, patch=0):
+        return self.dd_version_tuple >= (int(major), int(minor), int(patch))
+
+    def dd_before(self, major, minor=0, patch=0):
+        return self.dd_version_tuple < (int(major), int(minor), int(patch))
+
+    @property
+    def is_dd4(self):
+        return self.dd_version_tuple[0] >= 4
+
+    @property
+    def is_dd3(self):
+        return self.dd_version_tuple[0] == 3
 
     def print_debug(self, msg:str='', force=False):
         print(msg)
@@ -41,9 +82,9 @@ class imas_connection:
 
         dbpath = diry + '/' + self.imas_dbname
         dbpath = dbpath + '/' + self.dd_major_version
-        if self.backend == imas.imasdef.HDF5_BACKEND:
+        if self.backend == imas.ids_defs.HDF5_BACKEND:
             dbpath = dbpath + '/' + str(self.shot) + '/' + str(self.run)
-        elif self.backend == imas.imasdef.MDSPLUS_BACKEND:
+        elif self.backend == imas.ids_defs.MDSPLUS_BACKEND:
             dbpath = dbpath + '/0/' #occur?
         self.outdir = dbpath
 
@@ -54,9 +95,9 @@ class imas_connection:
             return
         mkdir = False
         if self.backend=='HDF5' or self.backend=='HDF':
-            self.backend = imas.imasdef.HDF5_BACKEND
+            self.backend = imas.ids_defs.HDF5_BACKEND
         elif self.backend=='MDS' or self.backend=='MDSPLUS':
-            self.backend = imas.imasdef.MDSPLUS_BACKEND
+            self.backend = imas.ids_defs.MDSPLUS_BACKEND
             mkdir = True
 
         if not self.user:
@@ -68,7 +109,7 @@ class imas_connection:
 
         #TODO thread lock
         if self.ids is None:
-            if self.shot > 214747 and self.backend==imas.imasdef.MDSPLUS_BACKEND:
+            if self.shot > 214747 and self.backend==imas.ids_defs.MDSPLUS_BACKEND:
                 print('adjusting shot number for MDS backend')
                 self.shot = self.shot%214747
             if mkdir and not os.path.exists(self.outdir):
@@ -76,16 +117,26 @@ class imas_connection:
 
             try:
                 #self.ids = imas.ids(self.shot, self.run, 0, 0)
+                # IMAS-Python API. The legacy pulse/run constructor remains supported
+                # and is useful here because transp2imas already exposes database, pulse,
+                # run and user independently. dd_version selects the Data Dictionary; when
+                # unset IMAS-Python uses its configured default.
+                kwargs = {}
+                if self.dd_version:
+                    kwargs["dd_version"] = self.dd_version
                 self.ids = imas.DBEntry(
-                     self.backend,
-                     self.imas_dbname,
-                     self.shot,
-                     self.run,
-                     self.user,
-                     data_version=self.dd_major_version,
-                )                
-            except:
-                raise Exception('Error initializing IMAS database')
+                    self.backend, self.imas_dbname, self.shot, self.run,
+                    self.user, **kwargs
+                )
+                # Keep the converter's schema switches synchronized with the
+                # actual factory used by the DBEntry.
+                self.dd_version = str(self.ids.factory.version)
+                self.dd_version_tuple = self._parse_dd_version(self.dd_version)
+                self.dd_major_version = str(self.dd_version_tuple[0])
+            except Exception as exc:
+                raise RuntimeError(
+                    f'Error initializing IMAS database for DD {self.dd_version}'
+                ) from exc
 
     def get_imas_database(self):
         if not self.ids:
@@ -93,37 +144,38 @@ class imas_connection:
 
         if self.create_new:
             try:
-                #status, idx = self.ids.create_env_backend(self.user,self.imas_dbname,
-                #                            os.environ['IMAS_VERSION'], self.backend)
-                status, idx = self.ids.create()
-            except Exception:
-                status = 1
-                import traceback
-                traceback.print_exc(file=sys.stdout)
-            if status != 0:
-                self.print_debug('Error creating new databse using input:')
-                raise sys.exit(1)
+                # IMAS-Python create()/open() raise on failure; they do not return
+                # the old Access-Layer (status, index) tuple.
+                self.ids.create()
+            except Exception as exc:
+                self.print_debug('Error creating new database using input:')
+                raise RuntimeError('Failed to create IMAS database entry') from exc
         else:
-            #status, idx = self.ids.open_env_backend(self.user,self.imas_dbname,
-            #                           os.environ['IMAS_VERSION'], self.backend)
-            status, idx = self.ids.open()
-            self.print_debug(f'Attempting to open existing databse for run {self.run}')
-            if status != 0:
+            self.print_debug(f'Attempting to open existing database for run {self.run}')
+            try:
+                self.ids.open()
+            except Exception as exc:
                 mes = f'\n ***Error opening database for run {self.run}.'
-                mes = mes + ' Make sure it exists, else use -new'
-                raise Exception(mes)
+                mes += ' Make sure it exists, else use -new'
+                raise RuntimeError(mes) from exc
 
+
+    def new_ids(self, ids_name: str):
+        """Create an empty IDS using the Data Dictionary attached to this DBEntry."""
+        if not self.ids:
+            raise TypeError('database entry is not valid')
+        return self.ids.factory.new(ids_name)
 
     def putdb_imas(self, ids):
         if ids:
-            ids.put(self.occur)
+            self.ids.put(ids, occurrence=self.occur)
         else:
             raise TypeError('ids not valid')
 
     def putdb_imas_(self, ids):
         for i in range(3):
            if ids:
-               ids.put(i) #self.occur)
+               self.ids.put(ids, occurrence=i) # self.occur
            else:
                raise TypeError('ids not valid')
 
@@ -133,7 +185,7 @@ class imas_connection:
          NOTE: this overrides self.occur
         '''
         if ids and isinstance(occur, int):
-            ids.put(occur)
+            self.ids.put(ids, occurrence=occur)
         else:
             raise TypeError('ids/occur not valid')
 

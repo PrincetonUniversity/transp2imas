@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Populate the IMAS ic_antennas IDS from TRANSP ion-cyclotron antenna data."""
+
 
 from nc2imas import *
 
@@ -10,7 +13,7 @@ class imas_ic_antennas:
 
     def create_ids(self):
         self.im.logger.info('\nic_antennas')
-        ica = self.im.ids.get('ic_antennas')
+        ica = self.im.new_ids('ic_antennas')
 
         #scalar time
         timesc = self.im.get_ncvar('TIME')
@@ -33,24 +36,33 @@ class imas_ic_antennas:
             ant = ica.antenna[i]
             ia = i+1
             sta = f'{ia}'
+            # waves/coherent_wave/identifier/antenna_name must reference the
+            # corresponding IC antenna name.
+            if hasattr(ant, 'name'):
+                ant.name = f'antenna{ia}'
+            if hasattr(ant, 'description'):
+                ant.description = f'TRANSP ion-cyclotron antenna {ia}'
 
-            #frequency
+            # frequency
             self.im.fill_data_nc(ant.frequency.data, f'FREQA{sta}')
+            ant.frequency.time = np.asarray(timesc, dtype=np.float64)
 
-            #power launched
+            # power launched
             self.im.fill_data_nc(ant.power_launched.data, f'PICHA{sta}')
+            ant.power_launched.time = np.asarray(timesc, dtype=np.float64)
 
-            #power_forward. Forward power arriving to the back of the antenna
-            # in TRANSP there is only launched power, but users fill the UFILES with the forward power.
-            # when TRANSP runs the IC code, it assumes that injected power is the forward power. 
+            # Forward power arriving at the antenna.  TRANSP uses PICHA as the
+            # injected/forward power supplied to the IC calculation.
             self.im.fill_data_nc(ant.power_forward.data, f'PICHA{sta}')
+            ant.power_forward.time = np.asarray(timesc, dtype=np.float64)
 
         if nant > 0:
-            #power launched
             self.im.fill_data_nc(ica.power_launched.data, 'PICHTOT')
-
+            ica.power_launched.time = np.asarray(timesc, dtype=np.float64)
             self.im.putdb_imas(ica)
             self.logger.info('Done')
+        else:
+            self.logger.info('ic_antennas: no PICHAj output found; IDS not written')
 
 
 if __name__ == '__main__':

@@ -1,0 +1,9 @@
+file: /mnt/data/v84_work/transp2imas/174783Q32.CDF
+grid: (422, 50) surface: (422, 50)
+PBE -> BPTE: max relative integral error 3.726e-07
+PBI -> BPTI: max relative integral error 4.683e-07
+PBTH -> BPTH: max relative integral error 4.445e-03
+EPTR_OBS: finite=True edge range=[2.726884e+19,2.200375e+20]
+EETR_OBS: finite=True edge range=[5.968515e+03,2.277020e+05]
+IETR_OBS: finite=True edge range=[-2.223891e+04,1.578532e+05]
+AMTR_OBS: finite=True edge range=[-8.165717e-02,1.658788e-01]
