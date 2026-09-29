@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Example reader for inspecting IDS data through the legacy-style workflow."""
+
 import imas
 import numpy
 import sys

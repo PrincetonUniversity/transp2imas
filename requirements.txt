@@ -1,0 +1,7 @@
+numpy
+scipy
+netCDF4
+f90nml
+matplotlib
+PyYAML
+imas-python

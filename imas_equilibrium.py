@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Populate the IMAS equilibrium IDS, including COCOS-aware signs and TRANSP geometry."""
+
 
 from nc2imas import *
 #from multiprocessing import Pool
@@ -115,11 +118,15 @@ class imas_equilibrium:
                rsurf[j,:] = rcos[0,j]
                ysurf[j,:] = ycos[0,j]
                for ith in range(ntheta-1):
-                  th = -self.im.pi + 2*ith*self.im.pi/(ntheta-1)  #as in TRANSP
-                  inv_grid_theta[ith] = th
+                  theta_target = -self.im.pi + 2*ith*self.im.pi/(ntheta-1)
+                  inv_grid_theta[ith] = theta_target
+                  # DD4/COCOS17 polar theta is clockwise.  TRANSP Fourier
+                  # moments use the geometrical CCW angle, so evaluate the
+                  # moments at the corresponding raw angle.
+                  th_raw = self.im.theta_raw_from_target * theta_target
                   for k in range(1, nmoments):
-                     ct = np.cos(k*th)
-                     st = np.sin(k*th)
+                     ct = np.cos(k*th_raw)
+                     st = np.sin(k*th_raw)
                      rsurf[j,ith] += rcos[k,j]*ct + rsin[k,j]*st
                      ysurf[j,ith] += ycos[k,j]*ct + ysin[k,j]*st
 
@@ -269,7 +276,7 @@ class imas_equilibrium:
 
     def create_ids(self):
         self.im.logger.info('\nequilibrium')
-        eqm = self.im.ids.get('equilibrium')
+        eqm = self.im.new_ids('equilibrium')
         cm2m = 0.01
         pi = constants.pi  #scipy
         #scalar time
@@ -286,20 +293,27 @@ class imas_equilibrium:
 
         nprof = coord_x.shape[1]
 
-        currents = self.im.get_ncvar('PCURC', interp=True) #(TIME)
+        ip_sign = self.im.ip_sign
+        bt_sign = self.im.bt_sign
+        psi_sign = self.im.psi_sign
+        phi_sign = self.im.phi_sign
+        q_sign = self.im.q_sign
+        f_sign = self.im.f_sign
+        currents = ip_sign * self.im.get_ncvar('PCURC', interp=True) #(TIME)
         raxis = self.im.get_ncvar('RAXIS', scale=cm2m, interp=True) #RAXISEQ
         yaxis = self.im.get_ncvar('YAXIS', scale=cm2m, interp=True) #YAXISEQ
 
         # PSI0_TR(TIME); Wb/rad ; Psi_poloidal(axis) in simulation
-        psi_axis = self.im.get_ncvar('PSI0_TR', scale=2*pi, interp=True)
+        psi_axis = psi_sign * self.im.get_ncvar('PSI0_TR', scale=2*pi, interp=True)
 
-        q95 = self.im.get_ncvar('Q95', interp=True)
-        qaxis  = self.im.get_ncvar('Q0', interp=True)
+        q95 = q_sign * self.im.get_ncvar('Q95', interp=True)
+        qaxis  = q_sign * self.im.get_ncvar('Q0', interp=True)
         li3 = self.im.get_ncvar('LI_3', interp=True)
         bpeq = self.im.get_ncvar('BETAT', interp=True) #poloidal beta
         btor = self.im.get_ncvar('BTEQ', interp=True) #toroidal beta
         #Zone volume
         gvol = self.im.get_ncvar('DVOL', 1.0e-6) #(TIME3,X) cm^3
+        volume_enclosed = self.im.cumulative_zone_quantity(gvol)
         #plasma volume
         pvol = self.im.get_ncvar('PVOL', 1.0e-6, interp=True) #(TIME) cm^3
         if not self.im.is_valid(gvol, pvol, name='vol'):
@@ -329,13 +343,14 @@ class imas_equilibrium:
         try:
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
             a = np.sqrt(area/pi)
-            beta_tor_norm = 1.0e8*btor*a*bz/currents
+            beta_tor_norm = 1.0e8*btor*a*(bt_sign*bz)/currents
         except:
             pass
 
         #Area of the LCFS poloidal cross section
         #ZONE CROSS SECTIONAL AREA;(TIME3,X) cm^2
         darea = self.im.get_ncvar('DAREA', 1.0e-4)
+        area_enclosed = self.im.cumulative_zone_quantity(darea)
 
         #Surface area of the toroidal flux surface
         #FLUX SURFACE AREA;(TIME3,X) cm^2
@@ -379,18 +394,21 @@ class imas_equilibrium:
         triang_lob = self.im.interp1d_time(timesc, timep, triang_lo, ind2=-1)
         triang_upb = self.im.interp1d_time(timesc, timep, triang_up, ind2=-1)
 
-        bdry_sepx_psi = self.im.get_ncvar('PBPMHD', 2.0*pi, interp=True)
+        bdry_sepx_psi = psi_sign * self.im.get_ncvar('PBPMHD', 2.0*pi, interp=True)
         psi = self.im.get_ncvar('PLFLX2PI')
         if not self.im.is_valid(psi):
             psi = self.im.get_ncvar('PLFLX', 2.*pi) #(TIME3, XB)
+        if self.im.is_valid(psi):
+            psi = psi_sign * psi
 
         # add psi at axis PSI0_TR(TIME)
         if self.im.is_valid(psi, psi_axis, ind=ntimes-1):
-            psi = psi + np.tile(psi_axis[None,:].T, nprof)
+            psi = psi + psi_axis[:,None]
 
-        phi = self.im.get_ncvar('TRFLX', 2.*pi)
-        qpsi = self.im.get_ncvar('Q')
-        pres = self.im.get_ncvar('PTOWB') #PPLAS'
+        # TRFLX is already the full toroidal flux in Wb (not Wb/rad).
+        phi = phi_sign * self.im.get_ncvar('TRFLX')
+        qpsi = q_sign * self.im.get_ncvar('Q')
+        pres_x = self.im.get_ncvar('PTOWB') # PPLAS, on X
         fbz = self.im.get_ncvar('GFUN')
 
         nprof1d = 0
@@ -402,7 +420,7 @@ class imas_equilibrium:
 
         #(TIME) TESLA*CM. vac field
         bzxR = self.im.get_ncvar('BZXR', cm2m, interp=True)
-        b_field_tor = self.im.operate_arrays(bzxR, '/', raxis)
+        b_field_tor = bt_sign * self.im.operate_arrays(bzxR, '/', raxis)
 
         #RMJMP flux surface centers
         geom_axisr = self.im.get_ncvar('RMJMP', cm2m)
@@ -412,12 +430,77 @@ class imas_equilibrium:
         fprof = []
         try:
             self.logger.info(f'nprof1d {nprof1d} bzxR {bzxR.shape} fbz {fbz.shape}')
-            fprof = fbz * bzxR[:,None] # BZXR*FBZ
+            fprof = f_sign * fbz * bzxR[:,None] # signed R*B_phi
         except:
             pass
 
-        #Normalised tor flux coord
-        rho_tor_norm = coord_x #np.multiply(coord_x, coord_x)
+        # equilibrium profiles_1d is naturally a flux-surface (XB) grid because
+        # psi, phi, q, F, shaping and SURF are all TRANSP boundary quantities.
+        # Map quantities stored on X zone centres to XB before writing the IDS.
+        pres = self.im.interp_radial_profiles(pres_x, coord_x, coord_xb)
+        bf_ave = self.im.interp_radial_profiles(bf_ave, coord_x, coord_xb)
+        bf_max = self.im.interp_radial_profiles(bf_max, coord_x, coord_xb)
+        bf_min = self.im.interp_radial_profiles(bf_min, coord_x, coord_xb)
+        fs_vol_ave2 = self.im.interp_radial_profiles(fs_vol_ave2, coord_x, coord_xb)
+        fs_ave = self.im.interp_radial_profiles(fs_ave, coord_x, coord_xb)
+        fs_ave_gm7 = self.im.interp_radial_profiles(fs_ave_gm7, coord_x, coord_xb)
+        fs_vol_ave1 = self.im.interp_radial_profiles(fs_vol_ave1, coord_x, coord_xb)
+
+        # Normalised toroidal-flux coordinate on the same XB grid.
+        rho_tor_norm = coord_xb
+
+        # Additional equilibrium profiles directly supported by the CDF/DD.
+        psi_norm = []
+        if self.im.is_valid(psi):
+            try:
+                denom = psi[:,-1] - psi_axis
+                psi_norm = np.divide(psi - psi_axis[:,None], denom[:,None],
+                                     out=np.zeros_like(psi),
+                                     where=np.abs(denom[:,None]) > 0.0)
+            except Exception:
+                psi_norm = []
+
+        # TRANSP rho_tor = sqrt(Phi/(pi*B0)).  Phi and physical B0 have the
+        # same sign in a consistent convention, leaving a positive metric rho.
+        rho_tor = []
+        try:
+            b0_signed = bt_sign * bz
+            rho_tor = np.sqrt(np.clip(phi/(pi*b0_signed[:,None]), 0.0, None))
+        except Exception:
+            rho_tor = []
+
+        dpsi_drho_tor = self.im.radial_gradient(psi, rho_tor) \
+            if self.im.is_valid(psi, rho_tor) else []
+        dpressure_dpsi = self.im.radial_gradient(pres, psi) \
+            if self.im.is_valid(pres, psi) else []
+        df_dpsi = self.im.radial_gradient(fprof, psi) \
+            if self.im.is_valid(fprof, psi) else []
+        f_df_dpsi = fprof * df_dpsi if self.im.is_valid(fprof, df_dpsi) else []
+
+        # Current-density/shear/mass profiles are X-centred in TRANSP; map to
+        # the XB flux-surface grid used by equilibrium/profiles_1d.
+        jphi_x = ip_sign * self.im.get_ncvar('CUR', self.im.area_inv)
+        jphi = self.im.interp_radial_profiles(jphi_x, coord_x, coord_xb,
+                                              axis_value=jphi_x[:,0]) \
+            if self.im.is_valid(jphi_x) else []
+        jb_x = self.im.get_ncvar('PLJB', self.im.area_inv)
+        jparallel_x = []
+        if self.im.is_valid(jb_x, bz):
+            try:
+                jparallel_x = self.im.jparallel_sign * jb_x / bz[:,None]
+            except Exception:
+                jparallel_x = []
+        jparallel = self.im.interp_radial_profiles(jparallel_x, coord_x, coord_xb,
+                                                   axis_value=jparallel_x[:,0]) \
+            if self.im.is_valid(jparallel_x) else []
+        shear_x = self.im.get_ncvar('SHAT')
+        magnetic_shear = self.im.interp_radial_profiles(shear_x, coord_x, coord_xb,
+                                                        axis_value=shear_x[:,0]) \
+            if self.im.is_valid(shear_x) else []
+        mass_density_x = self.im.get_ncvar('PMASS', 1.0e3)  # g/cm3 -> kg/m3
+        mass_density = self.im.interp_radial_profiles(mass_density_x, coord_x, coord_xb,
+                                                      axis_value=mass_density_x[:,0]) \
+            if self.im.is_valid(mass_density_x) else []
 
         rgrid = self.im.get_ncvar('RGRID', scale=cm2m)
         zgrid = self.im.get_ncvar('ZGRID', scale=cm2m)
@@ -475,15 +558,35 @@ class imas_equilibrium:
             if len(raxis) > it:
                 eqm.time_slice[it].global_quantities.magnetic_axis.r = raxis[it].astype(float)
                 eqm.time_slice[it].global_quantities.magnetic_axis.z = yaxis[it].astype(float)
-            #total toroidal magnetic field at the magnetic axis
+            # Total toroidal magnetic field at the magnetic axis.
+            # DD 3.42+ renamed b_field_tor -> b_field_phi.
             if len(b_field_tor) > it:
-                eqm.time_slice[it].global_quantities.magnetic_axis.b_field_tor = b_field_tor[it].astype(float)
+                magnetic_axis = eqm.time_slice[it].global_quantities.magnetic_axis
+                b_axis = b_field_tor[it].astype(float)
+                if self.im.dd_at_least(3, 42, 0):
+                    magnetic_axis.b_field_phi = b_axis
+                else:
+                    magnetic_axis.b_field_tor = b_axis
 
             if len(psi_axis) > it:
-                eqm.time_slice[it].global_quantities.psi_axis = psi_axis[it].astype(float)
-            #last  or ALCFSMHD ??
+                gq = eqm.time_slice[it].global_quantities
+                psi_ax = psi_axis[it].astype(float)
+                # DD 4.1 renamed psi_axis -> psi_magnetic_axis.
+                if self.im.dd_at_least(4, 1, 0):
+                    gq.psi_magnetic_axis = psi_ax
+                else:
+                    gq.psi_axis = psi_ax
+            # Selected plasma-boundary poloidal flux.  DD4 stores the preferred
+            # value under time_slice/boundary/psi; keep the deprecated global
+            # node as a fallback for older dictionaries.
             if len(psi) > it:
-                eqm.time_slice[it].global_quantities.psi_boundary = psi[it,-1].astype(float)
+                psi_bnd = psi[it,-1].astype(float)
+                boundary = eqm.time_slice[it].boundary
+                if hasattr(boundary, 'psi'):
+                    boundary.psi = psi_bnd
+                gq = eqm.time_slice[it].global_quantities
+                if hasattr(gq, 'psi_boundary'):
+                    gq.psi_boundary = psi_bnd
 
             if len(q95) > it:
                 eqm.time_slice[it].global_quantities.q_95 = q95[it].astype(float)
@@ -496,11 +599,16 @@ class imas_equilibrium:
             if len(btor) >it:
                 eqm.time_slice[it].global_quantities.beta_tor = btor[it].astype(float)
             if len(beta_tor_norm):
-                eqm.time_slice[it].global_quantities.beta_normal = beta_tor_norm[it].astype(float)
+                gq = eqm.time_slice[it].global_quantities
+                # DD3.39 uses beta_normal; DD4 uses beta_tor_norm.
+                if self.im.dd_at_least(4, 0, 0):
+                    gq.beta_tor_norm = beta_tor_norm[it].astype(float)
+                else:
+                    gq.beta_normal = beta_tor_norm[it].astype(float)
             if len(pvol) > it:
                 eqm.time_slice[it].global_quantities.volume = pvol[it].astype(float)
             if len(darea) > it:
-                eqm.time_slice[it].global_quantities.area = darea[it,-1].astype(float)
+                eqm.time_slice[it].global_quantities.area = area_enclosed[it,-1].astype(float)
             #last ??
             if len(surface) > it:
                 eqm.time_slice[it].global_quantities.surface = surface[it,-1].astype(float)
@@ -509,7 +617,7 @@ class imas_equilibrium:
                 eqm.time_slice[it].global_quantities.energy_mhd = emhd[it].astype(float)
 
             #2D psi
-            psirz = self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
+            psirz = psi_sign * self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
 
             rbound, ybound = self.convert_moments_bdry(nthetab, it)
             #rbound, ybound = self.trace_boundary(psirz, rgrid, zgrid, it, nr, nz)
@@ -526,8 +634,14 @@ class imas_equilibrium:
                eqm.time_slice[it].boundary.geometric_axis.r = geom_rz[0]
                eqm.time_slice[it].boundary.geometric_axis.z = geom_rz[1]
 
-            if len(bdry_sepx_psi) >it:
-                eqm.time_slice[it].boundary_separatrix.psi = bdry_sepx_psi[it].astype(float)
+            if len(bdry_sepx_psi) > it:
+                # In DD4 the legacy boundary_separatrix structure is removed;
+                # the selected separatrix/boundary is represented by boundary.
+                bpsi = bdry_sepx_psi[it].astype(float)
+                if self.im.dd_at_least(4, 0, 0):
+                    eqm.time_slice[it].boundary.psi = bpsi
+                else:
+                    eqm.time_slice[it].boundary_separatrix.psi = bpsi
 
             if len(triangb) > it:
                 eqm.time_slice[it].boundary.triangularity = triangb[it].astype(float)
@@ -546,8 +660,8 @@ class imas_equilibrium:
             self.im.fill_data(iprof.q, qpsi, ind=it, name='qpsi')
             self.im.fill_data(iprof.f, fprof, ind=it, name='fprof')
             self.im.fill_data(iprof.pressure, pres, ind=it, name='pres')
-            self.im.fill_data(iprof.volume, gvol, ind=it, name='vol')
-            self.im.fill_data(iprof.area, darea, ind=it, name='area')
+            self.im.fill_data(iprof.volume, volume_enclosed, ind=it, name='volume_enclosed')
+            self.im.fill_data(iprof.area, area_enclosed, ind=it, name='area_enclosed')
             self.im.fill_data(iprof.surface, surface, ind=it, name='surface')
             self.im.fill_data(iprof.b_field_average, bf_ave, ind=it, name='bf_ave')
             self.im.fill_data(iprof.b_field_max, bf_max, ind=it, name='bf_max')
@@ -558,6 +672,26 @@ class imas_equilibrium:
             self.im.fill_data(iprof.gm9, fs_vol_ave1, ind=it, name='gm9')
 
             self.im.fill_data(iprof.rho_tor_norm, rho_tor_norm, ind=it, name='rho_tor_norm')
+            if hasattr(iprof, 'psi_norm'):
+                self.im.fill_data(iprof.psi_norm, psi_norm, ind=it, name='psi_norm')
+            if hasattr(iprof, 'rho_tor'):
+                self.im.fill_data(iprof.rho_tor, rho_tor, ind=it, name='rho_tor')
+            if hasattr(iprof, 'dpsi_drho_tor'):
+                self.im.fill_data(iprof.dpsi_drho_tor, dpsi_drho_tor, ind=it, name='dpsi_drho_tor')
+            if hasattr(iprof, 'dpressure_dpsi'):
+                self.im.fill_data(iprof.dpressure_dpsi, dpressure_dpsi, ind=it, name='dpressure_dpsi')
+            if hasattr(iprof, 'f_df_dpsi'):
+                self.im.fill_data(iprof.f_df_dpsi, f_df_dpsi, ind=it, name='f_df_dpsi')
+            if self.im.dd_at_least(3, 42, 0) and hasattr(iprof, 'j_phi'):
+                self.im.fill_data(iprof.j_phi, jphi, ind=it, name='j_phi')
+            elif hasattr(iprof, 'j_tor'):
+                self.im.fill_data(iprof.j_tor, jphi, ind=it, name='j_tor')
+            if hasattr(iprof, 'j_parallel'):
+                self.im.fill_data(iprof.j_parallel, jparallel, ind=it, name='j_parallel')
+            if hasattr(iprof, 'magnetic_shear'):
+                self.im.fill_data(iprof.magnetic_shear, magnetic_shear, ind=it, name='magnetic_shear')
+            if hasattr(iprof, 'mass_density'):
+                self.im.fill_data(iprof.mass_density, mass_density, ind=it, name='mass_density')
             self.im.fill_data(iprof.elongation, elong, ind=it, name='elong')
             self.im.fill_data(iprof.squareness_upper_outer, square_up, ind=it, name='square_up')
             self.im.fill_data(iprof.squareness_lower_outer, square_lo, ind=it, name='square_lo')
@@ -590,12 +724,23 @@ class imas_equilibrium:
 
             if self.im.is_valid(bfield, name='bfield'):
                 bfield = bfield.reshape((3,nz,nr))
+                # TRANSP field-orientation controls apply differently to the
+                # poloidal and toroidal components.  B_R/B_Z follow Ip, while
+                # B_phi follows the toroidal-field direction.
+                b_r = self.im.poloidal_field_sign * bfield[0]
+                b_phi = bt_sign * bfield[1]
+                b_z = self.im.poloidal_field_sign * bfield[2]
                 prof2.b_field_r.resize((nr, nz))
-                prof2.b_field_r = bfield[0].T
-                prof2.b_field_tor.resize((nr, nz))
-                prof2.b_field_tor = bfield[1].T
+                prof2.b_field_r = b_r.T
+                # DD3.39 uses b_field_tor; DD4.1.1 uses b_field_phi.
+                if self.im.dd_at_least(3, 42, 0):
+                    prof2.b_field_phi.resize((nr, nz))
+                    prof2.b_field_phi = b_phi.T
+                else:
+                    prof2.b_field_tor.resize((nr, nz))
+                    prof2.b_field_tor = b_phi.T
                 prof2.b_field_z.resize((nr, nz))
-                prof2.b_field_z = bfield[2].T
+                prof2.b_field_z = b_z.T
                 if it==ntimep-1:
                     self.logger.info(f't {it}: wrote B_FIELD {bfield.shape}')
 
@@ -607,8 +752,10 @@ class imas_equilibrium:
                rsurf, ysurf, inv_theta = self.convert_moments(ncoord_xb, ntheta, it)
 
                #fill data
-               coord.grid_type.name = "inverse"
-               coord.grid_type.index = 2
+               # dim1 is TRANSP XB = sqrt(Phi/Phi_boundary), not a metric rho.
+               # Use the explicit normalized-toroidal-flux polar identifier.
+               coord.grid_type.name = 'inverse_rhotornorm_polar'
+               coord.grid_type.index = 33
                self.im.fill_data(coord.grid.dim1, coord_xb, ind=it, name='grid_r')
                #self.im.fill_data(coord.grid.dim2, self.inv_grid_theta, name='grid_theta')
                self.im.fill_data(coord.grid.dim2, inv_theta, name='grid_theta')

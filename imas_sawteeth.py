@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Populate the IMAS sawteeth IDS when a TRANSP run contains validated crash-event data."""
+
 
 from nc2imas import *
 
@@ -11,7 +14,7 @@ class imas_sawteeth:
 
     def create_ids(self):
         self.im.logger.info('\nsawteeth')
-        ids = self.im.ids.get('sawteeth')
+        ids = self.im.new_ids('sawteeth')
         sgn = -1 if self.im.iter_ else 1
 
         #scalar time

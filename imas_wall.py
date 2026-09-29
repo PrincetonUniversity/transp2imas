@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Populate the IMAS wall IDS from available machine-boundary information."""
+
 from nc2imas import *
 
 
@@ -13,7 +16,7 @@ class imas_wall:
 
     def create_ids(self):
         self.im.logger.info('\nwall')
-        wall = self.im.ids.get('wall')
+        wall = self.im.new_ids('wall')
         cm2m = 0.01
 
         #scalar time
@@ -48,13 +51,31 @@ class imas_wall:
         wall.description_2d[0].limiter.type.index = 0
         wall.description_2d[0].limiter.type.description = 'first wall or limiters'
 
-        # we use only 1 units, because TRANSP stores coordinates of limiter as a closed contour.
-        # TRANSP has duplicate first and last point, we do not write the last point in IDS
-        wall.description_2d[0].limiter.unit[0].closed = 1
-        wall.description_2d[0].limiter.unit[0].outline.r.resize(nlim-1)
-        wall.description_2d[0].limiter.unit[0].outline.z.resize(nlim-1)
-        wall.description_2d[0].limiter.unit[0].outline.r = limitr[0:nlim-1]
-        wall.description_2d[0].limiter.unit[0].outline.z = limitz[0:nlim-1]
+        # We use one limiter unit because TRANSP stores the limiter as one closed contour.
+        # DD3 represented closure with unit.closed=1 and omitted the duplicate endpoint.
+        # DD4 removed the "closed" field: a closed contour is represented by repeating
+        # the first point at the end of outline.r/z.  Support both layouts so the
+        # converter can still be used with older Data Dictionaries.
+        unit = wall.description_2d[0].limiter.unit[0]
+        if self.im.dd_before(4, 0, 0):
+            # IMAS DD3.x
+            unit.closed = 1
+            rout = limitr[:-1] if nlim > 1 else limitr
+            zout = limitz[:-1] if nlim > 1 else limitz
+        else:
+            # IMAS DD4.x. TRANSP normally already repeats the first point.  If a CDF
+            # does not, explicitly close the contour here.
+            if nlim > 1 and np.isclose(limitr[0], limitr[-1]) and np.isclose(limitz[0], limitz[-1]):
+                rout = limitr
+                zout = limitz
+            else:
+                rout = np.append(limitr, limitr[0])
+                zout = np.append(limitz, limitz[0])
+
+        unit.outline.r.resize(len(rout))
+        unit.outline.z.resize(len(zout))
+        unit.outline.r = rout
+        unit.outline.z = zout
  
         self.im.putdb_imas(wall)
         self.logger.info('Done wall')

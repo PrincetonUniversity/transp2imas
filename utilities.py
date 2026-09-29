@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""General utility functions shared across the TRANSP-to-IMAS converter."""
+
 import os
 import sys
 from pathlib import Path
@@ -115,6 +118,12 @@ def get_args(argv=None):
     parser.add_argument('-o', '--occur', type=int, help='occurrence')
     parser.add_argument('-u', '--user', type=str, help='username or path of database')
     parser.add_argument('-m', '--machine', type=str, help='machine. eg: ITER')
+    parser.add_argument('--ip-direction', choices=['auto','ccw','cw'], default='auto',
+        help='plasma current direction viewed from above; auto uses NLJCCW from TR.DAT')
+    parser.add_argument('--bt-direction', choices=['auto','ccw','cw'], default='auto',
+        help='toroidal field direction viewed from above; auto uses NLBCCW from TR.DAT')
+    parser.add_argument('--dd-version', type=str, default='auto',
+        help='target IMAS Data Dictionary version (e.g. 3.39.0 or 4.1.1); auto uses IMAS environment/default')
     parser.add_argument('-mom', '--moments', type=str, choices=['yes', 'no'], default='no',
          help='convert moments to equilibrium, default is no')
     parser.add_argument('-zones', '--nzones', type=int, default=0,
@@ -186,8 +195,6 @@ def get_args(argv=None):
     debug = 0
     if args.backend:
         backend = args.backend
-    if args.new_db:
-        new_db = args.new_db
     if args.occur:
         occur = int(args.occur)
     if args.log:
@@ -210,5 +217,5 @@ def get_args(argv=None):
     user = args.user if args.user else None
     #new_db = True if occur == 0 else False
 
-    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, nzones, debug, ec_nml
+    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, nzones, debug, ec_nml, args.ip_direction, args.bt_direction, args.dd_version
 

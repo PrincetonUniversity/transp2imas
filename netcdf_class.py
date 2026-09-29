@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""NetCDF access helpers for reading TRANSP CDF variables, dimensions, and attributes."""
+
 
 import os
 import sys
@@ -136,9 +139,15 @@ class netcdf_connection:
         return self.get_var_names_re_(pat, cut, length)
 
     def check_var_name(self, name:str, length=False):
+        """Check whether an exact CDF variable name exists.
+
+        Historically this helper asked ``get_var_names_re_`` for the match list
+        and then compared that list with zero, which fails in Python 3.  Keep the
+        public ``length`` option, but make the default return a real boolean.
+        """
         pat = rf'{name}$'
-        n = self.get_var_names_re_(pat, length=length)
-        return n>0
+        matches = self.get_var_names_re_(pat, length=False)
+        return len(matches) if length else (len(matches) > 0)
 
     #names: list[str] or np.array
     def split_var_name(self, names, cut:str='') -> Union[Dict[str,List], None]:
@@ -241,6 +250,14 @@ class netcdf_connection:
 
             if res.ndim==0:
                res = np.array([res])
+
+            # IMAS numeric FLT nodes are double precision. TRANSP CDF files often
+            # store REAL arrays as float32, which makes IMAS-Python emit an
+            # automatic-conversion INFO message for every assignment. Promote
+            # floating CDF data once here; leave integer/string data unchanged.
+            if np.issubdtype(res.dtype, np.floating) and res.dtype != np.float64:
+               res = res.astype(np.float64)
+
             if interp is True:
                res = np.interp(self.timep, self.timesc, res)
             if scale != 1.0:

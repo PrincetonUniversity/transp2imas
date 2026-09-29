@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Plotting helpers used by diagnostic and example workflows."""
+
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -605,5 +608,4 @@ def test_plot():
     plot_equilibrium_2d(None, x, y, Z2)
 
 if __name__ == '__main__':
-    print('please use : python tests.py')
-
+    print('please use: python examples/plot_ids.py')

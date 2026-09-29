@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Atomic-species helpers used while translating TRANSP composition data to IMAS."""
+
 
 from typing import Dict
 import numpy as np

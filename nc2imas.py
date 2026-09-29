@@ -1,15 +1,24 @@
-#!/usr/bin/python3
+#!/usr/bin/python
+"""Core TRANSP NetCDF-to-IMAS conversion helpers, version metadata, and shared mapping utilities."""
+
 #
 import os
 import sys
 import math
+import hashlib
+from pathlib import Path
+import xml.etree.ElementTree as ET
 from typing import List
 import numpy as np
 import inspect
 
 from scipy import constants
 from scipy.interpolate import interp1d
-from datetime import datetime
+from datetime import datetime, timezone
+
+__version__ = "0.9.0"  # x-release-please-version
+VERSION = __version__
+TRANSP2IMAS_VERSION = __version__
 import re
 import logging
 from netcdf_class import netcdf_connection
@@ -32,9 +41,10 @@ def getVarName(var):
 
 class nc2imas(imas_connection, netcdf_connection):
     def __init__(self, run, backend, occur, user, machine, new_db, ncfile,
-         nml_file:str=None, log:str='error', debug:int=0):
+         nml_file:str=None, log:str='error', debug:int=0,
+         ip_direction:str='auto', bt_direction:str='auto', dd_version:str=None):
         netcdf_connection.__init__(self, ncfile, machine)
-        imas_connection.__init__(self, self.device, self.shot, run, backend, occur, user, new_db)
+        imas_connection.__init__(self, self.device, self.shot, run, backend, occur, user, new_db, dd_version=dd_version)
         self.nml_name = nml_file
         self.logger = None
         #namelist contents dict
@@ -42,6 +52,7 @@ class nc2imas(imas_connection, netcdf_connection):
         self.set_logger(log)
         self.logger.info(f'creating nc2imas using {ncfile} for {self.device} {self.shot} {self.run}')
         self.load_namelist()
+        self._init_cocos_signs(ip_direction=ip_direction, bt_direction=bt_direction)
         self.cm2m = 0.01
         self.area_inv = 1.0e4
         self.vconv = 1.e-6
@@ -51,13 +62,241 @@ class nc2imas(imas_connection, netcdf_connection):
         self.timep = []
         self.ntimes = 0
         self.ntimep = 0
-        self.sgn = -1 if self.iter_ else 1
         self.pi = constants.pi  #scipy
 
         self.debug = False if debug<1 else True
         self.debug_max = False if debug<2 else True
         self.get_nc_times()
+        self._code_parameters_xml_cache = None
+        self._provenance_file_records_cache = None
 
+
+
+    @staticmethod
+    def _parse_bool_value(value):
+        """Parse TRANSP namelist logical values into Python bool."""
+        if isinstance(value, (bool, np.bool_)):
+            return bool(value)
+        if isinstance(value, (int, np.integer)):
+            return bool(value)
+        if value is None:
+            return None
+        text = str(value).strip().lower().replace('.', '')
+        if text in ('true', 't', 'yes', 'y', '1'):
+            return True
+        if text in ('false', 'f', 'no', 'n', '0'):
+            return False
+        return None
+
+    def get_namelist_bool(self, name:str, default=None):
+        """Return a scalar TRANSP logical from the loaded TR.DAT namelist.
+
+        ``load_namelist`` preserves the spelling/case of keys.  Field-orientation
+        controls are important enough that lookup here is deliberately
+        case-insensitive.
+        """
+        if not self.nmlist:
+            return default
+        key = next((k for k in self.nmlist if k.strip().upper() == name.upper()), None)
+        if key is None:
+            return default
+        value = self._parse_bool_value(self.nmlist[key])
+        return default if value is None else value
+
+    def get_ncattr_text(self, name:str, default:str=''):
+        """Return a CDF attribute as stripped text.
+
+        netCDF readers may expose character attributes as ``str``, ``bytes``,
+        NumPy byte/string scalars, or small character arrays.  Metadata writers
+        should not depend on a reader-private decoding helper, so normalize the
+        common representations here.
+        """
+        try:
+            value = self.get_ncattr(name)
+        except Exception:
+            return default
+        if value is None:
+            return default
+        if isinstance(value, (bytes, np.bytes_)):
+            return bytes(value).decode('ISO-8859-1', errors='replace').strip()
+        if isinstance(value, np.ndarray):
+            if value.size == 0:
+                return default
+            if value.size == 1:
+                value = value.reshape(-1)[0]
+                if isinstance(value, (bytes, np.bytes_)):
+                    return bytes(value).decode('ISO-8859-1', errors='replace').strip()
+                return str(value).strip()
+            if value.dtype.kind in ('S', 'U'):
+                parts = []
+                for item in value.reshape(-1):
+                    if isinstance(item, (bytes, np.bytes_)):
+                        parts.append(bytes(item).decode('ISO-8859-1', errors='replace'))
+                    else:
+                        parts.append(str(item))
+                return ''.join(parts).strip()
+        return str(value).strip()
+
+    def set_species_name(self, node, value):
+        """Set the species/state text node for the selected DD version.
+
+        DD 3.39 uses ``label``.  The species/state nodes were renamed to
+        ``name`` in late DD3 (3.42) and remain ``name`` in DD4.
+        """
+        text = str(value)
+        if self.dd_at_least(3, 42, 0):
+            node.name = text
+        else:
+            node.label = text
+
+    # Backward-compatible alias used by older converter modules.
+    def set_name_or_label(self, node, value):
+        self.set_species_name(node, value)
+
+    def set_nuclear_charge(self, node, value):
+        """Set z_n using the DD-native scalar type.
+
+        z_n changed from FLT_0D to INT_0D in DD4.
+        """
+        z = float(value)
+        node.z_n = int(round(z)) if self.dd_at_least(4, 0, 0) else z
+
+    def set_ec_beam_identity(self, beam, identifier, description=None):
+        """Populate EC beam identity without mixing DD3/DD4 semantics.
+
+        DD3.39: ``identifier`` is the short identifier and ``name`` is the
+        descriptive beam name.  DD4: ``name`` is the short identifier and
+        ``description`` carries descriptive text.
+        """
+        identifier = str(identifier)
+        description = str(description if description is not None else identifier)
+        if self.dd_at_least(4, 0, 0):
+            beam.name = identifier
+            beam.description = description
+        else:
+            beam.identifier = identifier
+            beam.name = description
+
+    def set_nbi_unit_identity(self, unit, identifier, description=None):
+        """Populate NBI unit identity for DD3.39 or DD4."""
+        identifier = str(identifier)
+        description = str(description if description is not None else identifier)
+        if self.dd_at_least(4, 0, 0):
+            unit.name = identifier
+            unit.description = description
+        else:
+            unit.identifier = identifier
+            unit.name = description
+
+    def set_ec_mode(self, beam, o_mode_fraction, times):
+        """Write EC launch mode/polarization using the target DD schema.
+
+        DD3 uses the integer ``mode`` node and, where available, the legacy
+        beam-level ``o_mode_fraction`` array.  In DD4.1+, ``mode`` is removed
+        and the fraction is stored under ``beam/polarization``.
+        """
+        frac = float(np.clip(float(o_mode_fraction), 0.0, 1.0))
+        times = np.asarray(times, dtype=np.float64)
+        vals = np.full(len(times), frac, dtype=np.float64)
+        if self.dd_at_least(4, 1, 0):
+            beam.polarization.time = times
+            beam.polarization.o_mode_fraction = vals
+        elif self.dd_at_least(4, 0, 0):
+            # DD4.0 was transitional.  Prefer polarization when available;
+            # fall back to the pre-4.1 beam-level fraction if present.
+            if hasattr(beam, 'polarization') and hasattr(beam.polarization, 'o_mode_fraction'):
+                if hasattr(beam.polarization, 'time'):
+                    beam.polarization.time = times
+                beam.polarization.o_mode_fraction = vals
+            elif hasattr(beam, 'o_mode_fraction'):
+                beam.o_mode_fraction = vals
+        else:
+            # DD3 mode is the *main* excited wave mode.  For a mixed launch,
+            # infer the dominant mode from the O-mode power fraction.
+            beam.mode = 1 if frac >= 0.5 else -1
+            if hasattr(beam, 'o_mode_fraction'):
+                beam.o_mode_fraction = vals
+
+    @staticmethod
+    def _direction_override(value:str):
+        if value is None:
+            return None
+        text = str(value).strip().lower()
+        if text == 'ccw':
+            return True
+        if text == 'cw':
+            return False
+        return None
+
+    def _init_cocos_signs(self, ip_direction:str='auto', bt_direction:str='auto'):
+        """Set physical direction and target COCOS signs.
+
+        TRANSP stores the field-orientation controls separately from many CDF
+        quantities.  ``NLJCCW`` says whether the plasma current is
+        counter-clockwise from above and ``NLBCCW`` says the same for the
+        toroidal magnetic field.  IMAS uses +phi counter-clockwise from above.
+
+        IMAS DD3 uses COCOS 11; DD4 uses COCOS 17.  COCOS 11 and 17 have the
+        same cylindrical/toroidal orientation and q sign convention, but the
+        poloidal-flux sign is reversed.  In particular, for positive Ip,
+        COCOS17 psi decreases from magnetic axis to boundary.
+        """
+        jccw = self._direction_override(ip_direction)
+        bccw = self._direction_override(bt_direction)
+        if jccw is None:
+            jccw = self.get_namelist_bool('NLJCCW', default=None)
+        if bccw is None:
+            bccw = self.get_namelist_bool('NLBCCW', default=None)
+
+        missing = []
+        if jccw is None:
+            missing.append('NLJCCW')
+            jccw = True
+        if bccw is None:
+            missing.append('NLBCCW')
+            bccw = True
+
+        self.nljccw = bool(jccw)
+        self.nlbccw = bool(bccw)
+        self.ip_sign = 1.0 if self.nljccw else -1.0
+        self.bt_sign = 1.0 if self.nlbccw else -1.0
+
+        try:
+            dd_major = int(str(self.dd_major_version).split('.')[0])
+        except Exception:
+            dd_major = 4
+        self.target_cocos = 17 if dd_major >= 4 else 11
+
+        # Physical/vector quantities in IMAS +phi (counter-clockwise) direction.
+        self.jphi_sign = self.ip_sign
+        self.jparallel_sign = self.ip_sign
+        self.phi_sign = self.bt_sign
+        self.f_sign = self.bt_sign
+        self.q_sign = self.ip_sign * self.bt_sign
+        self.vloop_sign = self.ip_sign
+        self.toroidal_rotation_sign = self.ip_sign
+        self.poloidal_field_sign = self.ip_sign
+
+        # COCOS 11 -> 17 reverses the sign of full poloidal flux while leaving
+        # Ip, Bphi and q physical sign definitions unchanged.
+        self.psi_sign = self.ip_sign if self.target_cocos == 11 else -self.ip_sign
+
+        # TRANSP moments use the geometrical atan2(Z-Zaxis,R-Raxis) angle
+        # (counter-clockwise in the R-Z plane).  DD4/COCOS17 uses
+        # theta=-atan2(...), clockwise.  This multiplier maps target theta to
+        # the raw TRANSP moment angle when evaluating the Fourier surfaces.
+        self.theta_raw_from_target = 1.0 if self.target_cocos == 11 else -1.0
+
+        if missing:
+            print('*** WARNING: missing TRANSP field-orientation control(s): ' + ', '.join(missing))
+            print('***          assuming CCW. Use --ip-direction/--bt-direction to override.')
+
+        print('COCOS/signs:'
+              f' target={self.target_cocos}'
+              f' NLJCCW={self.nljccw} (Ip sign {self.ip_sign:+.0f})'
+              f' NLBCCW={self.nlbccw} (Bphi sign {self.bt_sign:+.0f})'
+              f' q sign {self.q_sign:+.0f}'
+              f' psi sign {self.psi_sign:+.0f}')
 
     def get_nc_times(self):
         self.timesc = self.get_ncvar('TIME')
@@ -134,7 +373,7 @@ class nc2imas(imas_connection, netcdf_connection):
             if op == '-':
                 return arr1 - arr2
             elif op == '+':
-                return arr1 - arr2
+                return arr1 + arr2
             elif op == '/':
                 return np.divide(arr1, arr2, out=np.zeros_like(arr1), where=arr2!=0)
             elif op == '*':
@@ -481,7 +720,8 @@ class nc2imas(imas_connection, netcdf_connection):
         return res
 
     def get_namelist_var(self, name:str, tp=None, scale=1.0, ind:int=-1, size:int=1):
-        return get_namelist_vars(name, tp, scale, ind, size)
+        """Compatibility wrapper around :meth:`get_namelist_vars`."""
+        return self.get_namelist_vars(name, tp, scale, ind, size)
 
 
     def extract_str_between(self, name:str, pat1:str, pat2:str, default:str, tp=None):
@@ -525,6 +765,42 @@ class nc2imas(imas_connection, netcdf_connection):
         self.logger.addHandler(logging.FileHandler(logname, mode='w')) #'a'
 
     #for all times
+    @staticmethod
+    def cumulative_zone_quantity(values):
+        """Convert TRANSP per-zone geometry to an enclosed flux-surface quantity."""
+        arr = np.asarray(values)
+        if arr.ndim < 1 or arr.size == 0:
+            return arr
+        return np.cumsum(arr, axis=-1)
+
+    @staticmethod
+    def interp_radial_profiles(values, x_from, x_to, axis_value=None):
+        """Interpolate time-dependent radial profiles without mixing time slices.
+
+        ``axis_value`` optionally adds an explicit point at rho=0 before
+        interpolation.  This is important for TRANSP XB data because XB starts
+        at the outer boundary of the first finite-volume zone, while X contains
+        the zone centre inside it.
+        """
+        v = np.asarray(values)
+        xf = np.asarray(x_from)
+        xt = np.asarray(x_to)
+        if v.size == 0 or xf.size == 0 or xt.size == 0 or v.ndim != 2:
+            return v
+        if xf.ndim != 2 or xt.ndim != 2 or v.shape[0] != xf.shape[0] or v.shape[0] != xt.shape[0]:
+            return v
+        out = np.empty((v.shape[0], xt.shape[1]), dtype=np.float64)
+        av = None if axis_value is None else np.asarray(axis_value)
+        for it in range(v.shape[0]):
+            xx = xf[it]
+            yy = v[it]
+            if axis_value is not None and len(xx) and xx[0] > 0.0:
+                a0 = float(av[it] if av.ndim else av)
+                xx = np.concatenate(([0.0], xx))
+                yy = np.concatenate(([a0], yy))
+            out[it] = np.interp(xt[it], xx, yy)
+        return out
+
     def fill_vac_tor_field(self, ids):
         #RAXIS(TIME)
         raxis = self.get_ncvar('RAXIS', self.cm2m)
@@ -534,127 +810,530 @@ class nc2imas(imas_connection, netcdf_connection):
             if self.ntimep != self.ntimes:
                raxis = np.interp(self.timep, self.timesc, raxis)
                bzxR = np.interp(self.timep, self.timesc, bzxR)
-            b_field_tor = bzxR / raxis
+            b_field_tor = self.bt_sign * bzxR / raxis
             rave = (raxis[0] + raxis[-1])/2.0
             self.logger.info('\tVac_tor_field')
             ids.vacuum_toroidal_field.r0 = rave.astype(float)
             self.fill_data(ids.vacuum_toroidal_field.b0, b_field_tor)
 
-    #fill ids.profiles_1d[*].grid. Resize if not laready done
+    #fill ids.profiles_1d[*].grid. Resize if not already done
     def fill_profiles1d_grid(self, ids):
-        #scalar time
+        # Core/source profiles in TRANSP are normally defined on X (zone centres),
+        # while fluxes and SURF are on XB (zone boundaries).  Keep the IMAS grid
+        # internally consistent by mapping boundary quantities to X.
         timesp = self.get_ncvar('TIME3')
         ntimep = len(timesp)
         coord_x = self.get_ncvar('X')
-        #profiles_1d
-        # X(TIME3,X) is sqrt(norm. toroidal flux)
-        rho_tor_norm = np.multiply(coord_x, coord_x)
-        #beta_tor_norm
-        bz = self.get_ncvar('BZ') #(TIME) T. BZ outside plasma
-        #TRFLX(TIME3, XB)
-        bflux_tor = self.get_ncvar('TRFLX')
+        coord_xb = self.get_ncvar('XB')
+        rho_tor_norm = coord_x
+
+        # Toroidal flux coordinate. TRFLX is on XB and already in Wb.
+        bflux_tor_b = self.get_ncvar('TRFLX')
+        bflux_tor = self.interp_radial_profiles(bflux_tor_b, coord_xb, coord_x, axis_value=0.0)
+        bz = self.get_ncvar('BZ')
+        if self.ntimes != self.ntimep:
+            bz = self.interp1d_time(self.timep, self.timesc, bz)
         rho_tor = []
-
         if self.is_valid(bz, bflux_tor):
-            bzf = self.pi*np.tile(bz[None,:].T, bflux_tor.shape[1])
-            rho_tor = self.operate_arrays(bflux_tor, '/', bzf)
-            rho_tor = self.operate_arrays(rho_tor, 'sqrt')
+            try:
+                rho_tor = np.sqrt(np.clip(bflux_tor/(self.pi*bz[:,None]), 0.0, None))
+            except Exception:
+                rho_tor = []
 
-        psi = self.get_ncvar('PLFLX', 2.*self.pi) #(TIME3, XB)
-        rho_pol_norm = np.sqrt(abs((psi - psi[0])/(psi[-1]-psi[0]))) #TODO
+        # Poloidal flux: PLFLX is an enclosed increment on XB in Wb/rad.
+        psi_rel_b = self.psi_sign * self.get_ncvar('PLFLX', 2.*self.pi)
+        psi_axis = self.psi_sign * self.get_ncvar('PSI0_TR', 2.*self.pi)
+        if self.ntimes != self.ntimep:
+            psi_axis = self.interp1d_time(self.timep, self.timesc, psi_axis)
+        psi_rel = self.interp_radial_profiles(psi_rel_b, coord_xb, coord_x, axis_value=0.0)
+        psi = psi_rel + psi_axis[:,None] if self.is_valid(psi_rel, psi_axis) else psi_rel
+        psi_boundary = psi_rel_b[:,-1] + psi_axis if self.is_valid(psi_rel_b, psi_axis) else []
+        rho_pol_norm = []
+        if self.is_valid(psi, psi_axis, psi_boundary):
+            try:
+                denom = psi_boundary - psi_axis
+                rho_pol_norm = np.sqrt(np.clip((psi-psi_axis[:,None])/denom[:,None], 0.0, None))
+            except Exception:
+                rho_pol_norm = []
 
-        #DVOL(TIME3, X) CM**3  ZONE VOLUME
+        # Finite-zone geometry -> enclosed values at XB -> interpolate to X.
         gvol = self.get_ncvar('DVOL', self.vconv)
-        # grid area. DAREA (TIME3, X) CM**2 ZONE CROSS SECTIONAL AREA
+        volume_b = self.cumulative_zone_quantity(gvol)
+        volume_enclosed = self.interp_radial_profiles(volume_b, coord_xb, coord_x, axis_value=0.0)
         grid_area = self.get_ncvar('DAREA', self.aconv)
-        #Surface area of the toroidal flux surface
-        #FLUX SURFACE AREA (TIME3,X) cm^2
-        surface = self.get_ncvar('SURF', 1.0e-4)
-
-        psi_axis = self.get_ncvar('PSI0_TR') # Wb/rad
+        area_b = self.cumulative_zone_quantity(grid_area)
+        area_enclosed = self.interp_radial_profiles(area_b, coord_xb, coord_x, axis_value=0.0)
+        surface_b = self.get_ncvar('SURF', 1.0e-4)
+        surface = self.interp_radial_profiles(surface_b, coord_xb, coord_x, axis_value=0.0)
 
         if len(ids.profiles_1d)==0:
             ids.profiles_1d.resize(ntimep)
 
         for i in range(ntimep):
-            #grid
             gd = ids.profiles_1d[i].grid
             self.fill_data(gd.rho_tor_norm, rho_tor_norm, ind=i)
             self.fill_data(gd.rho_tor, rho_tor, ind=i)
             self.fill_data(gd.rho_pol_norm, rho_pol_norm, ind=i)
             self.fill_data(gd.psi, psi, ind=i)
-            self.fill_data(gd.volume, gvol, ind=i)
-            self.fill_data(gd.area, grid_area, ind=i)
+            if self.is_valid(psi_axis, ind=i) and hasattr(gd, 'psi_magnetic_axis'):
+                gd.psi_magnetic_axis = float(psi_axis[i])
+            if self.is_valid(psi_boundary, ind=i) and hasattr(gd, 'psi_boundary'):
+                gd.psi_boundary = float(psi_boundary[i])
+            self.fill_data(gd.volume, volume_enclosed, ind=i)
+            self.fill_data(gd.area, area_enclosed, ind=i)
             self.fill_data(gd.surface, surface, ind=i)
-            if len(psi_axis) > i:
-                gd.psi_magnetic_axis = psi_axis[i].astype(float)
-            if len(psi) > i:
-                gd.psi_boundary = psi[i,-1].astype(float)
 
-    def fill_element_data(self, ids, sp:str, ilab:str='', zn:float=None):
-        #sp is TRANSP symbol
-        if not sp:
-            return
-        #sp is TRANSP symbol defined in atoms_class.entries
-        atom_info = atom_base(sp, ilab)
-        ids.label = atom_info.label
-        ids.element.resize(1)
-        ids.element[0].a = atom_info.a
-        if zn:
-            ids.element[0].z_n = zn
-        else:
-            ids.element[0].z_n = atom_info.z_n
-        ids.element[0].atoms_n = 1
+    @staticmethod
+    def _iso8601_file_timestamp(path):
+        """Return a UTC ISO-8601 timestamp for a local provenance file."""
+        try:
+            ts = Path(path).stat().st_mtime
+            return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        except Exception:
+            return ''
 
-    #returns n species. fills volume average if plasma and grid volumes are passed in
-    def fill_ion_densities(self, ids, ind1:int=-1, ind2:int=-1, pv=None, gv=None):
-        #N/CM**3
-        mult = 1.0e6
-        #ions
-        #calculate total ion densities
-        nsp = 0
-        idss = {'NH':ids.hydrogen, 'ND':ids.deuterium, 'NT':ids.tritium, 'NHe3':ids.helium_3,
-               'NHe4':ids.helium_4, 'NBe':ids.beryllium, 'NLith':ids.lithium, 'NC':ids.carbon,
-               'NNi':ids.nitrogen, 'NNe':ids.neon, 'NAr':ids.argon, 'NXe':ids.xenon,
-               'NO2':ids.oxygen, 'NW':ids.tungsten, 'NFe':ids.iron, 'NKr':ids.krypton}
+    def _provenance_file_records(self):
+        """Return portable source-file records for IDS-level provenance.
 
-        for name, ids in idss.items():
-            dat = self.get_ncvar(name)
-            if not self.is_valid(dat):
-                self.logger.info(f'{name} not found')
+        Keep the whole-IDS provenance intentionally small (the DD caps the
+        reference list at 10). Full file contents and recursively referenced
+        templates remain preserved in ``code.parameters``.
+        """
+        if self._provenance_file_records_cache is not None:
+            return list(self._provenance_file_records_cache)
+
+        records = []
+        candidates = [('TRANSP CDF', self.ncfile)]
+        if self.nml_name:
+            candidates.append(('TRANSP TR.DAT', self.nml_name))
+        # Include resolved model/template files when present, up to the DD cap.
+        try:
+            for role, key, filename, resolved in self._collect_parameter_files():
+                if role == 'TRDAT':
+                    continue
+                if resolved is not None:
+                    candidates.append((f'{role}:{key}', str(resolved)))
+        except Exception:
+            pass
+        seen = set()
+        for role, filename in candidates:
+            if not filename:
                 continue
-            if ind1 >= 0:
-                dat = dat[ind1,:]
-            elif ind2 >= 0:
-                dat = dat[:, ind2]
-            elif pv is not None:
-                 #volume average if plasma volume is passed in, and NO index passed
-                 datv = self.np_multiply_sum(dat, gv, axis=1)
-                 dat = self.operate_arrays(datv, '/', 1.0e-6*pv)
+            path = Path(filename).expanduser()
+            try:
+                resolved = path.resolve()
+            except Exception:
+                resolved = path
+            key = str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            digest = ''
+            try:
+                import hashlib
+                h = hashlib.sha256()
+                with open(resolved, 'rb') as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                        h.update(chunk)
+                digest = h.hexdigest()
+            except Exception:
+                pass
+            # Avoid embedding machine-specific absolute paths in the portable
+            # provenance string. The exact resolved path remains in code.parameters.
+            name = f'{role}:file:{Path(filename).name}'
+            if digest:
+                name += f'#sha256={digest}'
+            records.append((name, self._iso8601_file_timestamp(resolved)))
+            if len(records) >= 10:
+                break
+        self._provenance_file_records_cache = list(records)
+        return list(records)
 
-            ids.value.resize(len(dat), refcheck=False)
-            ids.value[:] = mult*dat
-            nsp += 1
-        return nsp
+    def _fill_source_provenance(self, ids):
+        """Attach source CDF/TR.DAT provenance to the whole IDS.
 
+        DD <=3.41 uses ``provenance/node/sources``. DD >=3.42 uses the
+        ``reference`` AoS with name/timestamp. The full original inputs are
+        additionally embedded in ``code.parameters`` wherever that node exists.
+        """
+        try:
+            provenance = ids.ids_properties.provenance
+            provenance.node.resize(1)
+            node = provenance.node[0]
+            if hasattr(node, 'path'):
+                node.path = ''
+            records = self._provenance_file_records()
+            if hasattr(node, 'reference'):
+                node.reference.resize(len(records))
+                for i, (name, timestamp) in enumerate(records):
+                    ref = node.reference[i]
+                    if hasattr(ref, 'name'):
+                        ref.name = name
+                    if timestamp and hasattr(ref, 'timestamp'):
+                        ref.timestamp = timestamp
+            elif hasattr(node, 'sources'):
+                node.sources = [name for name, _ in records]
+        except Exception as exc:
+            self.logger.warning(f'Could not attach IDS provenance: {exc}')
+        return ids
 
     def fill_properties(self, ids):
         runid, device, year, cdf_date, build_date, tglf, glf = self.get_nc_global_atts()
-        comment =  f'TRANSP results for run {runid} {device} year: {year} CDF date: {cdf_date}'
-        ids.ids_properties.comment = comment + f' build: {build_date} tglf: {tglf} glf23: {glf}'
-        ids.ids_properties.creation_date = f'{str(datetime.now())} CDF: {cdf_date}'
-        #ids.ids_properties.version_put = str(os.getenv('IMAS_VERSION'))
-        ids.ids_properties.data_dictionary = str(os.getenv('IMAS_VERSION'))
-        ids.ids_properties.access_layer = str(os.getenv('IMAS_VERSION'))
-        #ids_properties/provenance.node.resize()
+        comment = f'TRANSP results for run {runid} {device} year: {year} CDF date: {cdf_date}'
+        cocos = (f' DD={self.dd_version}; COCOS={self.target_cocos};'
+                 f' NLJCCW={self.nljccw}; NLBCCW={self.nlbccw};'
+                 f' Ip_sign={self.ip_sign:+.0f}; Bphi_sign={self.bt_sign:+.0f};'
+                 f' q_sign={self.q_sign:+.0f}; psi_sign={self.psi_sign:+.0f}')
+        ids.ids_properties.comment = comment + f' build: {build_date} tglf: {tglf} glf23: {glf}' + cocos
+        ids.ids_properties.creation_date = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        if hasattr(ids.ids_properties, 'name'):
+            ids.ids_properties.name = f'TRANSP {runid}'
+        ids = self._fill_source_provenance(ids)
+
+        # Do not fill the legacy top-level fields
+        #   ids_properties.data_dictionary
+        #   ids_properties.access_layer
+        # They are not present in current IMAS Data Dictionary versions (including
+        # DD 4.1.1).  In modern IMAS they live below ids_properties.version_put.
+        # More importantly, IMAS-Python/DBEntry.put() fills version_put from the
+        # Data Dictionary and backend actually used for the write.  Leaving this
+        # metadata to DBEntry therefore avoids stale or inconsistent version data
+        # and remains compatible with older DD versions as well.
         return ids
 
+    @staticmethod
+    def radial_gradient(values, coordinate):
+        """Return d(values)/d(coordinate) independently for each time slice.
+
+        TRANSP profiles can contain repeated/degenerate points near the axis in
+        some runs.  Use a conservative one-sided/central finite difference and
+        leave a slice empty (NaN) only when the coordinate is unusable.
+        """
+        y = np.asarray(values, dtype=np.float64)
+        x = np.asarray(coordinate, dtype=np.float64)
+        if y.ndim != 2 or x.ndim != 2 or y.shape != x.shape:
+            return np.array([])
+        out = np.full_like(y, np.nan, dtype=np.float64)
+        for it in range(y.shape[0]):
+            xx = x[it]
+            yy = y[it]
+            good = np.isfinite(xx) & np.isfinite(yy)
+            if np.count_nonzero(good) < 2:
+                continue
+            xxg = xx[good]
+            yyg = yy[good]
+            # np.gradient requires a strictly monotonic coordinate.  A tiny
+            # duplicate can occur through interpolation/roundoff, so retain the
+            # first occurrence and interpolate the derivative back if needed.
+            keep = np.concatenate(([True], np.diff(xxg) != 0.0))
+            xxu = xxg[keep]
+            yyu = yyg[keep]
+            if len(xxu) < 2:
+                continue
+            edge_order = 2 if len(xxu) > 2 else 1
+            grad = np.gradient(yyu, xxu, edge_order=edge_order)
+            out[it] = np.interp(xx, xxu, grad, left=grad[0], right=grad[-1])
+        return out
+
+    @staticmethod
+    def _xml_safe_text(text):
+        """Remove characters forbidden by XML 1.0 while preserving file text."""
+        if text is None:
+            return ''
+        return ''.join(ch if (ch in '\t\n\r' or ord(ch) >= 0x20) else '\ufffd'
+                       for ch in str(text))
+
+    @staticmethod
+    def _clean_namelist_path(value):
+        if value is None:
+            return ''
+        text = str(value).strip().rstrip(',').strip()
+        if len(text) >= 2 and text[0] in ("'", '"') and text[-1] == text[0]:
+            text = text[1:-1]
+        return text.strip()
+
+    def _resolve_input_file(self, filename):
+        """Resolve a TRANSP/template path relative to the TRANSP namelist."""
+        if not filename:
+            return None
+        candidate = Path(os.path.expandvars(str(filename))).expanduser()
+        if candidate.is_absolute() and candidate.exists():
+            return candidate.resolve()
+        roots = []
+        if self.nml_name:
+            try:
+                roots.append(Path(self.nml_name).expanduser().resolve().parent)
+            except Exception:
+                roots.append(Path(self.nml_name).expanduser().parent)
+        roots.append(Path.cwd())
+        for root in roots:
+            path = (root / candidate).resolve()
+            if path.exists():
+                return path
+        # Return the most meaningful unresolved location for provenance.
+        return (roots[0] / candidate).resolve() if roots else candidate
+
+    def _read_parameter_file(self, path, max_bytes=10 * 1024 * 1024):
+        """Read a text parameter file and return (text, sha256, status)."""
+        try:
+            path = Path(path)
+            if not path.exists() or not path.is_file():
+                return '', '', 'missing'
+            size = path.stat().st_size
+            if size > max_bytes:
+                return '', '', f'too_large:{size}'
+            raw = path.read_bytes()
+            digest = hashlib.sha256(raw).hexdigest()
+            try:
+                text = raw.decode('utf-8')
+            except UnicodeDecodeError:
+                text = raw.decode('ISO-8859-1')
+            return self._xml_safe_text(text), digest, 'embedded'
+        except Exception as exc:
+            return '', '', f'error:{type(exc).__name__}'
+
+    @staticmethod
+    def _append_namelist_xml(parent, text):
+        """Add a lightweight structured Fortran-namelist representation.
+
+        The original text is retained separately and remains authoritative.
+        This parser is intentionally conservative: it records groups and
+        assignment strings without trying to evaluate Fortran expressions.
+        Continuation text is appended to the preceding assignment.
+        """
+        parsed = ET.SubElement(parent, 'parsed_namelist')
+        group_name = 'GLOBAL'
+        group = ET.SubElement(parsed, 'group', {'name': group_name})
+        last_parameter = None
+
+        def strip_comment(line):
+            # Remove ! comments while respecting simple quoted strings.
+            quote = None
+            out = []
+            for ch in line:
+                if ch in ("'", '"'):
+                    if quote is None:
+                        quote = ch
+                    elif quote == ch:
+                        quote = None
+                if ch == '!' and quote is None:
+                    break
+                out.append(ch)
+            return ''.join(out)
+
+        for raw_line in str(text).splitlines():
+            line = strip_comment(raw_line).strip()
+            if not line:
+                continue
+            if line.startswith('&'):
+                group_name = line[1:].strip().split()[0] or 'GLOBAL'
+                group = ET.SubElement(parsed, 'group', {'name': group_name})
+                last_parameter = None
+                continue
+            if line == '/' or line.startswith('/ '):
+                group_name = 'GLOBAL'
+                group = ET.SubElement(parsed, 'group', {'name': group_name})
+                last_parameter = None
+                continue
+            if '=' in line:
+                name, value = line.split('=', 1)
+                name = name.strip()
+                if not name:
+                    continue
+                last_parameter = ET.SubElement(group, 'parameter', {
+                    'name': name,
+                    'value': value.strip(),
+                })
+            elif last_parameter is not None:
+                prior = last_parameter.get('value', '')
+                last_parameter.set('value', (prior + ' ' + line).strip())
+
+    def _collect_parameter_files(self):
+        """Collect TRANSP input and referenced model/template namelists.
+
+        The source TRANSP namelist is always included when available. Template
+        files are discovered from keys containing ``TEMPLATE`` in TR.DAT and
+        recursively from every embedded namelist. Missing referenced files are
+        retained as provenance records. Adjacent run-specific ``*.nml`` files
+        are also included to catch workflow-generated model inputs whose path
+        is not explicitly present in TR.DAT.
+        """
+        pending = []
+        if self.nml_name:
+            pending.append(('TRANSP_INPUT', 'TRANSP_NAMELIST', str(self.nml_name), None))
+
+        if isinstance(self.nmlist, dict):
+            for key, value in sorted(self.nmlist.items()):
+                if 'TEMPLATE' not in str(key).upper():
+                    continue
+                filename = self._clean_namelist_path(value)
+                if filename:
+                    pending.append(('TEMPLATE', str(key), filename, self.nml_name))
+
+        # Include adjacent run-specific model namelists even when a workflow
+        # supplied them through defaults/indirection rather than a TEMPLATE key.
+        if self.nml_name:
+            try:
+                nml_dir = Path(self.nml_name).expanduser().resolve().parent
+                runid = self.get_ncattr('Runid')
+                if isinstance(runid, bytes):
+                    runid = runid.decode('ISO-8859-1', errors='replace')
+                runid = str(runid).strip() if runid is not None else ''
+                patterns = [f'{runid}*.nml', f'{runid}*.NML'] if runid else ['*.nml', '*.NML']
+                for pattern in patterns:
+                    for path in sorted(nml_dir.glob(pattern)):
+                        pending.append(('AUX_NAMELIST', 'AUTO_DISCOVERED', str(path), self.nml_name))
+            except Exception:
+                pass
+
+        def resolve_from(filename, parent_file=None):
+            """Resolve filename first relative to the referring namelist."""
+            expanded = os.path.expandvars(str(filename))
+            candidate = Path(expanded).expanduser()
+            if candidate.is_absolute():
+                return candidate.resolve()
+            roots = []
+            if parent_file:
+                try:
+                    roots.append(Path(parent_file).expanduser().resolve().parent)
+                except Exception:
+                    pass
+            if self.nml_name:
+                try:
+                    roots.append(Path(self.nml_name).expanduser().resolve().parent)
+                except Exception:
+                    pass
+            roots.append(Path.cwd())
+            for root in roots:
+                path = (root / candidate).resolve()
+                if path.exists():
+                    return path
+            return (roots[0] / candidate).resolve() if roots else candidate.resolve()
+
+        def template_refs_from_text(text):
+            """Yield TEMPLATE assignments from a Fortran-style namelist."""
+            refs = []
+            for raw in str(text).splitlines():
+                # A template path is normally scalar and on one assignment line.
+                line = raw.split('!', 1)[0].strip()
+                if '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                if 'TEMPLATE' not in key.upper():
+                    continue
+                filename = self._clean_namelist_path(value)
+                if filename:
+                    refs.append((key.strip(), filename))
+            return refs
+
+        # Breadth-first walk so template files can themselves reference more
+        # templates. A resolved path is embedded once; missing references are
+        # also deduplicated by their intended resolved location.
+        seen = set()
+        result = []
+        idx = 0
+        while idx < len(pending):
+            role, key, filename, parent_file = pending[idx]
+            idx += 1
+            resolved = resolve_from(filename, parent_file)
+            identity = str(resolved)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            result.append((role, key, filename, resolved))
+
+            text, _digest, status = self._read_parameter_file(resolved)
+            if status != 'embedded' or not text:
+                continue
+            for child_key, child_name in template_refs_from_text(text):
+                pending.append(('TEMPLATE_NESTED', child_key, child_name, str(resolved)))
+
+        return result
+
+    def build_code_parameters_xml(self):
+        """Build XML provenance for IMAS code.parameters.
+
+        IMAS defines code.parameters as code-specific parameters in XML format.
+        Preserve the complete TRANSP input and referenced model/template input
+        files verbatim (XML escaped), together with hashes and CDF metadata.
+        """
+        if self._code_parameters_xml_cache is not None:
+            return self._code_parameters_xml_cache
+
+        root = ET.Element('transp2imas_parameters', {
+            'format_version': '1',
+            'target_dd': str(self.dd_version),
+            'target_cocos': str(self.target_cocos),
+        })
+        run = ET.SubElement(root, 'run', {
+            'device': str(self.device),
+            'shot': str(self.shot),
+            'imas_run': str(self.run),
+            'occurrence': str(self.occur),
+        })
+        run.set('source_cdf', str(self.ncfile))
+        ET.SubElement(root, 'converter', {
+            'name': 'transp2imas',
+            'version': TRANSP2IMAS_VERSION,
+        })
+
+        metadata = ET.SubElement(root, 'transp_metadata')
+        for key in ('Runid', 'CDF_date', 'BUILD_date', 'TRANSP_version',
+                    'TRANSP_DOI', 'TGLF_hash', 'GLF23_hash'):
+            try:
+                value = self.get_ncattr(key)
+            except Exception:
+                value = None
+            if value is None:
+                continue
+            if isinstance(value, bytes):
+                value = value.decode('ISO-8859-1', errors='replace')
+            ET.SubElement(metadata, 'item', {'name': key, 'value': str(value).strip()})
+
+        signs = ET.SubElement(root, 'coordinate_conventions')
+        for key, value in (
+            ('NLJCCW', self.nljccw), ('NLBCCW', self.nlbccw),
+            ('ip_sign', self.ip_sign), ('bphi_sign', self.bt_sign),
+            ('q_sign', self.q_sign), ('psi_sign', self.psi_sign),
+            ('phi_sign', self.phi_sign)):
+            ET.SubElement(signs, 'item', {'name': key, 'value': str(value)})
+
+        inputs = ET.SubElement(root, 'input_files')
+        for role, key, filename, resolved in self._collect_parameter_files():
+            attrs = {'role': role, 'key': key, 'reference': filename}
+            if resolved is not None:
+                attrs['resolved_path'] = str(resolved)
+            text, digest, status = self._read_parameter_file(resolved) if resolved is not None else ('', '', 'missing')
+            attrs['status'] = status
+            if digest:
+                attrs['sha256'] = digest
+            node = ET.SubElement(inputs, 'file', attrs)
+            if text:
+                content = ET.SubElement(node, 'content', {'encoding': 'text'})
+                content.text = text
+                # Also expose a machine-readable namelist view while retaining
+                # the exact source text above for full-fidelity provenance.
+                self._append_namelist_xml(node, text)
+
+        xml = ET.tostring(root, encoding='unicode')
+        self._code_parameters_xml_cache = xml
+        return xml
+
     def fill_code_properties(self, ids):
+        """Fill common code provenance, if this IDS contains a code node."""
+        if not hasattr(ids, 'code'):
+            return ids
         ids.code.name = 'transp2imas'
-        ids.code.repository = 'https://github.com/PrincetonUniversity/transp2imas'
+        if hasattr(ids.code, 'description'):
+            ids.code.description = 'TRANSP CDF to IMAS converter'
+        if hasattr(ids.code, 'version'):
+            ids.code.version = TRANSP2IMAS_VERSION
+        if hasattr(ids.code, 'repository'):
+            ids.code.repository = 'https://github.com/PrincetonUniversity/transp2imas'
+        if hasattr(ids.code, 'parameters'):
+            ids.code.parameters = self.build_code_parameters_xml()
         return ids
 
 
 if __name__ == '__main__':
     print("Please use: python convert.py")
-

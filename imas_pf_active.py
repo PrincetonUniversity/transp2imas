@@ -1,3 +1,6 @@
+#!/usr/bin/python
+"""Populate the IMAS pf_active IDS from TRANSP active poloidal-field circuit data."""
+
 
 from nc2imas import *
 
@@ -10,10 +13,9 @@ class imas_pf_active:
 
     def create_ids(self):
         self.im.logger.info('\npf_active')
-        pfc = self.im.ids.get('pf_active')
+        pfc = self.im.new_ids('pf_active')
         cm2m = 0.01
         vol_inv = 1.e6
-        sgn = -1 if self.im.iter_ else 1
 
         #scalar time
         timesc = self.im.get_ncvar('TIME')
@@ -25,8 +27,12 @@ class imas_pf_active:
         pfc = self.im.fill_properties(pfc)
         self.im.fill_code_properties(pfc)
         pfc.ids_properties.homogeneous_time = 1
-        pfc.time.resize(ntimes)
-        pfc.time = timesc
+        # Assign through the numeric-array interface with an explicit float64
+        # dtype.  DD4 FLT_1D nodes are double precision and direct structure
+        # assignment can trigger noisy automatic-conversion diagnostics.
+        # Direct assignment of a float64 ndarray is the cleanest DD4 path for
+        # this top-level time coordinate.
+        pfc.time = np.asarray(timesc, dtype=np.float64)
 
         #coil names from VV_PF1AU(PF_ + PF1AU)
         coils = self.im.get_var_names('VV_?', cut='VV_')
@@ -47,7 +53,9 @@ class imas_pf_active:
 
             #Current fed in the coil (for 1 turn)
             #KK_PF1AU(TIME) Current in PF1AU circuit; CC_PF.. from equil ; PF_PF1AU zeros
-            self.im.fill_data_nc(pfc.coil[i].current.data, 'KK_'+coil, mult=sgn)
+            # PF coil-current sign is an independent circuit/winding convention;
+            # do not reuse the plasma-current orientation sign.
+            self.im.fill_data_nc(pfc.coil[i].current.data, 'KK_'+coil)
 
             #Voltage on the coil terminals
             #VV_PF1AU(TIME) Coil terminal voltage for pf1au
@@ -72,7 +80,7 @@ class imas_pf_active:
 
         if ncoils==0:
             # use this to exclude pf_coils, since size of coils=1 if empty in trdat_ids !
-            pfc.time = np.array([-999])
+            pfc.time = np.array([-999.0], dtype=np.float64)
         #if ncoils > 0: # error if empty; so filling with invalid times, to use it to skip this
         self.im.putdb_imas(pfc)
         self.logger.info('Done')
