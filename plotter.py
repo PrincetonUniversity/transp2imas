@@ -23,7 +23,7 @@ def check_valid(ids, pre, name):
     try:
         times = ids.time
         print('homogeneous time', ids.ids_properties.homogeneous_time)
-    except:
+    except (AttributeError, TypeError):
         print(f'{name} not available')
         return 0, 0, pre
     else:
@@ -370,9 +370,8 @@ def plot_equilibrium_ids(eq, ni:int=0, pre:str=None, name='eq', save=False):
         nr = eq.time_slice[0].profiles_2d[0].grid.dim1.shape[0]
         nz = eq.time_slice[0].profiles_2d[0].grid.dim2.shape[0]
         print(nr,nz)
-    except:
+    except (AttributeError, IndexError, TypeError):
         print('2d profile not found')
-        pass
     else:
         prof2d = True
     rgrid = np.zeros((nslices, nr), dtype=float)
@@ -384,9 +383,8 @@ def plot_equilibrium_ids(eq, ni:int=0, pre:str=None, name='eq', save=False):
     try:
         sh = eq.time_slice[0].coordinate_system.r.shape
         nsi, nth = sh[0], sh[1]
-    except:
+    except (AttributeError, IndexError, TypeError):
         print('2d inverse grid not found')
-        pass
 
     rinv = np.zeros((nslices, nsi, nth), dtype=float)
     zinv = np.zeros((nslices, nsi, nth), dtype=float)
@@ -418,12 +416,12 @@ def plot_equilibrium_ids(eq, ni:int=0, pre:str=None, name='eq', save=False):
         try:
             fdp_dspi[i] = eq.time_slice[i].profiles_1d.f_df_dpsi
             dpressure_dpsi[i] = eq.time_slice[i].profiles_1d.dpressure_dpsi
-        except:
+        except (AttributeError, IndexError, TypeError, ValueError):
             pass
         try:
             rho_tor_norm[i] = eq.time_slice[i].profiles_1d.rho_tor_norm
             jtor[i] = eq.time_slice[i].profiles_1d.j_tor
-        except:
+        except (AttributeError, IndexError, TypeError, ValueError):
             pass
 
         if i==0:
@@ -459,7 +457,7 @@ def plot_core_profiles(cp, pre:str=None, name='cp', save:bool=True):
     ntimes = 0
     try:
         ntimes = len(cp.time)
-    except:
+    except (AttributeError, TypeError):
         print('core_profiles not available')
         return
 
@@ -480,7 +478,7 @@ def plot_limiter_ids(wall, pre:str=None, name='limiter', save:bool=True):
     nunits = 0
     try:
         nunits = len(wall.description_2d[0].limiter.unit)
-    except:
+    except (AttributeError, IndexError, TypeError):
         print('limiters not available')
         return
 

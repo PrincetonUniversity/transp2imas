@@ -65,6 +65,8 @@ that touch schema-dependent code.
 - Avoid wildcard imports in production entry points; import writer classes and shared helpers explicitly.
 - Do not change NumPy floating-point behavior process-wide with `np.seterr`; use a narrowly scoped `np.errstate` or safe `np.divide(..., where=...)` around converter-owned arithmetic.
 - Do not use bare `except:` in converter code. Catch the expected exception types, keep the guarded block small, and log enough context to diagnose malformed optional data. A broader `except Exception` is acceptable only for deliberately isolated compatibility/optional-data fallbacks where the failure is logged or converted to a documented absence.
+- `make check` enforces the bare-exception rule with `examples/verify_exception_policy.py`, so a new unqualified `except:` will fail CI.
+- Resource-owning classes should support explicit close/context-manager usage. `netcdf_connection.__del__` is only a best-effort fallback; normal conversion closes the IMAS entry and input CDF deterministically.
 - Dictionary literals used for physics/atomic metadata must not contain duplicate keys; Python silently retains only the last value.
 
 ## Git workflow

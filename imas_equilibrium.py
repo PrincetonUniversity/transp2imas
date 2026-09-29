@@ -245,10 +245,9 @@ class imas_equilibrium:
                   rbdy[0] = rbdy[-1]
                   zbdy[0] = zbdy[-1]
                   break
-         except:
+         except (ValueError, TypeError, IndexError, AttributeError):
             if time ==0:
                print(f'Error tracing boundary for PSI= {psib}')
-            pass
 
          #to debug, change to True
          if False and (time<2 or time%100==0):
@@ -268,7 +267,7 @@ class imas_equilibrium:
          minor = -1
          try:
             minor = (np.max(rsurf) - np.min(rsurf))/2.0
-         except:
+         except (ValueError, TypeError):
             if time==0:
                self.im.logger.info('minor_axis: plasma boundary invalid')
          return minor
@@ -331,7 +330,7 @@ class imas_equilibrium:
         try:
           for it in range(ntimep):
               beta_normal.append( np.multiply(bttot, gvol) / pvol[:,None] )
-        except:
+        except (ValueError, TypeError, FloatingPointError):
           self.logger.info(f'Error- beta_normal: bttot {bttot.shape} gvol {gvol.shape}')
         else:
           beta_normal = np.array(beta_normal)
@@ -344,7 +343,7 @@ class imas_equilibrium:
             # 100 * beta_tor * a[m] * B0 [T] / ip [MA]   ???
             a = np.sqrt(area/pi)
             beta_tor_norm = 1.0e8*btor*a*(bt_sign*bz)/currents
-        except:
+        except (ValueError, TypeError, FloatingPointError):
             pass
 
         #Area of the LCFS poloidal cross section
@@ -414,7 +413,7 @@ class imas_equilibrium:
         nprof1d = 0
         try:
             nprof1d = psi.shape[1]
-        except:
+        except (AttributeError, IndexError, TypeError):
             print(' Error getting equilibrium psi')
             return
 
@@ -431,7 +430,7 @@ class imas_equilibrium:
         try:
             self.logger.info(f'nprof1d {nprof1d} bzxR {bzxR.shape} fbz {fbz.shape}')
             fprof = f_sign * fbz * bzxR[:,None] # signed R*B_phi
-        except:
+        except (AttributeError, ValueError, TypeError):
             pass
 
         # equilibrium profiles_1d is naturally a flux-surface (XB) grid because

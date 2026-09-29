@@ -53,107 +53,105 @@ def do_convert(argvs):
             f'Unexpected get_args() return length {len(parsed_args)}; expected 13, 15 or 16'
         )
 
-    nci = nc2imas(backend=backend, run=run, occur=occur, user=user,
+    with nc2imas(backend=backend, run=run, occur=occur, user=user,
          machine=machine, new_db=newdb, ncfile=ncfile, nml_file=nml, log=log, debug=deb,
-         ip_direction=ip_direction, bt_direction=bt_direction, dd_version=dd_version)
-    nci.logger.info(f'{"-"*30} \n{ncfile}, {nml}')
-    print(f'IMAS target DD: {nci.dd_version} (schema family DD{nci.dd_major_version})')
+         ip_direction=ip_direction, bt_direction=bt_direction, dd_version=dd_version) as nci:
+        nci.logger.info(f'{"-"*30} \n{ncfile}, {nml}')
+        print(f'IMAS target DD: {nci.dd_version} (schema family DD{nci.dd_major_version})')
 
 
-    if all_:
-        print('wall')
-        imas_wall(nci)
+        if all_:
+            print('wall')
+            imas_wall(nci)
 
-        print('tf')
-        imas_tf(nci)
+            print('tf')
+            imas_tf(nci)
 
-        print('lh_antenna') 
-        imas_lh_antennas(nci)
+            print('lh_antenna') 
+            imas_lh_antennas(nci)
 
-        print('ic_antenna') 
-        imas_ic_antennas(nci)
+            print('ic_antenna') 
+            imas_ic_antennas(nci)
 
-        print('ec_launchers')
-        # get launch position from namelist
-        imas_ec_launchers(nci, ec_nml_launch=ec_nml_launch)
+            print('ec_launchers')
+            # get launch position from namelist
+            imas_ec_launchers(nci, ec_nml_launch=ec_nml_launch)
 
-        # NBI mapping has been audited; writer-specific time handling is kept local.
-        print('nbi') 
-        imas_nbi(nci)
+            # NBI mapping has been audited; writer-specific time handling is kept local.
+            print('nbi') 
+            imas_nbi(nci)
 
-        # NUBEAM birth/deposition source distribution. This is distinct from
-        # the full fast-ion distributions IDS and is available even when FBM
-        # phase-space output was not saved.
-        print('distribution_sources')
-        imas_distribution_sources(nci)
+            # NUBEAM birth/deposition source distribution. This is distinct from
+            # the full fast-ion distributions IDS and is available even when FBM
+            # phase-space output was not saved.
+            print('distribution_sources')
+            imas_distribution_sources(nci)
 
-        # PF circuit-current signs are independent of plasma Ip/Bphi orientation.
-        print('pf_active') 
-        imas_pf_active(nci)
+            # PF circuit-current signs are independent of plasma Ip/Bphi orientation.
+            print('pf_active') 
+            imas_pf_active(nci)
 
-        # COCOS/sign consistency is handled centrally by nc2imas.
-        # DD4 is written in COCOS=17.  Physical Ip/Bphi directions are obtained
-        # from TRANSP NLJCCW/NLBCCW (or explicit command-line overrides), while
-        # psi/q/phi and signed current profiles are transformed accordingly.
+            # COCOS/sign consistency is handled centrally by nc2imas.
+            # DD4 is written in COCOS=17.  Physical Ip/Bphi directions are obtained
+            # from TRANSP NLJCCW/NLBCCW (or explicit command-line overrides), while
+            # psi/q/phi and signed current profiles are transformed accordingly.
 
-        # Core profiles, radial grids, units, and COCOS-dependent signs have
-        # been audited against the regression CDFs.
-        print('core_profiles')
-        imas_core_profiles(nci)
+            # Core profiles, radial grids, units, and COCOS-dependent signs have
+            # been audited against the regression CDFs.
+            print('core_profiles')
+            imas_core_profiles(nci)
 
-        # Passive structures remain conditional on TRANSP PS_n channels and
-        # need a dedicated passive-current regression case for full validation.
-        print('pf_passive')
-        imas_pf_passive(nci)
+            # Passive structures remain conditional on TRANSP PS_n channels and
+            # need a dedicated passive-current regression case for full validation.
+            print('pf_passive')
+            imas_pf_passive(nci)
 
 
-        # Dedicated spatial radiation output: bremsstrahlung, synchrotron,
-        # and line/impurity radiation when the corresponding TRANSP profiles
-        # are present.  P0RECO is neutral kinetic source power, not radiation.
-        print('radiation')
-        imas_radiation(nci)
+            # Dedicated spatial radiation output: bremsstrahlung, synchrotron,
+            # and line/impurity radiation when the corresponding TRANSP profiles
+            # are present.  P0RECO is neutral kinetic source power, not radiation.
+            print('radiation')
+            imas_radiation(nci)
 
-# summary has been re-audited against TRANSP energy/current units and DD4.
-# It is now part of the standard conversion.
+            # Summary has been re-audited against TRANSP energy/current units and DD4.
+            # It is now part of the standard conversion.
 
-        # Equilibrium geometry, grids, moments, units, and COCOS transforms
-        # have been re-audited against the regression cases.
-        print('equilibrium') #142202U01.CDF
-        imas_equilibrium(nci, conv_moments=moments, nzones_in=nzones)
+            # Equilibrium geometry, grids, moments, units, and COCOS transforms
+            # have been re-audited against the regression cases.
+            print('equilibrium') #142202U01.CDF
+            imas_equilibrium(nci, conv_moments=moments, nzones_in=nzones)
 
-        print('summary')
-        imas_summary(nci)
+            print('summary')
+            imas_summary(nci)
 
-        # Audited source mappings are documented in README.md.
-        print('core_sources')
-        imas_core_sources(nci)
+            # Audited source mappings are documented in README.md.
+            print('core_sources')
+            imas_core_sources(nci)
 
-        # RF wave propagation/deposition.  The writer is conservative: it
-        # creates waves only when supported absorbed/deposited EC or IC output
-        # is present, and leaves launcher-only runs to the antenna IDSs.
-        print('waves')
-        imas_waves(nci)
+            # RF wave propagation/deposition.  The writer is conservative: it
+            # creates waves only when supported absorbed/deposited EC or IC output
+            # is present, and leaves launcher-only runs to the antenna IDSs.
+            print('waves')
+            imas_waves(nci)
 
-        print('core_transport')
-        imas_core_transport(nci)
+            print('core_transport')
+            imas_core_transport(nci)
 
-        print('edge_sources') #112989Z09
-        imas_edge_sources(nci)
+            print('edge_sources') #112989Z09
+            imas_edge_sources(nci)
 
-        #print('sawteeth')
-        #imas_sawteeth()
+            #print('sawteeth')
+            #imas_sawteeth()
 
-        # Dataset-level metadata and workflow provenance. These are written
-        # last so they describe the complete converted entry. Whole-IDS source
-        # provenance is also attached by fill_properties() to every IDS.
-        print('workflow')
-        imas_workflow(nci)
+            # Dataset-level metadata and workflow provenance. These are written
+            # last so they describe the complete converted entry. Whole-IDS source
+            # provenance is also attached by fill_properties() to every IDS.
+            print('workflow')
+            imas_workflow(nci)
 
-        print('dataset_fair')
-        imas_dataset_fair(nci)
+            print('dataset_fair')
+            imas_dataset_fair(nci)
 
-    # close datafile
-    nci.close_imas_database()
 
 
 #if -i all -d <dir> ; then run in a loop; otherwise run provided input file only

@@ -47,7 +47,7 @@ class imas_ec_launchers:
                      arr = True
                   elif n==0:
                      dat = 0.0
-               except:
+               except TypeError:
                   pass
 
                if arr:

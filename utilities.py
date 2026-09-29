@@ -57,14 +57,14 @@ def find_runid_shot_code(runid):
       ri = ris[0] if len(ris)>0 else len(rid)
       rid = rid[:ri]
       part = [str(ord(x)-96) if x.isalpha() else x for x in rid.lower()]
-    except:
+    except (ValueError, TypeError, IndexError) as exc:
       mes = f'Error getting shot, run-id from filename stem {cdf_name}. Please use <runid>'
-      raise Exception(mes)
+      raise ValueError(mes) from exc
 
     run = 0
     try:
       run = int(''.join(part))
-    except:
+    except (ValueError, TypeError):
       print(' Error getting run-number:', part, 'shot:', shot,
             'code:', rid, 'runid:', runid)
     return run, shot, rid

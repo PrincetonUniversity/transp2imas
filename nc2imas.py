@@ -70,6 +70,32 @@ class nc2imas(imas_connection, netcdf_connection):
         self._code_parameters_xml_cache = None
         self._provenance_file_records_cache = None
 
+    def close_imas_database(self):
+        """Close the IMAS entry and TRANSP CDF deterministically.
+
+        ``netcdf_connection.__del__`` remains a best-effort safety net, but
+        normal converter operation must not depend on garbage collection for
+        closing the input NetCDF file.
+        """
+        try:
+            imas_connection.close_imas_database(self)
+        finally:
+            self.close_ncfile()
+
+    def __enter__(self):
+        """Return the active converter for use as a context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Close IMAS and NetCDF resources without suppressing exceptions."""
+        try:
+            self.close_imas_database()
+        except (AttributeError, RuntimeError, TypeError, OSError) as close_error:
+            if exc_type is None:
+                raise
+            if self.logger is not None:
+                self.logger.error(f'Error while closing converter resources: {close_error}')
+        return False
 
 
     @staticmethod
@@ -533,13 +559,9 @@ class nc2imas(imas_connection, netcdf_connection):
             ids[:] = dat
           elif ind==0:
             self.logger.info(f'\t\t{nm} is invalid')
-        except:
+        except (AttributeError, ValueError, TypeError, IndexError, FloatingPointError):
             if ind==0:
                 self.logger.info(f'\t\t{nm} is invalid')
-
-        #if not self.check_1dim(dat):
-            #print('Check dim')
-            #raise Exception('cannot fill data that is not 1D')
 
     def load_namelist(self):
         if self.nml_name is None:
@@ -572,10 +594,8 @@ class nc2imas(imas_connection, netcdf_connection):
 
     def reload_namelist(self, fname:str):
         self.nml_name = fname
-        try:
+        if self.nmlist is not None:
             self.nmlist.clear()
-        except:
-            pass
         self.load_namelist()
 
 
@@ -608,18 +628,18 @@ class nc2imas(imas_connection, netcdf_connection):
         n = 0
         try:
             n = tp(nn[0]) if len(nn)>0 else None
-        except:
+            for i,s in enumerate(ops):
+                d = tp(nn[i+1])
+                if s=='*':
+                    n = n * d
+                elif s=='/':
+                    n = n/d
+                elif s=='+':
+                    n = n+d
+                elif s=='-':
+                    n = n-d
+        except (ValueError, TypeError, IndexError):
             print(f'parse error: {ss0} extracted: {nn}')
-        for i,s in enumerate(ops):
-            d = tp(nn[i+1])
-            if s=='*':
-                n = n * d
-            elif s=='/':
-                n = n/d
-            elif s=='+':
-                n = n+d
-            elif s=='-':
-                n = n-d
         return n
 
 
@@ -628,14 +648,18 @@ class nc2imas(imas_connection, netcdf_connection):
         if name[-1] != '?':
             raise Exception(f'Error: {name} needs "?" as last char')
         name = name[:-1]
-        pattern = fr'\b{name}(\((d{0,{ndig}}))?\b'
+        # pattern = fr'\b{name}(\((d{0,{ndig}}))?\b'
+        pattern = fr'\b{name}(\((\d{0,{ndig}}))?\b'
+        if self.nmlist is None:
+            self.logger.info(f'**Error: {name}: namelist not found')
+            return 0
         try:
             matches = [self.nmlist[k] for k in self.nmlist.keys()
                         if name==k or re.search(pattern, k)]
             return len(matches)
-        except:
+        except (AttributeError, TypeError):
             self.logger.info(f'**Error: {name}: namelist not found')
-        return 0
+            return 0
 
 
     def make_namelist_re_pattern(self, name:str, nd1:int=0, nd2:int=0, nch1:int=0,
@@ -671,7 +695,7 @@ class nc2imas(imas_connection, netcdf_connection):
                val = re.split(r'[\s,;]+', val)
             if ind>=0:
                val = val[ind]
-        except:
+        except (KeyError, TypeError, IndexError, AttributeError):
             #self.logger.info(f'** {name} NOT found in name list')
             if self.nmlist is None:
                 self.logger.info(f'** {self.nmlist} is not set')
@@ -681,7 +705,7 @@ class nc2imas(imas_connection, netcdf_connection):
         try:
             if ind==-1:
                narr = len(val)
-        except:
+        except TypeError:
             pass
 
         if tp in [int, float]:
@@ -723,7 +747,7 @@ class nc2imas(imas_connection, netcdf_connection):
         if res is not None and resize:
            try:
                n = len(res)
-           except:
+           except TypeError:
                pass
            if n<=1:
                res = np.full(size, res)
@@ -747,7 +771,7 @@ class nc2imas(imas_connection, netcdf_connection):
             res = name[li:ri] if ri>li+1 else default
             if tp is not None:
                 res = tp(res)
-        except:
+        except (IndexError, ValueError, TypeError):
             self.logger.debug(f'extract error: {name} doesnot have {pat1} and {pat2}')
         return res
 

@@ -17,7 +17,7 @@ PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not 
 
 .DEFAULT_GOAL := help
 
-.PHONY: help venv install convert check check-shebang check-literals test verify verify-all verify-dd audit inspect plot-ids fortran clean
+.PHONY: help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-dd audit inspect plot-ids fortran clean
 
 help:
 	@echo "TRANSP-to-IMAS developer commands"
@@ -66,7 +66,10 @@ check-shebang:
 check-literals:
 	$(PYTHON) examples/verify_python_literals.py
 
-check: check-shebang check-literals
+check-exceptions:
+	$(PYTHON) examples/verify_exception_policy.py
+
+check: check-shebang check-literals check-exceptions
 	$(PYTHON) -m compileall -q -x '(^|/)(\.venv|build)/' .
 	$(MAKE) -C examples quick PYTHON="$(PYTHON)"
 

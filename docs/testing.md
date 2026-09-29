@@ -11,6 +11,8 @@ Python run alone is not sufficient to establish a correct physics mapping.
 `#!/usr/bin/python`, then compiles the Python tree. It also runs the quick
 source-verification suite under `examples/`.
 
+It also runs `examples/verify_python_literals.py` and `examples/verify_exception_policy.py`. The latter rejects bare `except:` handlers so `KeyboardInterrupt` and `SystemExit` are never swallowed by accidental catch-all blocks.
+
 This catches repository-policy drift, syntax errors, and calls to helper methods
 that do not exist.
 

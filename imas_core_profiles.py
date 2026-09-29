@@ -449,7 +449,7 @@ class imas_core_profiles:
             bz_signed = bt_sign * bz
             a = np.sqrt(parea/pi)
             beta_tor_norm = 1.0e8*btor*a*bz_signed/currents
-        except:
+        except (ValueError, TypeError, FloatingPointError):
             pass
 
         #beta_pol BETAT(TIME)

@@ -20,6 +20,9 @@ Run `make help` for the supported developer workflows. In particular,
 `make check` runs fast static checks, `make verify-all` audits both NSTX
 fixtures, and `make verify-dd` inspects the installed Data Dictionary layouts.
 
+
+The static checks also reject duplicate Python dictionary literal keys and bare `except:` handlers. Converter resources are managed explicitly: `convert.py` runs `nc2imas` as a context manager so both the IMAS database entry and the source NetCDF file are closed even if a writer fails.
+
 For a repository-managed environment instead, run `make install`; it creates
 `.venv` and installs [requirements.txt](requirements.txt).
 
@@ -402,9 +405,9 @@ The following 8.x labels were internal development snapshots created before the
 first public pre-1.0 baseline. They are retained here only to document the
 evolution of the converter.
 
-### v0.6.3: NBI parallel current
+### v0.8.3: NBI parallel current
 
-v0.6.3 populates `core_sources/source[nbi]/profiles_1d/j_parallel` from the
+v0.8.3 populates `core_sources/source[nbi]/profiles_1d/j_parallel` from the
 TRANSP beam-driven toroidal current `CURB`. The converter changes A/cm² to
 A/m², applies the physical plasma-current sign, and converts to the IMAS
 `<J.B>/B0` representation using `CONPLJB/BZ`. The same shared conversion is
@@ -419,9 +422,9 @@ For `174783Q32`, `CURB` agrees with the sum of the fourteen `BDCnn` beam-current
 profiles with correlation 0.9999993, and the resulting parallel-current profile
 is finite.
 
-### v0.6.2: workflow and provenance API fix
+### v0.8.2: workflow and provenance API fix
 
-v0.6.2 fixes the metadata/provenance workflow path for DD 4.1.1.  The
+v0.8.2 fixes the metadata/provenance workflow path for DD 4.1.1.  The
 workflow writer now uses `build_code_parameters_xml()` (the actual nc2imas
 API) and the new `get_ncattr_text()` helper instead of the nonexistent
 `build_transp_parameters_xml()` and `_decode_attr()` names.  The latter bug
@@ -434,10 +437,10 @@ Run `python examples/verify_writer_api.py` as a no-IMAS regression check; it sta
 verifies every `self.im.<method>()` call made by writer modules against the
 methods implemented by `nc2imas` and its local base classes.
 
-### v0.6.1: distribution_sources namelist accessor fix
+### v0.8.1: distribution_sources namelist accessor fix
 
-v0.6.1 fixes the per-beam species lookup in `imas_distribution_sources.py`.
-The v0.6.0 writer accidentally called a nonexistent `get_namelist_value()`
+v0.8.1 fixes the per-beam species lookup in `imas_distribution_sources.py`.
+The v0.8.0 writer accidentally called a nonexistent `get_namelist_value()`
 method. It now uses the established `get_namelist_var()` API with the correct
 zero-based index (`ib-1`) and treats missing species namelist metadata as
 optional rather than aborting conversion. `distribution_sources` remains
@@ -445,9 +448,9 @@ independent of the full fast-ion `distributions` IDS: NBI birth/deposition
 source moments can be exported from `BDEPnn_*` even when FBM phase-space output
 was not saved.
 
-### v0.6.0: NBI distribution sources and metadata/provenance
+### v0.8.0: NBI distribution sources and metadata/provenance
 
-v0.6.0 adds `distribution_sources` for NUBEAM birth/deposition moments when
+v0.8.0 adds `distribution_sources` for NUBEAM birth/deposition moments when
 `BDEPnn_*` is present, including per-beam particle, energy, toroidal-momentum,
 global power/torque, and shinethrough bookkeeping.  It does not synthesize a
 full `distributions` IDS if FBM phase-space arrays are absent.

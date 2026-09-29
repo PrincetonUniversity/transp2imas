@@ -83,3 +83,8 @@ A new IDS writer should:
 5. be registered in the conversion sequence only after source-side checks are
    available;
 6. add or update documentation and regression checks in the same change.
+
+
+## Resource lifetime
+
+`netcdf_connection` owns the input TRANSP CDF and implements `__enter__`/`__exit__` plus an idempotent `close_ncfile()`. `nc2imas` extends that lifetime rule to both the input CDF and the IMAS `DBEntry`: `convert.py` uses `with nc2imas(...) as nci`, and `nc2imas.close_imas_database()` closes the IMAS entry and the NetCDF dataset. `__del__` remains only a last-resort cleanup path and is not required for correct operation.

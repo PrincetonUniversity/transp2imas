@@ -3,16 +3,9 @@
 
 
 import os
-import sys
 from pathlib import Path
 import numpy as np
-import scipy
 import re
-from atoms_class import atom_base
-
-from scipy.interpolate import interp1d
-
-from pathlib import Path
 from netCDF4 import Dataset
 from typing import List, Dict, Tuple, Union
 class netcdf_connection:
@@ -28,8 +21,21 @@ class netcdf_connection:
         self.set_machine_runid(machine)
         self.get_times()
 
-    def __del__(self):
+    def __enter__(self):
+        """Return this open NetCDF connection for ``with`` statements."""
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Close the NetCDF file and propagate any exception."""
         self.close_ncfile()
+        return False
+
+    def __del__(self):
+        """Best-effort fallback only; normal code closes explicitly."""
+        try:
+            self.close_ncfile(quiet=True)
+        except (AttributeError, RuntimeError, OSError):
+            pass
 
     def get_times(self):
         self.timesc = self.get_ncvar('TIME')
@@ -47,25 +53,35 @@ class netcdf_connection:
         self.nc = Dataset(path_, 'r')
         self.expand_vars(self.nc)
 
-    def close_ncfile(self):
+    def close_ncfile(self, quiet:bool=False):
+        """Close the NetCDF dataset safely and idempotently.
+
+        This method is the primary close path.  ``__del__`` calls it only as a
+        final fallback because Python does not guarantee destructor timing.
+        """
+        nc = getattr(self, 'nc', None)
+        if nc is None:
+            return
         try:
-            self.nc.close()
-        except:
-            print(f'Error in closing ncfile {self.ncfile}')
+            if hasattr(nc, 'isopen') and not nc.isopen():
+                return
+            nc.close()
+        except (RuntimeError, OSError, AttributeError) as exc:
+            if not quiet:
+                print(f'Error in closing ncfile {self.ncfile}: {exc}')
+        finally:
+            self.nc = None
 
     def expand_vars(self, gp):
         for key, _ in gp.variables.items():
             self.vars_.append(key)
         for _, sub in gp.groups.items():
-            expand_vars(self.vars_, sub)
+            self.expand_vars(sub)
 
     def reload_ncfile(self, fname:str):
+        self.close_ncfile()
         self.ncfile = fname
-        try:
-            self.nc.close()
-            self.vars_.clear()
-        except:
-            pass
+        self.vars_.clear()
         self.open_ncfile()
 
     def make_re_pattern(self, name:str, nd1:int=0, nd2:int=0, nch1:int=0,
@@ -153,9 +169,8 @@ class netcdf_connection:
     def split_var_name(self, names, cut:str='') -> Union[Dict[str,List], None]:
         try:
             return {s.split(cut)[0]: s.split(cut)[1:] for s in names if len(s.split(cut))>1}
-        except:
-            chars=''
-            print(f'{names} split error {names.split(chars,1)}')
+        except (AttributeError, TypeError):
+            print(f'{names} split error')
         return None
         
 
@@ -264,7 +279,7 @@ class netcdf_connection:
                 return scale*res
             else:
                 return res
-        except:
+        except (KeyError, IndexError, ValueError, TypeError, AttributeError, RuntimeError, FloatingPointError):
             return np.array([])
 
     def get_ncvars_lst(self, lst:List[str], scale:float=1., ind:int=-1) -> np.array:
@@ -298,12 +313,12 @@ class netcdf_connection:
             build_date = self.nc.getncattr('BUILD_date').strip()
             device = self.nc.getncattr('device').strip()
             year = self.nc.getncattr('year').strip()
-        except:
+        except (AttributeError, KeyError, TypeError):
             pass
         try:
             tglf = self.nc.getncattr('TGLF_hash').strip()
             glf = self.nc.getncattr('GLF23_hash').strip()
-        except:
+        except (AttributeError, KeyError, TypeError):
             pass
         return runid, device, year, cdf_date, build_date, tglf, glf
 
@@ -332,12 +347,8 @@ class netcdf_connection:
         shot = self.get_ncattr('shot')
         self.shot = shot
 
-        try:
-            #if shot is string
-            ss = ''.join([x for x in shot if x.isdigit()])
-        except:
-            pass
-        else:
+        if isinstance(shot, str):
+            ss = ''.join(x for x in shot if x.isdigit())
             self.shot = int(ss) if ss else 0
 
         try:
@@ -345,7 +356,7 @@ class netcdf_connection:
             runid = self.get_ncattr('Runid').strip()
             if runf != runid:
                 print(f'Runid in nc file header {runid}')
-        except:
+        except (AttributeError, TypeError):
             print(f'Could not verify Runid with filename {self.ncfile}')
 
 
