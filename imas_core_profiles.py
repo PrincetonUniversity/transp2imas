@@ -254,10 +254,6 @@ class imas_core_profiles:
                   res.append(ion)
         return res
 
-    def get_ion_data_global(ions:ion_data) ->ion_data:
-        iong = []
-        #for ion in ions:
-
 
     #volume/wall neutral density
     def get_neutral_data_type(self, atomsDef, cat) -> List:
@@ -353,7 +349,6 @@ class imas_core_profiles:
         #ions for profiles_1d
         ions = self.get_ion_data()
         #ions = self.get_ion_data_occur(prof_id=occur)
-        #ion_glob = self.get_ion_data_global(ions)
 
         # neutrals for profile_id
         neutrals = self.get_neutral_data()

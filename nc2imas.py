@@ -648,14 +648,13 @@ class nc2imas(imas_connection, netcdf_connection):
         if name[-1] != '?':
             raise Exception(f'Error: {name} needs "?" as last char')
         name = name[:-1]
-        # pattern = fr'\b{name}(\((d{0,{ndig}}))?\b'
-        pattern = fr'\b{name}(\((\d{0,{ndig}}))?\b'
+        pattern = rf'^{re.escape(name)}(?:\((\d{{1,{ndig}}})\))?$'
         if self.nmlist is None:
             self.logger.info(f'**Error: {name}: namelist not found')
             return 0
         try:
-            matches = [self.nmlist[k] for k in self.nmlist.keys()
-                        if name==k or re.search(pattern, k)]
+            matches = [self.nmlist[k] for k in self.nmlist 
+                       if re.fullmatch(pattern, k)]
             return len(matches)
         except (AttributeError, TypeError):
             self.logger.info(f'**Error: {name}: namelist not found')
