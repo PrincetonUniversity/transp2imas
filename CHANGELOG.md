@@ -26,6 +26,13 @@ Code-quality fixes included in the baseline:
 - Add workflow, dataset FAIR metadata, source hashes, and per-IDS provenance.
 - Add source-side regression checks for the bundled NSTX cases and static writer/API
   validation.
+- Validate and extend the `waves` writer with bundled DIII-D TORBEAM/GENRAY EC
+  and C-Mod multi-frequency ICRF cases. IC coherent waves now use resolved
+  `PIC_Fj` absorbed-power profiles with `RFPWRABj` closure; `QICHA` is only a
+  single-wave fallback. `PEICH`, `PIICH`, and `QRFBTOT` remain plasma-source
+  quantities rather than being incorrectly summed as wave absorption.
+- Add `examples/verify_waves_mapping.py` and `make verify-waves` for portable
+  RF source-side regression checks.
 - Add `examples/audit_mapping_coverage.py` and `make audit` to classify CDF variables
   as converter-referenced, derived/support, validation-only, deliberately deferred,
   or still unclassified, with Markdown/CSV/JSON reports.

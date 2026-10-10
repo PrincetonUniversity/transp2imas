@@ -4,7 +4,7 @@
 import re
 import numpy as np
 
-from nc2imas import *
+from nc2imas import nc2imas
 
 
 class imas_waves:
@@ -25,15 +25,25 @@ class imas_waves:
         as fallbacks when the per-gyrotron arrays are absent.
 
     IC (TORIC-style full-wave output)
-      * ``RFPWRABj(TIME)`` -> absorbed wave power for antenna j.
-      * ``FREQAj(TIME)`` -> wave frequency for antenna j.
-      * If exactly one IC antenna is represented, aggregate ``PEICH``,
-        ``PIICH`` and ``QRFBTOT`` profiles are combined into total absorbed
-        power density.  ``PEICH`` is additionally mapped to thermal-electron
-        absorption.  Aggregate ion/fast-ion terms are not assigned to a
-        fictitious ion species.
+      * ``RFPWRABj(TIME)`` -> absorbed wave power for antenna/frequency j.
+      * ``FREQAj(TIME)`` -> wave frequency for antenna/frequency j.
+      * ``PIC_Fj(TIME3,X)`` -> antenna/frequency-resolved absorbed wave power
+        density.  Its volume integral is checked by the source-side regression
+        against ``RFPWRABj``.
+      * For a single IC coherent wave only, aggregate ``QICHA(TIME3,X)`` is an
+        accepted fallback total absorbed-power profile when ``PIC_Fj`` is not
+        available.
+      * For a single IC coherent wave only, ``ICCUR(TIME3,X)`` is mapped as
+        cumulative toroidal current.  Multi-wave aggregate current is not
+        duplicated across coherent waves.
       * ``XGRID_NPHI`` is exported only for a single IC wave because the CDF
-        grid is not antenna-resolved.
+        spectral grid is not frequency/antenna resolved.
+
+    ``PEICH``, ``PIICH`` and ``QRFBTOT`` are *not* wave-absorption partitions.
+    They are plasma-heating/source quantities and are handled by
+    ``core_sources``.  In the C-Mod validation case their sum strongly
+    over-counts the absorbed RF power, while ``PIC_Fj`` and ``QICHA`` close to
+    ``RFPWRABj`` at numerical precision.
 
     TRANSP EC current density is toroidal current density (A/cm^2), not the
     IMAS definition of ``current_parallel_density = <j.B>/B0``.  Therefore the
@@ -89,7 +99,7 @@ class imas_waves:
         dims = ()
         try:
             dims = tuple(self.im.nc.variables[name].dimensions)
-        except Exception:
+        except (AttributeError, KeyError, TypeError):
             pass
         if dims and dims[0] == 'TIME3' and len(self.time) == len(arr):
             source_time = self.time
@@ -150,10 +160,10 @@ class imas_waves:
                     continue
                 try:
                     vals.append(float(self.im.parse_number(token, float)))
-                except Exception:
+                except (ValueError, TypeError, ZeroDivisionError, IndexError):
                     try:
                         vals.append(float(token.replace('D', 'E').replace('d', 'e')))
-                    except Exception:
+                    except ValueError:
                         pass
             return vals
 
@@ -193,7 +203,7 @@ class imas_waves:
             return int(default)
         try:
             return int(round(value))
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return int(default)
 
     def _discover_ec_indices(self):
@@ -221,13 +231,14 @@ class imas_waves:
 
     def _discover_ic_indices(self):
         names = getattr(self.im, 'vars_', [])
-        indices = self._indices_from_names(names, ('RFPWRAB', 'FREQA', 'PICHA'))
-        # Require an absorbed-power trace or, for a single antenna, an aggregate
-        # deposition profile.  PICHA/FREQA alone are launcher data.
-        absorbed = [i for i in indices if self._has(f'RFPWRAB{i}')]
+        indices = self._indices_from_names(names, ('RFPWRAB', 'FREQA', 'PICHA', 'PIC_F'))
+        # Require an absorbed-power trace/profile or, for a single antenna, an
+        # aggregate total-heating profile. PICHA/FREQA alone are launcher data.
+        absorbed = [i for i in indices
+                    if self._has(f'RFPWRAB{i}') or self._profile(f'PIC_F{i}').size]
         if absorbed:
             return absorbed
-        has_profile = any(self._profile(name).size for name in ('PEICH', 'PIICH', 'QRFBTOT'))
+        has_profile = bool(self._profile('QICHA').size)
         if has_profile and len(indices) == 1:
             return indices
         return []
@@ -250,18 +261,6 @@ class imas_waves:
             return np.array([])
         sign = float(getattr(self.im, 'jphi_sign', getattr(self.im, 'ip_sign', 1.0)))
         return sign * np.cumsum(j * self.darea_cm2, axis=1)
-
-    @staticmethod
-    def _sum_profiles(*arrays):
-        valid = [np.asarray(arr, dtype=np.float64) for arr in arrays
-                 if isinstance(arr, np.ndarray) and arr.size]
-        if not valid:
-            return np.array([])
-        out = np.zeros_like(valid[0], dtype=np.float64)
-        for arr in valid:
-            if arr.shape == out.shape:
-                out += arr
-        return out
 
     def _nphi_grid(self):
         if not self._has('XGRID_NPHI'):
@@ -417,29 +416,33 @@ class imas_waves:
 
         frequency = self._series(f'FREQA{index}', self.time)
         power = self._series(f'RFPWRAB{index}', self.time)
-        total_pd = np.array([])
-        electron_pd = np.array([])
-        electron_power = np.array([])
+        total_pd = self._profile(f'PIC_F{index}', self.W_PER_CM3_TO_W_PER_M3)
+        current_inside = np.array([])
+        current = np.array([])
 
-        # PEICH/PIICH/QRFBTOT are aggregate over IC antennas.  Never duplicate
-        # them across multiple coherent waves.
+        # PIC_Fj is the frequency/antenna-resolved wave absorption profile and
+        # is the preferred spatial source for coherent_wave j.  If only a
+        # single IC wave is represented, QICHA is an acceptable aggregate
+        # fallback because it is the total ICH heating profile and closes to
+        # the absorbed antenna power in the validation case.
         if len(ic_indices) == 1:
-            electron_pd = self._profile('PEICH', self.W_PER_CM3_TO_W_PER_M3)
-            ion_pd = self._profile('PIICH', self.W_PER_CM3_TO_W_PER_M3)
-            fast_pd = self._profile('QRFBTOT', self.W_PER_CM3_TO_W_PER_M3)
-            total_pd = self._sum_profiles(electron_pd, ion_pd, fast_pd)
-            if total_pd.size and not power.size:
-                power = self._power_inside(total_pd)[:, -1]
-            if electron_pd.size:
-                electron_power = self._power_inside(electron_pd)[:, -1]
+            if not total_pd.size:
+                total_pd = self._profile('QICHA', self.W_PER_CM3_TO_W_PER_M3)
+            j = self._profile('ICCUR')
+            if j.size:
+                current_inside = self._current_inside(j)
+                current = current_inside[:, -1]
+
+        if total_pd.size and not power.size:
+            power = self._power_inside(total_pd)[:, -1]
 
         nphi_this = nphi if len(ic_indices) == 1 else np.array([])
         self._fill_global_common(
-            wave, frequency=frequency, power=power, current=np.array([]),
-            electron_power=electron_power, nphi=nphi_this)
+            wave, frequency=frequency, power=power, current=current,
+            electron_power=np.array([]), nphi=nphi_this)
         self._fill_profiles(
-            wave, total_pd=total_pd, electron_pd=electron_pd,
-            current_inside=np.array([]), nphi=nphi_this)
+            wave, total_pd=total_pd, electron_pd=np.array([]),
+            current_inside=current_inside, nphi=nphi_this)
 
     # ------------------------------------------------------------------
     # IDS construction

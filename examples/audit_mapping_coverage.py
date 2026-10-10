@@ -76,6 +76,8 @@ DEFERRED_PATTERNS: dict[str, str] = {
     "PIEDG": "ion energy crossing the plasma boundary, not a volumetric source",
     "VPOLD_NC": "neoclassical poloidal velocity on the RMAJM grid; target/grid treatment deferred",
     "VTORD_NC": "neoclassical toroidal velocity on the RMAJM grid; target/grid treatment deferred",
+    "PIC_NPHI": "aggregate IC n_phi power spectrum is not frequency-resolved for multi-wave mapping",
+    "PICF??N??": "frequency/n_phi-resolved IC profile family; component-index semantics need a dedicated spectral mapping audit",
 }
 
 METADATA_MODULES = {

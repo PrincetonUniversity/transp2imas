@@ -87,7 +87,9 @@ def main():
         ec_deposition = _matches(names, r"(?:PEECH|ECCUR)\d*")
         ec_launch = _matches(names, r"PECIN\d*")
         ic_antenna = _matches(names, r"(?:PICHA|FREQA|RFPWRAB)\d+")
-        ic_profiles = [n for n in ("PEICH", "PIICH", "QRFBTOT", "XGRID_NPHI") if n in names]
+        ic_resolved_profiles = _matches(names, r"PIC_F\d+")
+        ic_profiles = [n for n in ("QICHA", "ICCUR", "XGRID_NPHI", "PIC_NPHI",
+                                    "PEICH", "PIICH", "QRFBTOT") if n in names]
         rf_summaries = [n for n in ("PRFB_D", "PRFFI") if n in names]
 
         fbm = _matches(names, r"FBM(?:_.*)?")
@@ -103,9 +105,9 @@ def main():
         crash_names = sorted(set(_contains(names, "CRASH") + _contains(names, "MIX")))
 
         ec_supported = bool(ec_deposition)
-        ic_supported = bool(_matches(names, r"RFPWRAB\d+")) or (
+        ic_supported = bool(ic_resolved_profiles or _matches(names, r"RFPWRAB\d+")) or (
             len(set(int(re.search(r"(\d+)$", n).group(1)) for n in ic_antenna if re.search(r"(\d+)$", n))) == 1
-            and any(n in names for n in ("PEICH", "PIICH", "QRFBTOT"))
+            and "QICHA" in names
         )
         waves_supported = ec_supported or ic_supported
 
@@ -137,6 +139,7 @@ def main():
         print(f"  EC deposition/current profiles: {ec_deposition or 'none'}")
         print(f"  EC launcher-only profiles:      {ec_launch or 'none'}")
         print(f"  IC antenna traces:              {ic_antenna or 'none'}")
+        print(f"  IC resolved absorption profiles:{ic_resolved_profiles or 'none'}")
         print(f"  IC spatial profiles/grid:       {ic_profiles or 'none'}")
         print(f"  RF summary quantities:          {rf_summaries or 'none'}")
         print(f"  Supported waves IDS payload:    {'YES' if waves_supported else 'NO'}")

@@ -1,0 +1,21 @@
+1
+&pt_controls
+ pt_update_time = -1.
+ 
+ ! Anomalous transport model
+ ! Possible selections : GLF23, TGLF, MMM, RLW, COPPI, CDBM, USER, Paleo
+ pt_confinement%cdbm%active = .true.
+ pt_confinement%exb%version  = 4 ! 1 - NCEXB; 2 - DMEXB; 3 - TGYROEXB; 4 - TRANSPEXB
+ pt_confinement%cdbm%xanom  = 6*0.0  ! Te, Ti, Pphi, Ni, Nz, Ne
+
+ ! Neoclassical transport model
+ ! Possible selections : NEOCH, NEOGK, NCLASS, GTCNEO
+ pt_confinement%neoch%active = .true. 
+
+ ! Residuals
+ pt_residual%RES_TI = 5D-3
+
+ ! Numerical options
+ THETA_IMPLICIT=-1.0
+
+/
