@@ -17,7 +17,7 @@ PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not 
 
 .DEFAULT_GOAL := help
 
-.PHONY: help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-dd audit inspect plot-ids fortran clean
+.PHONY: help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-waves verify-dd audit inspect plot-ids fortran clean
 
 help:
 	@echo "TRANSP-to-IMAS developer commands"
@@ -29,6 +29,7 @@ help:
 	@echo "  make check        Enforce Python headers, compile-check Python, and run fast regressions"
 	@echo "  make verify       Run source diagnostics for CASE"
 	@echo "  make verify-all   Run source diagnostics for both NSTX cases"
+	@echo "  make verify-waves Validate EC/IC waves mappings with bundled RF cases"
 	@echo "  make verify-dd    Check supported IMAS Data Dictionary layouts"
 	@echo "  make audit        Write CDF mapping-coverage reports for CASE"
 	@echo "  make inspect      Plot the final six q profiles from CDF"
@@ -84,6 +85,9 @@ verify:
 
 verify-all:
 	$(MAKE) -C examples verify-all PYTHON="$(PYTHON)" CASES="$(CASES)"
+
+verify-waves:
+	$(MAKE) -C examples verify-waves PYTHON="$(PYTHON)"
 
 verify-dd:
 	$(MAKE) -C examples verify-dd PYTHON="$(PYTHON)"

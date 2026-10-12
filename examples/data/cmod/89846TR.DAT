@@ -1,0 +1,818 @@
+!TRANSP NAMELIST - modified for Alcator C-Mod by Jeff Schachter
+!		   ICRF modifications by Yuichi Takase
+!
+!See Jeff to add/change the model.
+!
+!The default NAMELIST is setup to use the neutron rate for Ti (from feedback)
+!and the Zeff profiles (ZF2).  To use the Hirex TI2 or the central ZEF, you
+!need to change some of the switches in the section marked "Don't change
+!anything below this line", in addition to changing the usual switches in
+!the ion conduction/Ti and Zeff/magnetics sections.
+!
+!
+!-------------------------------------------------------------------------
+! CALCULATION TIME LIMITS  (from TIME0)
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST TIME_CONTROL
+!
+TINIT=.8    !**** START TIME	{cant be zero!}
+FTIME=1.15   !**** STOP TIME	{longer = more disk space}
+nzones=50
+nzone_fp=50
+NTORIC_PSERVE=1
+!
+!
+!-------------------------------------------------------------------------
+! PLASMA COMPOSITION
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST PLASMA_COMPOSITION
+!
+AIMPS=11.0, 40.0, 96.0 	!* Atomic mass of the impurity  (O for ohmic, Mo for RF)
+		!* 40 -argon
+XZIMPS=5.0, 18.0, 31.0 !* Atomic charge of the impurity  (32? for RF)
+	        !* 18 -argon (fully stripped)
+DENSIM = .01, .0023, .0001
+APLASM=2.    !* 1ST SPECIES, 2ND SPECIES (IF ANY) ATOMIC WTS.
+BACKZ=1.     !* 1st species, 2cd species (if any) atomic charges
+	     !  backz .ne. 2 probably doesn't work at the moment.
+	     ! Do not include the RF minority species in this list.
+!
+!
+!Set the Ip and Bt Direction
+NLBCCW=.FALSE.  !Toroidal B field is CCW?
+NLJCCW=.FALSE.  ! Ip is CCW?
+!-------------------------------------------------------------------------
+! INITIAL CONDITIONS
+!-------------------------------------------------------------------------
+!
+!--- PARTICLE BALANCE
+!See HELP TRANSP OPERATIONS NAMELIST PTCL_BALANCE
+NG=1         !Initial number of thermal species
+NGMAX=1      !Maximum number of thermal species
+FRAC=1.00    !Initial species fractions (if ng .gt. 1)
+!
+GFRAC=1.00   !Gas flow ratio for each species
+FTITE=.9         !INITIAL GUESS AT TI = FTITE * TE
+!
+!
+!-------------------------------------------------------------------------
+! Z EFFECTIVE
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST ZEFF
+!
+XZEFFI=2.0     !* Plasma Composition Zeff, Zeff_pc (if not set below)
+NLZFIN=.FALSE.   !* .T. = Read Zeff_pc(t) from Ufile.
+NLZFI2=.FALSE.  !* .T. = Read zeff_pc(t,r) from Ufile.
+!
+NLVISB=.FALSE.  !* .T. to read Visible Brehmstrahlung (VB) data
+NLZVBR=.FALSE.  !* .T. to use VB data for Plasma composition Zeff.
+!
+NLZEFM=.FALSE.   !* .T. to set Zeff_pc(t) = czeffm * Zeff_md(t)
+		 ! (not the other way around)
+ 		 ! Zeff_md is the Magnetic Diffusion Zeff.
+CZEFFM=1.0	 !* Multiplier applied to magdif or measured Zeff.
+NLZFIM=.FALSE.   ! .T. to input Zeffm separately; .F. for Zeff_md=Zeff_pc/czeffm
+!
+XPZEFF=0.0	 ! Profile exponent (for MAGDIF Zeff) - see SOURCE:CZEFF.FOR
+!
+!
+!
+!-------------------------------------------------------------------------
+! MAGNETICS MODELING
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST MAGNETICS (esp. for NLVSUR)
+!
+NLSPIZ=.F.      !* .T TO USE SPITZER INSTEAD OF N.C. RESISTIVITY
+NLRSQ1=.T.
+NLMDIF=.T.      ! .T TO SOLVE POLOIDAL FIELD DIFFUSION EQN.
+NLBOOT=.T.      !* =.T TO INCLUDE BOOTSTRAP CURRENTS
+		!practice should be to set NLBOOT=.T when NLSPIZ=.F
+
+NBOOSM=1        !dont' smooth central bootstrap
+!
+NLPCUR=.T.      ! match input total plasma current vx time
+NLVSUR=.F.	! .t. = iterate Zeff_md to match measured surface voltage
+		! .f. NLVSUR is incompatible with NC resistivity
+XZFMIN=0.1      ! min allowed Zeff_md
+!
+NLI2PB=.F.   ! .t. = input measured Lambda (li/2+beta) data for comparison
+NLALAM=.F.   !* .t. = adjust MHD equilibrium with Lambda data
+	! have to be sure one is using the right definitions of lambda.
+	! need to add info on Clive Best's non-circular upgrades of
+	! the MHD inputs.
+NLBDIA=.F.  ! .t. = read in diamagnetic beta toroidal from BDI Ufile
+NLBPDA=.F.  ! .t. = read in diamagnetic beta poloidal from BDI Ufile
+	! at most one of NLBDIA and NLBPDA may be set .T.
+NLDFLX=.F.  ! .t. = read diamagnetic flux vs. time DFL Ufile
+!
+NLEDIA=.F.      !* .T Compare E(dia) diamagnetic stored energy Ufile
+NLEH2P=.F.      !* .T Compare E(lambda), li/2 + Beta_pol energy
+NLELI=.F.       !* .T Compare E(li), li/2 poloidal field energy
+NLRTP=.F.       !* .T Compare 2D magnetics RTP Parameter
+NLALP=.F.       !* .T Compare 2D magnetics Alpha Parameter
+!
+! Current profile J(r) initialization is done indirectly by
+! controlling the way Vloop(r) is initialized:
+!
+NEFLD=3         ! 3: Initialize Vloop(r) to match q at r=rqefld
+                ! 4: Initialize Vloop(r) to match li/2.
+qefld=0.0       ! q to be matched (=0 to initialize a simple Vloop(r))
+rqefld=0.0      ! r at which q(r) is to be matched.
+xpefld=2.0      ! still one more free parameter in J(r)
+Vlpmin=0.1	! minimum allowed initial loop voltage (Volts)
+!
+!
+!-------------------------------------------------------------------------
+! SAWTOOTH MODEL (Kadomtsev model, list of sawtooth times in SAW ufile)
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST SAWTOOTH_MODEL
+!
+NLSAW=.T.	! .TRUE. TO TURN ON KADOMTSEV SAWTOOTH MODELING
+NLSAWD=.F.	! .TRUE. IF INPUT DATA PREPARED WITH SAWTOOTH BREAKS
+NLSAWE=.F.	! .TRUE. TO APPLY MODEL TO ELECTRONS (TE PREDICTION)
+NLSAWI=.F.	! .TRUE. TO APPLY MODEL TO THERMAL IONS (TI PREDICTION)
+NLSAWB=.F.	! .TRUE. TO APPLY MODEL TO FAST IONS
+NLSAWIC=.F.	! .TRUE. TO APPLY MODEL TO ICRF FAST IONS (see HELP)
+DTSAWD=.001	! EXTRAPOLATE DATA W/IN DTSAWD OF SAWTOOTH EVENT
+                ! I.E. DO NOT TRUST INTERPOLATION BTW. TIME PTS. THIS CLOSE
+                ! TO A SAWTOOTH EVENT.
+		! See HELP TRANSP OPERATIONS NAMELIST TRDAT_NAMELIST SAWTEETH
+XSWID1=0.0	! 0=best model for sawtooth effect on temperature
+XSWID2=0.0	! 0=Kadomtsev model for sawtooth effect on q(r)
+          ! 0 for full Kadomtsev J mixing; 1 for no mixing; 0.x for compromise
+!
+!
+!-------------------------------------------------------------------------
+! PARTICLE BALANCE MODEL
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST PTCL_BALANCE(&NEUTRALS)
+!
+NDEFINE=0
+NMODEL=1      !USE (1) CONST. FRAC (2) CONST V OR (3) CONST D PTCL MODEL
+TAUPH=.03    !* PTCL CONFINEMENT TIME
+TAUPO=.02      !* IMPURITY CONFINEMENT TIME
+NLTAUP=.F.	! .T. to input Taup ion vs. time
+NLRCYC=.F.	!Get Taup from wall recycling (H-alpha light).
+NLRCYX=.F.	!.T. to set impurity taup to equal hydrogenic taup.
+RFRAC=1
+TAUPMN=.001	!Minimum allowable Taup.
+!
+!
+!-------------------------------------------------------------------------
+! NEUTRALS MODEL - see also particle balance
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST PTCL_BALANCE(&NEUTRALS) NEUTRALS
+!
+NSOMOD=1      ! SELECT 1 FOR FRANTIC, 8 FOR SORCE8
+MOD0ED=1      ! =2 TO SET HOT EDGE NEUT TEMP=CONST. FRAC OF CENTRAL TI
+TI0FRC=.033333   ! T0(A)=TI0FRC*TI(0) IF MOD0ED=2
+E0IN=10., 2*3., 10., 2*3.  ! T0(A) FOR COLD SCES, HOT SCES IF MOD0ED=1
+FH0ESC=.3       ! FRAC. OF ESC. NEUTRALS REFLECTED TO PLASMA "HOT"
+NLRECO=.T.	! .t.= include recombination neutrals in calculation
+!
+!
+!-------------------------------------------------------------------------
+! POWER BALANCE - CONVECTION
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST ELEC_PWR_BALANCE CONVECTION
+!and HELP TRANSP OPERATIONS NAMELIST ION_PWR_BALANCE CONVECTION
+!
+ALPH0E=0.6   !* .6=3/2 convection for electrons
+ALPH0I=0.6
+!
+!
+!-------------------------------------------------------------------------
+! ION TEMPERATURE and CONDUCTIVITY options
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST ION_PWR_BALANCE
+!and HELP TRANSP OPERATIONS NAMELIST ION_TEMPERATURE
+!and HELP TRANSP OPERATIONS NAMELIST ION_TEMPERATURE NLTIPRO
+!
+! One may predict Ti(r) by setting Xi = xkfac * Xineo
+!			or Xi = Max(xkfac * Xe , xkfmin * Xineo)
+! Or adjust xkfac to match a measured central Ti(t)
+! Or infer Xi(r,t) from the measured Ti(r,t).
+!
+! A Xi_neo model is always specified.  Even if some other model for
+! Xi is used in the actual calculation, or if Xi is inferred from
+! the data, Xi_neo is used to enforce the limits:
+!		xkfmin*Xi_neo < Xi < xkfmax*Xi_neo.
+!
+!-------------------------------------------------------------------------
+!
+!IF HAVE GOOD TI PROFILES, SET  NLTIPRO=.T.
+!			      	NLTI2=.T.
+!				FIEFAC=1.0
+!				NLFXKF=.F.
+!				NLTNTX=.F.
+!
+NLTIPRO=.T.   !T=turn off predictive model for Ti and use measured
+FIEFAC=1.
+TIXLIM0=0.0   !min value (r/a) of Ti validity
+TIXLIM=.85     !max value (r/a) of Ti validity
+TIFACX=1.0    !multiplicative factor for edge Te/Ti (outside of max rad)
+!
+!
+NKIMOD=6    !* Xi_neoclassical model. 4=Chang-Hinton (see kapai.for)
+	    !  4= original Chang-Hinton is the most widely used model.
+	    !  6= most recent Chang-Hinton with Zeff>1 corrections.
+!
+NLTI2=.T.   !* .T. to use TI2 Ti(R) profiles to determine Xi
+!
+!If no Ti(r,t) data use NC or Xe multiplier:
+!
+XKFAC=1.0   !* either neoclassical multiplier Xi = xfkac * Xi_neo,  OR
+NLXKIE=.F.  !* .T. to set Xi = max(xkfac * Xe, xkfmin*Xi_neo)
+!
+!Feedback on xkfac - if data which could give Ti0 is present:
+!
+NLFXKF=.F.   !* .T. to feedback XKFAC to fit (one type of) measurement:
+NLTIF0=.F.   ! .T. to read Ti0 ufile treated as real Ti0.
+NLTNTX=.F.   ! .T. to feedback XKFAC to match Neutron data
+!don't trust the following four methods of feedback
+NLTKA=.F.    ! .T. to read Ti0 Ufile treated as X-ray crystal Ti0.
+NLTXUV=.F    ! .T to feedback on UV doppler broading measurement of Ti
+NLPCX=.F     ! .T to feedback on Passive CX measurement
+NLACX=.F     ! .T to feedback on Active CX measurement
+!
+NLNTX=.T.     ! .T. to read Neutron flux vs. time Ufile
+!
+!Models used for Ti feedback can be time dependent - ie. different models
+!can be used over different time ranges within the analysis.  For info:
+!HELP TRANSP OPERATIONS NAMELIST ION_PWR_BALANCE TIME_VARYING_CHI_I_MODEL
+!
+!--- feedback control:
+XKFMIN=0.01   ! In all models for Xi, Xi must always be > xkfmin * Xi_neo
+XKFMAX=999.0   ! In all models for Xi, Xi must always be < xkfmax * Xi_neo
+XKGAIN=20.0   ! feedback GAIN control
+DTCTI=0.001    ! time between calls to readjust ion conduction
+NTXKF=10      ! number of time bins (each of extent DTXKF) to convolve over
+DTXKF=0.0005  ! width in sec of time bins
+XTILIM=.8
+XTIKIM=.1
+!
+!
+!-------------------------------------------------------------------------
+! MINIMUM VALUES
+!-------------------------------------------------------------------------
+FNEMIN=1.0E12 ! minimum electron density allowed (cm^-3)
+FNMMIN=4.5e10 ! minimum RF minority ion density allowed  (cm^-3)
+FTEMIN=2.5    ! minimum electrion temperature allowed (eV)
+!
+!
+!
+!-----------------------------------------------------------------------
+! Ion Power Balance Options
+!-----------------------------------------------------------------------
+!
+MODIEDG=3
+!
+!------------------------------------------------------
+!Plasma Rotation
+!--------------------------------------------------------
+NLVPHI=.T.
+NGVTOR=0
+NVTOR_Z=18 ! charge of impurity
+XVTOR_A=40.0 ! mass of impurity
+XL1NCVPH=0.0 ! min radius
+XL2NCVPH=0.9 ! max radius
+NLOMGVTR=.T. ! impurity is rotating
+
+NCMODEL=2 ! Houlberg's nclass fortran 90 module (2004), this is the default
+NLBOOTW=.T.
+!XL1NCJBS=0.1 ! default
+NLETAW=.T.
+NMODPOH=2       ! 2: evaluation of POH using POH = eta*J^2
+
+NLVWNC=.F.        ! T: compute NCLASS radial electrostatic potential profile
+NLSQUEEZ=.F.      ! T for "squeezing factor" correction
+NLTINC=.F.        ! T to use Tx/Tmj, i.e. impurity temperature
+
+NCMULTI=2       ! always use multiple impurities when they are present
+
+XL1NCJBS=0.1    ! r/a for bootstrap smoothing; default XL1NCJBS=0.1
+XL1NCETA=0.0    ! r/a for eta smoothing; default XL1NCJBS=0.0
+NLNCSMOO=.T.      ! T to activate smoothing of temp & density
+TAUSMNNC=0.050  ! smoothing convolution time (tau) for densities
+TAUSMTNC=0.050  ! smoothing convolution time (tau) for temperatures
+XSMN_NC=0.050   ! radial smoothing half width for densities (r/a units)
+XSMT_NC=0.050   ! radial smoothing half width for temperatures (r/a units)
+
+NLSAW_NC=.T.      ! T to reinitialize time convolutions at each sawtooth
+
+
+!XVPHI=1.
+!
+!-------------------------------------------------------------------------
+!
+!
+!-------------------------------------------------------------------------
+!RPLOT - output - generation of plots (shouldn't need to change)
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST TIME_CONTROL
+!
+!--- output time spacing
+SEDIT=.001  !*** time step for output of profiles f(r,t)
+STEDIT=.001 !*** time step for output of scalars f(t)
+!--- zoom times
+! SEE SOURCE:SZOOM.FOR ...:
+!TZoom=3.95, 4.05, 4.95, 5.05	! Zoom times (enhanced time resolution)
+!PZoom=0.002,0.002,0.002,0.01,10.0,0.002,0.002,4000.5 ! Zoom parameters
+MRSTRT=20    !save a restart record every MRSTRT time steps (0=no restarts)
+!             !if MRSTRT<0, save a restart record every |MRSTRT| minutes.
+!
+!-------------------------------------------------------------------------
+! INPUT INTERPOLATION CONTROL
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST TIME_CONTROL
+!
+TGRID1=0.001	! time spacing for F(T) inputs
+TGRID2=0.001    ! time spacing for F(X,T) inputs
+!
+!
+!-------------------------------------------------------------------------
+! ICRF
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST ICRF_HEATING
+!
+!Yuichi:  Remember to set NLICRF .TRUE., to uncomment FRMINI, and to
+!uncomment the two lines near the bottom that I've marked for you.
+!Also, the TCRFON and TCRFOF values may need to be changed.
+!
+!-------------------------------------------------------------------------
+!
+NLICRF=.TRUE.  ! .TRUE. = ICH is on in this plasma
+!
+NICRF=8     !ICRF model switch (1=3d wave+FPP 2=ray tracing 3=dummy)
+! =1 Smithe's 3-D general geometry ICRF fast wave code SPRUCE
+!    + Hammett's bounce-averaged quasilinear code FPP
+! =2 Phillips-Hwang-Karney Ray tracing + isotropic Fokker-Planck code
+! =3 dummy models in FPICHSIM
+QSLIMAX=5.0
+QSLIMIN=0.01
+!
+DTICRF=0.001    !*** maximum time step for the ICRF heating package.
+XZMINI=1.0      !MINORITY CHARGE STATE
+AMINI=1.0       !ATOMIC WT OF MINORITY
+FRMINI=0.05	!MINORITY CONCENTRATION nmin/ne (if not set by a ufile)
+	! *** Uncomment FRMINI if running ICRF, otherwise leave commented.
+TAUMIN=1.0e6    !Minority confinement time (sec) when the minority is thermal
+! This affects the thermal ion power balance when the ICRF is off, and
+! represents a crude estimate of the power convected by particle
+! transport of the minority.
+! Taumin is used only in solvti.for.  I think it should be made
+! obsolete.
+!
+!Read Prf(t) from the RFP Ufile, or use square wave powers set here:
+!PRFicha(1)=12*1.2e6 !Power to each antenna at current time step (W)
+!TONicha(1)=12*2.9   !Time On of each antenna (s)
+!TOFFicha(1)=12*5.35 !Time Off of each antenna (s)
+!TCRFON=0.5     !ICH ON TIME (must be set even if reading RFP Ufile)
+		! TCRFON must be .gt. TINIT
+!TCRFOF=1.5     !ICH OFF TIME (must be set even if reading RFP Ufile)
+		! you can't put in any pellets during ICH at the moment
+NLRFTFIX=.TRUE.
+!
+!
+! ICRF semi-circular Antenna descriptions (4 elements per antenna):
+! TFTR parameters:
+!
+!QSLIMAX=5.0
+!QSLIMIN=0.01
+  Nicha=2          !Number of ICH antennas
+! C-MOD antenna parameters:
+!  RMJicha(1)=12*60.8   !Major radius of each antenna (cm)
+!  RMNicha(1)=12*32.5    !Minor radius of antenna (<0 for high field ant.)
+!  THicha(1)=12*73.3   !Full poloidal extent of each antenna (degrees)
+ ! WIDicha(1)=12*10.2   !Full toroidal width of each antenna element (cm)
+!  SEPicha(1)=12*25.6   !Toroidal Separation of antenna element centers (cm)
+!  SEPicha(1)=12*38.4 ! although the actual SEPicha is 25.6, we will raise
+	! it by a factor of 1.5
+
+!! C-MOD antenna parameters for Two Antenna System - (D&E and J3&J4):
+  FRQicha(1)=80.0e6,78.0e6 ! Frequency of eacj antenna (Hz)
+  RMJicha(1)=2*60.8   !Major radius of each antenna (cm)
+  RMNicha(1)=2*32.5    !Minor radius of antenna (<0 for high field ant.)
+  THicha(1)=2*73.3   !Full poloidal extent of each antenna (degrees)
+  WIDicha(1)=2*10.2   !Full toroidal width of each antenna element (cm)
+  SEPicha(1)=2*25.6   !Toroidal Separation of antenna element centers (cm)
+  !SEPicha(1)=2*38.4 ! although the actual SEPicha is 25.6, we will raise
+	! it by a factor of 1.5
+!
+  PHicha(1,1)=0.,180. !Phasing of antenna elements (deg)
+  PHicha(1,2)=0.,180.
+
+ ! PHicha(1,1)=0,180,0,180 !Phasing of antenna elements (deg)
+!  PHicha(1,2)=0,180,0,180
+!  PHicha(1,3)=0,180,0,180
+!  PHicha(1,4)=0,180,0,180
+!  PHicha(1,5)=0,180,0,180
+ ! PHicha(1,6)=0,180,0,180
+!  PHicha(1,7)=0,180,0,180
+!  PHicha(1,8)=0,180,0,180
+!  PHicha(1,9)=0,180,0,180
+!  PHicha(1,10)=0,180,0,180
+!  PHicha(1,11)=0,180,0,180
+!  PHicha(1,12)=0,180,0,180
+!
+! For non-circular VV (Vaccuum Vessel) shapes, SPRUCE assumes that the
+! antenna has the same shape as the VV, that antenna crosses the
+! midplane at RMJicha+RMNicha, and that the antenna has a height of
+! 2*RMNicha*sin(THicha/2).  Because the antenna is curved to lie
+! parallel to the VV, the antenna's length is longer than its height.
+!
+! SPRUCE presently assumes that the antenna current has a poloidal
+! dependence of cos(1.3*k*r*theta) on the antenna (and zero beyond the
+! antenna), where k is the free space wavenumber.  The factor of 1.3 is
+! an approximate fudge for Faraday shield effects, etc.  The current
+! profile can be adjusted by modifying a few lines in ZDILE.FOR.
+!
+! Each "antenna" is actually made of 4 antenna elements, 2 elements
+! side-by-side above the midplane and 2 elements side-by side below the
+! midplane.  The relative phasing of these 4 antenna elements (numbered
+! left-to-right and top-to-bottom, like English is written, while
+! looking into the center of the tokamak) are given by the array
+! PHicha.  For example, JET's old quadrupole mode would have
+! PHicha=0,180,180,0.
+!
+!
+! FRQicha(1)=12*80.0e6  !Frequency of each antenna (Hz)
+!
+! At the moment, TRANSP only uses 1 single frequency and a single
+! k_toroidal, both of which are taken from the above parameters
+! for the first antenna.  (TRANSP does use the total power summed
+! over all antennas.)  For antennas driven out-of-phase, k_toroidal
+! is chosen to be pi/sepicha(1).
+!
+!
+!************************************************************
+! Moments description of the Vaccuum Vessel for the ICRF code:
+! Approximate parameters for TFTR's near circular VV (actually,
+! these are based on the positions of the bellows cover plates):
+! VVRmom(1)=265.,103.,0.,0.,0.,0. !Vacuum Vessel R moments (cm)
+! VVZmom(1)=0.0, 103.,0.,0.,0.,0. !Vacuum Vessel Z moments (cm)
+ VVRmom(1)=64.5,35.0,3.25,0.,0.  !R(th)=Sum VVRmoms(i) cos(i th)
+ VVZmom(1)=0.0,57.3,-3.25,0.,0.  !Z(th)=Sum VVZmoms(i) sin(i th)
+!
+! JET Vacuum Vessel:
+! vvRmom(1)=292.8,134.5,10.4 !Vacuum Vessel R moments (cm)
+! vvZmom(1)=0.0,209.6,-16.2  !Vacuum Vessel Z moments (cm)
+!
+! The Vacuum Vessel shape is given by the Fourier moments:
+!
+! R(th) = Sum vvRmom(i) cos((i-1)*th)
+! Z(th) = Sum vvZmom(i) sin((i-1)*th)
+!
+! For comparison, the Lao-Hirschman 2-moment representation is of
+! the form:
+!
+! R(th) = R0    + a cos(th) + R2 cos(2 th)
+! Z(th) =     E ( a sin(th) - R2 sin(2 th) )
+!
+! Describing the VV shape with the 4 parameters Rmin, Rmax,
+! Rtop, and Ztop (these last two give the position of the top of
+! the VV) we can calculate the Lao-Hirschman coefficients via:
+!
+! a  = (Rmax-Rmin)/2
+! Rx = (Rmax+Rmin)/2
+!
+! The next two equations can be solved by combining them together
+! to make a cubic equation.  Or for small d they can be solved
+! iteratively by using R2=0.0 as an initial guess:
+!
+! d  = (Rx-R2-Rtop)/a   ! a measure of "D-ness" or triangularity
+! R2 = 3 a d / (9 - 8 d**2)
+!
+! Once the above two equations are solved, we can then find:
+!
+! R0 = Rx-R2
+! E  = 3 (Ztop/a) (9 - 8 d**2) / (9 - 4 d**2)**(3/2)
+!*************************************************************
+! Nphi spectrum for TORIC
+!MSYM_NPHI(1)=1,1
+!NUM_NPHI(1)=1,1
+!NNPHI(1,1)=10
+!NNPHI(1,2)=10
+!*************************************************************
+! TORIC Namelist Parameters
+!
+nmdtoric=31
+RFARTR=2.0	! distance from antenna for Faraday shield
+ANTLCTR=1.6	! effective antenna propagation constant
+NFLRTR=1	! ion FLR contribution (1= included, 0=ignored
+             	! -1= order reduction algorithm
+             	! -2= order reduction algorithm with automatic suppression
+             	!     of spectral pollution (equivalent to NFLRTR=-1 and
+             	!                            no forced IBW damping))
+NBPOLTR=1    	! poloidal magnetic field (1= included, 0= ignore)
+NQTORTR=1    	! toroidal broadening of the plasma dispersion function
+             	! (1= included, 0= ignored (default if NBPOLTR=0))
+NCOLLTR=0       ! collisional contribution to argument of plasma disp. func.
+		! (1= included,  0= ignored)
+ENHCOLTR=1.0 	! electron collision enhancement factor with NCOLL
+!ALFVNTR(20) ad hoc collisionnal broadening of Alfven and ion-ion resonances
+ALFVNTR(1)=0.0	! 1.0= included, =0.0 ignored
+ALFVNTR(2)=0.1	! enhancement factor ( ~ 0.1)
+ALFVNTR(3)=3.0	! value of ABS((n//^2 - S)/R) below which
+		! damping added (~10.0)
+ALFVNTR(4)=5.0	! value of ABS(w/(k//*v_te)) below which damping calculated --
+		! needed to maintain resonable values of RF current (~5.00)
+!
+!*************************************************************
+!
+!
+!=========================================================================
+! * * * * DO NOT CHANGE ANYTHING BELOW THIS LINE ! ! ! ! * * * *
+!=========================================================================
+!
+!-------------------------------------------------------------------------
+! MHD GEOMETRY
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST MHD_GEOMETRY
+!and HELP TRANSP OPERATIONS NAMELIST PLASMA_BOUNDARY
+!
+LEVGEO=11     !geometry: 0=conc. circles 1=+time 2=+shift 4=VMOMS 5=VMEC, 6=VMEC6
+!to ensure recognition by TRANSP$:[USER]TRANSP.COM, don't use spaces in LEVGEO=x
+LEVTRK=2     !tracker: 1=concentric circles 2=arbitrary geometry
+DTMAXG=0.005 !*** max (and usually the actual) geometry time step
+	     !See HELP TRANSP OPERATIONS NAMELIST TIME_CONTROL timesteps
+!
+!
+!-------------------------------------------------------------------------
+! PELLET PARAMETERS
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST PELLETS
+!
+! Only list the pellets between TINIT and FTIME:
+!NPEL=3 !* number of pellets
+!TPEL=3.0,3.5,4.0 !* list of times of pellet injection
+!APEL=2.0,2.0,2.0 !* list of atomic weights of pellet species
+!
+!
+!-------------------------------------------------------------------------
+! SHOT NUMBER
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST SHOT_NUMBER
+!
+NSHOT=89846	!**** DATA SHOT NUMBER ****
+!
+!
+!-------------------------------------------------------------------------
+! PROFILE SYMMETERIZATION
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST DATA_SYMMETRIZATION
+!Controls to map 2D data from R to x=abs(R-R0)/(Rmax-R0):
+!
+NRITER=-4 !Te(R) map 1=out 2=in 3=both 4=Te(r) already
+NSYTER=0  !Te(R) symmetrization if nriter=3, 1=slice&stack 2=in/out avg.
+!
+NRINER=-4 !ne(R) map 1=out 2=in 3=both 4=ne(r) already
+NSYNER=0  !ne(R) symmetrization if nriner=3, 1=slice&stack 2=in/out avg.
+!
+!NRIECF=1 !ECE Te(R) map 1=out 2=in 3=both 4=Te(r) already
+!NSYECF=0 !ECE Te(R) symmetrization if nriter=3, 1=slice&stack 2=in/out avg.
+         !ECE is first mapped from frequency --> R, then R --> r.
+!
+!NRINMR=3 !nmin(R) map 1=out 2=in 3=both 4=ne(r) already
+!NSYNMR=1 !nmin(R) symmetrization if nrinmr=3, 1=slice&stack 2=in/out avg
+!
+NRIBOL=-4 !Prad(R) map 1=out 2=in 3=both 4=Prad(r) already
+NSYBOL=0
+!
+!NRIZF2=-4
+!NSYZF2=0
+!
+!*** UNCOMMENT THE TWO SWITCHES BELOW FOR ION TEMPERATURE PROFILES ***
+NRITI2=-4 !Ti(R)   map 1=out 2=in 3=both 4=Ti(r) already
+NSYTI2=0
+!
+NRIVP2=-4 !Vphi(R)   map 1=out 2=in 3=both 4=Ti(r) already
+NSYVP2=0
+!
+	!Note: NSYxxx is relevant only if NRIxxx is +-3
+	! It may only be necessary to set NSYnnn if NRIxxx is +-3.
+	! If NRIxxx is not +-3, NSYxxx MUST BE 0.
+	!
+	! Also, NRInnn=4 means the data is already given versus "midplane
+	! minor radius" r=abs(R-R0), where r covers 0 to a.
+	! NRIxxx can also be set to -1,-2, or -4 to indicate the data
+	! is already specified vs. (R-R0)/a.  See TRANSP.HLP for details.
+!
+!
+!-------------------------------------------------------------------------
+! MISCELLANEOUS DATA HANDLING
+!-------------------------------------------------------------------------
+PRFAC=0.2      !* FRACTION OF CX EFLUX TOT POWER TO SUBTRACT FROM BOLO.
+!	       !  corrects BOL input with CX energy flux (FL0EX @ r/a=1)
+!
+!
+!=========================================================================
+! TRDAT NAMELIST
+!=========================================================================
+$TRDATA
+!
+!-------------------------------------------------------------------------
+! UNITS AND AXES CHECK
+!-------------------------------------------------------------------------
+!see HELP TRANSP OPERATIONS NAMELIST TRDAT_NAMELIST LFIXUP
+!
+LFIXUP=2
+!
+!
+!-------------------------------------------------------------------------
+! WRITE UFILES
+!-------------------------------------------------------------------------
+!Caution! All UFILES will begin with x10001. Can't save UFILES from
+!multiple shots without renaming files or changing NSHOT.
+!
+!SCLREQ(1)='$UFCOPY'    ! uncomment to write UFILES
+!
+!
+!-------------------------------------------------------------------------
+! PLASMA START TIME
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST TRDAT_NAMELIST MORE_CONTROL_SWITCHES
+!
+TIME0=0.0 ! time when plasma begins (normal is 0.0, JET is 40.0!)
+!
+!
+!-------------------------------------------------------------------------
+! RENORMALIZATION
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST TRDAT_NAMELIST RENORMALIZATION
+!
+!(all removed - see help)
+!
+!
+!-------------------------------------------------------------------------
+! PELLETS
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST TRDAT_NAMELIST PELLETS
+!
+!TPELDA=3.99,4.01	!bad data times around each pellet
+! only list the pellets that exist during the TRANSP time limits.
+! compare to TPEL in main TRANSP namelist
+!
+!
+!-------------------------------------------------------------------------
+! UFILE NAMES = names of INPUT nodes in TRANSP tree
+!-------------------------------------------------------------------------
+!value for PRExxx appears to be arbitrary
+!
+!------ Electron Temperature
+preTER='P'      !Te vs. (t,R) from ECE
+extTER='TER'
+!preECF='S'     !or Electron temperature Te(t,frequency) from ECE
+!extECF='ECF'
+!
+!------ Electron Density
+preNER='P'      !Electron density ne(t,R)
+extNER='NER'
+!preLID='S'	!Line integral density
+!extLID='MWL'
+!DLAMDA=0.013	!for LID - renormalization
+!
+!------ Magnetics and EFIT measurements
+preCUR='F'      !plasma current
+extCUR='CUR'
+preVSF='F'      !surface voltage
+extVSF='VSF'
+preRBZ='F'      ! R*Bz_vacuum
+extRBZ='RBZ'
+!preL2B='T'     !Lambda(t) = li/2 + beta+poloidal
+!extL2B='L2B'
+!preDFL='T'     !Displaced (para- or diamagnetic) flux vs. time (Wb)
+!extDFL='DMF'
+!preBDI='T'	!diamagnetic beta vs. time
+!extBDI='BPD'
+!preBPB='T'     !profile of tangent(field line tilt) vs. (t,r)
+!extBPB='BPB'
+!--- Magnetics data for Noncircular plasmas added by Clive Best:
+!preEDI='T'	! E(Diamagnetic) Diamagnetic plasma energy
+!extEDI='EPM'
+!preEHP='T'	! E(Lambda)
+!extEHP='ELM'
+!preELI='T'	! E(Li)
+!extELI='ELI'
+!preRTP='T'     ! RTP Parameter
+!extRTP='RTP'
+!preALP='T'     ! Alpha parameter
+!extALP='ALF'  !
+!--- End of additions by Clive Best.
+!
+!------ ICRF
+preRFP='S'  		!*** uncomment to include ICRF ***
+extRFP='RFP'		!*** uncomment to include ICRF ***
+! Prf(t,iantenna), or total Prf(t) (in Watts), for ICH
+!
+!------ Ion temperature
+preTI2='S'             !*** uncomment to include Ti(r,t) from Hirex ***
+extTI2='TI2'           !*** uncomment to include Ti(r,t) from Hirex ***
+! ion temperature profile
+!preTIT='S'		!*** uncomment to include Ti(0,t) from Hirex ***
+!extTIT='TIT'		!*** uncomment to include Ti(0,t) from Hirex ***
+! -OR- central ion temperature Ti0(t)
+!
+!------ MHD GEOMETRY
+!--- if levgeo .le. 2, then need:
+!prePOS='F'	  !Rmaj for circular plasma boundary
+!extPOS='POS'
+!preRMN='F'       !Rmin for circular plasma boundary
+!extRMN='RMN'
+!--- if levgeo .ge. 3, then need moments description of outer boundary:
+!symmetric (levgeo=4 or 5)
+!preRM0='M'
+!extRM0='RM0'
+!preRMM='M'
+!extRMM='RMM'
+!preYMM='M'
+!extYMM='YMM'
+!asymmetric (levgeo=6)
+preMRY='M'
+extMRY='MRY'
+!
+!preZPL='F'
+!extZPL='ZPL'    !Plasma Height vs. time - was set to YM0 in SAMPLETR.DAT
+!
+!------ Bolometer data
+preBOL='F'       !Prad(t,r) or total Prad(t) Ufile name
+extBOL='BOL'
+!See HELP TRANSP OPERATIONS NAMELIST POWER_RADIATED
+!
+!------ Neutrons
+preNTX='F'       !Neutrons(t)
+extNTX='NTX'
+!
+!------ Sawteeth
+preSAW='F'
+extSAW='SAW'   !sawtooth times created by the program sawtoo.exe.
+!
+!----Plasma Rotation
+!preVPH='F'
+!extVPH='VROT'
+preVP2='F'
+extVP2='VP2' ! changed from 'VPH2' YP
+!------ ZEF
+preZEF='F'      !Zeff(t) approximation
+extZEF='ZEF'
+!preZF2='F'	!or Zeff(t,r) profile
+!extZF2='ZF2'
+!preVSB='S'	!or VB signal
+!extVSB='VSB'
+!
+!------ Minorities
+!preNMR='F'	! minority density nmin(t,R)
+!extNMR='NMR'
+!preFMN='S'	! or minority concentration nmin/ne vs. time.
+!extFMN='FMN'
+!
+!------ Gas puffing and recycling
+!preGAS='W'
+!extGAS='GAS' ! Hydrogenic Gas puffing (Atoms/sec) vs. t.
+!preRCY='W'
+!extRCY='HAL' ! recycling source (atoms/sec) vs. t, from Halpha.
+ ! This is SH-HASUM*2.72e7.
+ ! In 49113f02, Barnes suggests using SH-HASUM smoothed by 0.02 seconds,
+ ! times a magic number of 4.e7.  For the SNAP run 46212_02, the
+ ! magic number was 2.72e7, which resulted in taup=0.088 seconds, while
+ ! taue=0.250 s.
+!
+!------ Particle confinement time
+!PRETPI='S'	! Tau_p(t)
+!EXTTPI='TPI'
+!
+!
+!-------------------------------------------------------------------------
+! FLAG TO TELL MDSPLUS READ
+!-------------------------------------------------------------------------
+!inputdir='./89846_dir'
+!SCLREQ(1)='$UFCOPY'
+!KMDSPLUS=1	!for MDSPLUS tree read/write
+! mds_server = 'alcdata-transp.psfc.mit.edu'
+! mds_tree = 'TRANSP'
+! mds_shot = 89846
+! mds_path = '.INPUTS'
+INPUTDIR='89846'
+!
+!-------------------------------------------------------------------------
+! RANGE REQUIREMENTS
+!-------------------------------------------------------------------------
+!See HELP TRANSP Operations NAMELIST TRDAT_Namelist Range_specification_...
+!
+! XRCxxx says that the xxx data only has to cover .9*XRCxxx of the
+! minor (or major) radius it is supposed to cover (depends on NRIxxx
+! above).  The data is extrapolated in some way to the boundaries:
+!
+!(all removed - see help - (useful only if NRIxxx<>5 or if NRIxxx=-4 and x0<>0)
+!
+!
+!-------------------------------------------------------------------------
+! DISTANCE (in x=r/a) TO EXTEND DATA BEYOND PLASMA BOUNDARY
+!-------------------------------------------------------------------------
+!See HELP TRANSP OPERATIONS NAMELIST TRDAT_NAMELIST MORE_CONTROL_SWITCHES
+!
+!XTEND=0.05 !extend UPF data beyond r/a=1.0 by this amount in r/a.
+!this is default value
+!
+!
+$END

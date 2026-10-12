@@ -18,7 +18,8 @@ make test PYTHON="$HOME/venvs/imas/bin/python"
 
 Run `make help` for the supported developer workflows. In particular,
 `make check` runs fast static checks, `make verify-all` audits both NSTX
-fixtures, and `make verify-dd` inspects the installed Data Dictionary layouts.
+fixtures, `make verify-waves` validates the bundled RF deposition cases, and
+`make verify-dd` inspects the installed Data Dictionary layouts.
 
 
 The static checks also reject duplicate Python dictionary literal keys and bare `except:` handlers. Converter resources are managed explicitly: `convert.py` runs `nc2imas` as a context manager so both the IMAS database entry and the source NetCDF file are closed even if a writer fails.
@@ -32,8 +33,12 @@ For a repository-managed environment instead, run `make install`; it creates
 - `nc2imas.py`, `netcdf_class.py`, and `imas_*.py` implement the conversion.
 - `examples/` contains inspection, plotting, and verification programs with a
   dedicated Makefile.
-- `examples/data/nstx/<runid>/` contains the active NSTX regression cases, one
-  directory per CDF/TR.DAT pair.
+- `examples/data/nstx/<runid>/` contains the active general NSTX regression
+  cases, one directory per CDF/TR.DAT pair.
+- `examples/data/d3d/` contains the TORBEAM and GENRAY EC-wave regression
+  cases.
+- `examples/data/cmod/` contains the multi-frequency C-Mod ICRF-wave
+  regression case.
 - `docs/` contains architecture, development, testing, mapping, release, and
   detailed technical-reference documentation.
 - `.github/workflows/` contains the committed GitHub Actions CI and release
@@ -361,6 +366,7 @@ Run the source-side checks for both active regression cases before conversion:
 
 ```bash
 make verify-all
+make verify-waves
 make verify-dd
 ```
 
@@ -369,6 +375,31 @@ the target DD object structure and therefore must be run in an environment with
 the requested IMAS Data Dictionary versions installed.  Detailed source
 mappings are documented in the core sources and transport mapping section,
 the radiation mapping section, the edge sources mapping section, and the waves mapping section.
+
+### Validated RF `waves` mapping
+
+`make verify-waves` exercises three source-side RF regression CDFs without an
+IMAS installation:
+
+- DIII-D `147634B13`: six-gyrotron TORBEAM EC deposition/current drive;
+- DIII-D `147634G14`: six-gyrotron GENRAY EC deposition/current drive;
+- C-Mod `89846`: two-frequency ICRF/TORIC absorbed-power output.
+
+For EC, `PEECHj(TIME3,X)` is the coherent-wave absorbed power density and
+thermal-electron deposition. Its finite-volume integral provides wave power.
+`ECCURj(TIME3,X)` is integrated over `DAREA` to obtain cumulative toroidal
+driven current.
+
+For IC, `PIC_Fj(TIME3,X)` is the authoritative frequency/antenna-resolved
+absorbed wave-power profile and `RFPWRABj(TIME)` is the corresponding absorbed
+power trace. `QICHA` is used only as a single-wave fallback if a resolved
+`PIC_Fj` profile is unavailable. `PEICH`, `PIICH`, and `QRFBTOT` remain
+plasma-heating/source quantities in `core_sources`; they are not summed to
+construct wave absorption.
+
+The C-Mod case has two IC frequencies but only an aggregate `XGRID_NPHI` /
+`PIC_NPHI` spectrum, so `n_phi` is intentionally left empty rather than
+duplicating an unresolved spectrum onto both coherent waves.
 
 Referenced namelist templates (for example `PT_TEMPLATE`, `MMM_TEMPLATE`,
 `TGLF_TEMPLATE`, etc.) are resolved relative to the TRANSP input directory.  If
