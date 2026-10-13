@@ -1,90 +1,129 @@
 #!/usr/bin/python
-"""Populate the IMAS pf_active IDS from TRANSP active poloidal-field circuit data."""
+"""Write physically defensible TRANSP active PF coil/supply data to IMAS.
 
+The TRANSP CDF usually contains electrical waveforms but not an authoritative
+coil winding model. CDF-only mode writes KK_ coil currents, VV_ coil voltages,
+and VS_ supply voltages, while warning that coil geometry and polarity remain
+unverified. An optional machine JSON manifest supplies verified winding signs,
+coil elements, turns, resistances and DD-specific circuit connectivity.
 
-from nc2imas import *
+KT_ is target/reference current: it must NOT overwrite supply.voltage and must
+NOT be mistaken for actual supply.current. CC_ equilibrium-current channels
+are opt-in via an authoritative manifest rather than silently substituting
+for missing KK_ waveforms. Unknown/not saved channels are left empty, not
+filled with zero waveforms or dummy -999 times.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import xml.etree.ElementTree as ET
+
+import numpy as np
+
+from nc2imas import nc2imas
+from pf_active_mapping import (
+    all_time_coordinates, build_active_plan, populate_active_ids,
+)
+
 
 class imas_pf_active:
-    def __init__(self, ncimas:nc2imas):
+    """Create pf_active if actual CDF waveforms or machine geometry exist."""
+
+    def __init__(self, ncimas: nc2imas, geometry_path: str | None = None):
         self.im = ncimas
         self.logger = ncimas.logger
-
+        self.geometry_path = geometry_path
         self.create_ids()
 
     def create_ids(self):
-        self.im.logger.info('\npf_active')
-        pfc = self.im.new_ids('pf_active')
-        cm2m = 0.01
-        vol_inv = 1.e6
-
-        #scalar time
-        timesc = self.im.get_ncvar('TIME')
-        ntimes = len(timesc)
-        timep = self.im.get_ncvar('TIME3')
-        ntimep = len(timep)
-        self.im.checkErrExit(timesc, timep)
-
-        pfc = self.im.fill_properties(pfc)
+        """Write with correct per-signal time bases and optional sourced geometry."""
+        self.logger.info("\npf_active")
+        plan = build_active_plan(
+            self.im.nc, geometry_path=self.geometry_path, machine=self.im.device,
+        )
+        if plan.ignored_targets:
+            self.logger.warning(
+                "pf_active: %d KT_* target-current channel(s) are NOT actual "
+                "supply currents; pulse_schedule mapping is pending: %s",
+                len(plan.ignored_targets), ", ".join(plan.ignored_targets),
+            )
+        if plan.ignored_controller:
+            self.logger.info(
+                "pf_active: ignoring %d KD_/KS_ control/uncertainty traces "
+                "(not measured coil or supply current)", len(plan.ignored_controller),
+            )
+        if plan.ignored_equilibrium:
+            self.logger.info(
+                "pf_active: CC_* equilibrium-current candidates require "
+                "explicit machine mapping to be used as coil currents: %s",
+                ", ".join(plan.ignored_equilibrium),
+            )
+        if not plan.coils and not plan.supplies:
+            self.logger.info("pf_active: no KK/VV/VS channels or sourced machine geometry; IDS not written")
+            return
+        if plan.manifest_path is None:
+            self.logger.warning(
+                "pf_active: CDF-only PF waveforms; coil cross-sections, winding "
+                "polarity, supply association and circuit connectivity are "
+                "UNVERIFIED. Not suitable for magnetic-field reconstruction."
+            )
+        pfc = self.im.new_ids("pf_active")
+        self.im.fill_properties(pfc)
         self.im.fill_code_properties(pfc)
-        pfc.ids_properties.homogeneous_time = 1
-        # Assign through the numeric-array interface with an explicit float64
-        # dtype.  DD4 FLT_1D nodes are double precision and direct structure
-        # assignment can trigger noisy automatic-conversion diagnostics.
-        # Direct assignment of a float64 ndarray is the cleanest DD4 path for
-        # this top-level time coordinate.
-        pfc.time = np.asarray(timesc, dtype=np.float64)
+        dd_major = int(self.im.dd_major_version)
+        traces = all_time_coordinates(plan, dd_major)
+        if traces:
+            same = all(np.array_equal(traces[0], t) for t in traces[1:])
+            pfc.ids_properties.homogeneous_time = 1 if same else 0
+            if same:
+                pfc.time = np.asarray(traces[0], dtype=np.float64)
+            else:
+                # Dynamic nodes each contain their own exact time arrays.
+                # Generic pf_active.time serves only as a reference.
+                generic = self.im.get_ncvar("TIME")
+                pfc.time = (np.asarray(generic, dtype=np.float64)
+                            if len(generic) else np.asarray(traces[0], dtype=np.float64))
+        else:
+            # A sourced device-only IDS is useful even when CDF currents are
+            # absent; do not create any fake time points.
+            pfc.ids_properties.homogeneous_time = 0
 
-        #coil names from VV_PF1AU(PF_ + PF1AU)
-        coils = self.im.get_var_names('VV_?', cut='VV_')
+        count = populate_active_ids(pfc, plan, dd_major)
+        if plan.manifest_text is None:
+            pfc.ids_properties.comment += (
+                "; pf_active: CDF waveforms only; no verified coil winding "
+                "orientation, circuit connectivity or machine geometry"
+            )
+        else:
+            digest = hashlib.sha256(plan.manifest_text.encode("utf-8")).hexdigest()
+            pfc.ids_properties.comment += (
+                f"; pf_active machine geometry={plan.manifest_path.name}; "
+                f"sha256={digest}; source={plan.manifest_source}"
+            )
+            if hasattr(pfc, "code") and hasattr(pfc.code, "parameters"):
+                try:
+                    root = ET.fromstring(pfc.code.parameters)
+                    source = ET.SubElement(root, "pf_active_geometry", {
+                        "filename": plan.manifest_path.name,
+                        "sha256": digest,
+                        "source_reference": plan.manifest_source,
+                    })
+                    source.text = plan.manifest_text
+                    pfc.code.parameters = ET.tostring(root, encoding="unicode")
+                except (ET.ParseError, TypeError, ValueError) as exc:
+                    self.logger.warning("pf_active: cannot embed machine provenance: %s", exc)
 
-        # not needed - we can parse the name from the names in the CDF file.
-        # please, use this case for testing: /p/transpusers/fpoli/current/transp2imas_tests/ITER/38265R95/
-
-        ncoils = len(coils)
-        self.logger.info(f'ncoils {ncoils}')
-
-        pfc.coil.resize(ncoils)
-
-        #coils
-        for i in range(ncoils):
-            coil = coils[i]
-            pfc.coil[i].name = coil
-            self.logger.info(f'PF/OH coil: {coil}')
-
-            #Current fed in the coil (for 1 turn)
-            #KK_PF1AU(TIME) Current in PF1AU circuit; CC_PF.. from equil ; PF_PF1AU zeros
-            # PF coil-current sign is an independent circuit/winding convention;
-            # do not reuse the plasma-current orientation sign.
-            self.im.fill_data_nc(pfc.coil[i].current.data, 'KK_'+coil)
-
-            #Voltage on the coil terminals
-            #VV_PF1AU(TIME) Coil terminal voltage for pf1au
-            self.im.fill_data_nc(pfc.coil[i].voltage.data, 'VV_'+coil)
-
-
-        #supply
-        pfc.supply.resize(ncoils)
-        for i in range(ncoils):
-            coil = coils[i]
-            pfc.supply[i].name = coil
-            self.logger.info(f'PF/OH supply: {coil}')
-
-            #Current at the supply output
-            #KT_PF2U(TIME) Target current in pf2u circuit. VS_PF2U is desired current
-            self.im.fill_data_nc(pfc.supply[i].voltage.data, 'KT_'+coil)
-
-            #Voltage at the supply output
-            #VS_PF1AU(TIME) Coil source voltage for pf1au
-            self.im.fill_data_nc(pfc.supply[i].voltage.data, 'VS_'+coil)
-
-
-        if ncoils==0:
-            # use this to exclude pf_coils, since size of coils=1 if empty in trdat_ids !
-            pfc.time = np.array([-999.0], dtype=np.float64)
-        #if ncoils > 0: # error if empty; so filling with invalid times, to use it to skip this
         self.im.putdb_imas(pfc)
-        self.logger.info('Done')
+        self.logger.info(
+            "pf_active: wrote %d coils, %d supplies, %d circuits, "
+            "%d coil currents, %d coil voltages, %d supply currents, "
+            "%d supply voltages",
+            len(plan.coils), len(plan.supplies), count["circuits"],
+            count["coil_current"], count["coil_voltage"],
+            count["supply_current"], count["supply_voltage"],
+        )
 
 
-if __name__ == '__main__':
-    print("Please use: python convert.py ")
+if __name__ == "__main__":
+    print("Please use: python convert.py")

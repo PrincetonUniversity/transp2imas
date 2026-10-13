@@ -1,83 +1,116 @@
 #!/usr/bin/python
-"""Populate the IMAS pf_passive IDS when passive-structure current and geometry data are available."""
+"""Translate TRANSP PS_n currents and supplied machine geometry to pf_passive.
 
+The TRANSP CDF contains current histories, not an authoritative passive-vessel
+mechanical model. Therefore geometry, resistance, resistivity, area and the
+signed number of turns are populated *only* from a validated, device-specific
+JSON manifest supplied by the user (``--pf-passive-geometry``). Without it the
+legacy current-only representation remains possible, with an explicit warning.
 
-from nc2imas import *
+The writer supports DD3 and DD4 geometries; notably, DD4 requires the outline
+polygon to repeat its initial vertex, whereas DD3 requires an open vertex list.
+All loop time traces use their own ``loop.time`` regardless of CDF time base.
+"""
+
+import hashlib
+import xml.etree.ElementTree as ET
+
+import numpy as np
+
+from nc2imas import nc2imas
+from pf_passive_mapping import build_passive_plan, populate_passive_ids
+
 
 class imas_pf_passive:
-    def __init__(self, ncimas:nc2imas):
+    """Create a passive-conductor IDS from available, validated source inputs."""
+
+    def __init__(self, ncimas: nc2imas, geometry_path: str | None = None):
         self.im = ncimas
         self.logger = ncimas.logger
-
+        self.geometry_path = geometry_path
         self.create_ids()
 
-
     def create_ids(self):
-        self.im.logger.info('\npf_passive')
-        pfc = self.im.new_ids('pf_passive')
-
-        #scalar time
-        timesc = self.im.get_ncvar('TIME')
-        ntimes = len(timesc)
-        timep = self.im.get_ncvar('TIME3')
-        ntimep = len(timep)
-        self.im.checkErrExit(timesc, timep)
-
-        pfc = self.im.fill_properties(pfc)
-        self.im.fill_code_properties(pfc)
-        pfc.ids_properties.homogeneous_time = 1
-        pfc.time.resize(ntimes)
-        pfc.time = timesc
-
-        # Passive-current channels saved by some TRANSP runs.  TRANSP2IMAS
-        # deliberately does not reconstruct hardware geometry from run namelist
-        # settings: authoritative geometry/resistance/connectivity belongs to the
-        # machine-description/IDS database.
-        coils = self.im.get_var_names_re('PS_?', cut='PS_', nd1=1, nd2=3)
-
-        ncoils = len(coils)
-        self.logger.info(f'ncoils {ncoils}')
-        if ncoils == 0:
-            self.logger.info('pf_passive: no PS_n passive-current channels; IDS not written')
+        """Write pf_passive only when passive currents or sourced geometry exist."""
+        self.logger.info("\npf_passive")
+        plan = build_passive_plan(
+            self.im.nc, geometry_path=self.geometry_path, machine=self.im.device
+        )
+        if not plan.loops:
+            self.logger.info("pf_passive: no PS_n channels and no geometry; IDS not written")
             return
 
-        self.logger.warning(
-            'pf_passive: writing TRANSP passive-loop names/currents only; '
-            'geometry, resistance, inductance, and circuit connectivity must come '
-            'from the authoritative machine-description/IDS database')
-        pfc.loop.resize(ncoils)
+        if plan.geometry_path is None:
+            self.logger.warning(
+                "pf_passive: %d current-only loops; no authoritative conductor "
+                "geometry/resistance/turns supplied. IDS is INCOMPLETE and "
+                "must not be used for electromagnetic modeling.",
+                len(plan.loops),
+            )
+        else:
+            self.logger.info(
+                "pf_passive: %d geometry-defined loops loaded from %s",
+                len(plan.loops), plan.geometry_path,
+            )
 
-        #coils
-        for i in range(ncoils):
-            nst = coils[i]
+        pfc = self.im.new_ids("pf_passive")
+        self.im.fill_properties(pfc)
+        self.im.fill_code_properties(pfc)
 
-            # PS_1:long_name  'Current in passive structure n <bvfb>'
-            lname = self.im.get_ncattr(f'PS_{nst}:long_name')
-            lname = str(lname).strip() if lname is not None else ''
-            name = self.im.extract_str_between(lname, '<', '>', str(nst)) if lname else str(nst)
-            if i==0 or i==ncoils-1:
-                self.logger.info(f'passive coil loop: {nst}')
+        # IMAS pf_passive defines each current on loop[i].time, NOT simply on
+        # the top-level pf_passive.time. Homogeneous_time can only be 1 if all
+        # current-bearing loops have equal time arrays.
+        current_times = [loop.channel.time for loop in plan.loops if loop.channel is not None]
+        if current_times:
+            shared_time = current_times[0]
+            homogeneous = all(np.array_equal(shared_time, times) for times in current_times[1:])
+            pfc.ids_properties.homogeneous_time = 1 if homogeneous else 0
+            if homogeneous:
+                pfc.time = np.array(shared_time, dtype=np.float64, copy=True)
+            else:
+                # Top-level time is informational in the heterogeneous case;
+                # each dynamic quantity is explicitly coordinated by loop.time.
+                scalar_time = self.im.get_ncvar("TIME")
+                if len(scalar_time):
+                    pfc.time = np.asarray(scalar_time, dtype=np.float64)
+        else:
+            # Geometry-only export is meaningful: it can provide the device
+            # description even when a TRANSP run did not save passive currents.
+            pfc.ids_properties.homogeneous_time = 1
+            scalar_time = self.im.get_ncvar("TIME")
+            if len(scalar_time):
+                pfc.time = np.asarray(scalar_time, dtype=np.float64)
 
-            pfc.loop[i].name = name
+        count = populate_passive_ids(pfc, plan, int(self.im.dd_major_version))
 
-            #PS_1(TIME); A; Current in passive structure 1 <bvfb>
-            # Passive-loop sign is an independent circuit orientation; do not
-            # force it to follow the plasma-current direction.
-            self.im.fill_data_nc(pfc.loop[i].current, f'PS_{nst}')
+        if plan.geometry_json is not None:
+            digest = hashlib.sha256(plan.geometry_json.encode("utf-8")).hexdigest()
+            file_name = plan.geometry_path.name
+            pfc.ids_properties.comment += (
+                f"; pf_passive device geometry={file_name}; sha256={digest}; "
+                f"source={plan.geometry_source}"
+            )
+            if hasattr(pfc, "code") and hasattr(pfc.code, "parameters"):
+                try:
+                    root = ET.fromstring(pfc.code.parameters)
+                    source = ET.SubElement(root, "pf_passive_geometry", {
+                        "filename": file_name,
+                        "sha256": digest,
+                        "source_reference": plan.geometry_source,
+                    })
+                    source.text = plan.geometry_json
+                    pfc.code.parameters = ET.tostring(root, encoding="unicode")
+                except (ET.ParseError, TypeError, ValueError) as exc:
+                    self.logger.warning("pf_passive: cannot embed geometry provenance: %s", exc)
+        else:
+            pfc.ids_properties.comment += "; pf_passive: CDF currents only; no conductor geometry"
 
-            #self.im.fill_data_nc(pfc.loop[i].resistance, '??_'+nst)
-
-            nel = 0
-            pfc.loop[i].element.resize(nel)
-
-
-
+        self.im.putdb_imas(pfc)
+        self.logger.info(
+            "pf_passive: wrote %d loops, %d current traces, %d defined geometries",
+            len(plan.loops), count, sum(bool(loop.elements) for loop in plan.loops),
+        )
 
 
-        if ncoils > 0:
-            self.im.putdb_imas(pfc)
-            self.logger.info('Done')
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("Please use: python convert.py")

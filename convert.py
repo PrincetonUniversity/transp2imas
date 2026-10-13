@@ -35,14 +35,28 @@ def do_convert(argvs):
     #if -i all -d <dir> ;instead of CDF file name, then search for all CDF files in that dir,
     #and run in a loop
     parsed_args = get_args(argvs)
-    if len(parsed_args) == 16:
+    if len(parsed_args) == 18:
+        backend, run, occur, user, machine, newdb, ncfile, nml, log, \
+          moments, nzones, deb, ec_nml_launch, ip_direction, bt_direction, dd_version, \
+          pf_passive_geometry, pf_active_geometry = parsed_args
+    elif len(parsed_args) == 17:
+        pf_active_geometry = None
+        backend, run, occur, user, machine, newdb, ncfile, nml, log, \
+          moments, nzones, deb, ec_nml_launch, ip_direction, bt_direction, dd_version, pf_passive_geometry = parsed_args
+    elif len(parsed_args) == 16:
+        pf_active_geometry = None
+        pf_passive_geometry = None
         backend, run, occur, user, machine, newdb, ncfile, nml, log, \
           moments, nzones, deb, ec_nml_launch, ip_direction, bt_direction, dd_version = parsed_args
     elif len(parsed_args) == 15:
+        pf_active_geometry = None
+        pf_passive_geometry = None
         backend, run, occur, user, machine, newdb, ncfile, nml, log, \
           moments, nzones, deb, ec_nml_launch, ip_direction, bt_direction = parsed_args
         dd_version = 'auto'
     elif len(parsed_args) == 13:
+        pf_active_geometry = None
+        pf_passive_geometry = None
         backend, run, occur, user, machine, newdb, ncfile, nml, log, \
           moments, nzones, deb, ec_nml_launch = parsed_args
         ip_direction = 'auto'
@@ -50,7 +64,7 @@ def do_convert(argvs):
         dd_version = 'auto'
     else:
         raise ValueError(
-            f'Unexpected get_args() return length {len(parsed_args)}; expected 13, 15 or 16'
+            f'Unexpected get_args() return length {len(parsed_args)}; expected 13, 15, 16, 17 or 18'
         )
 
     with nc2imas(backend=backend, run=run, occur=occur, user=user,
@@ -59,8 +73,12 @@ def do_convert(argvs):
         nci.logger.info(f'{"-"*30} \n{ncfile}, {nml}')
         print(f'IMAS target DD: {nci.dd_version} (schema family DD{nci.dd_major_version})')
 
-
         if all_:
+            # Preserve source TR.DAT and all available referenced model inputs
+            # before running optional physics writers (which may fail independently).
+            print('workflow')
+            imas_workflow(nci)
+
             print('wall')
             imas_wall(nci)
 
@@ -87,9 +105,11 @@ def do_convert(argvs):
             print('distribution_sources')
             imas_distribution_sources(nci)
 
-            # PF circuit-current signs are independent of plasma Ip/Bphi orientation.
-            print('pf_active') 
-            imas_pf_active(nci)
+            # PF current/voltage waveforms, if available; coil/supply geometry
+            # and winding signs may be provided by an authoritative machine JSON.
+            # KT_* target currents are NOT copied into measured supply.current.
+            print('pf_active')
+            imas_pf_active(nci, geometry_path=pf_active_geometry)
 
             # COCOS/sign consistency is handled centrally by nc2imas.
             # DD4 is written in COCOS=17.  Physical Ip/Bphi directions are obtained
@@ -101,10 +121,11 @@ def do_convert(argvs):
             print('core_profiles')
             imas_core_profiles(nci)
 
-            # Passive structures remain conditional on TRANSP PS_n channels and
-            # need a dedicated passive-current regression case for full validation.
+            # Passive conductor currents come from CDF PS_n; physical geometry
+            # and current-sign correspondence require the optional machine JSON.
+            # Geometry-only export is also supported when PS_n is absent.
             print('pf_passive')
-            imas_pf_passive(nci)
+            imas_pf_passive(nci, geometry_path=pf_passive_geometry)
 
 
             # Dedicated spatial radiation output: bremsstrahlung, synchrotron,
@@ -143,12 +164,8 @@ def do_convert(argvs):
             #print('sawteeth')
             #imas_sawteeth()
 
-            # Dataset-level metadata and workflow provenance. These are written
-            # last so they describe the complete converted entry. Whole-IDS source
-            # provenance is also attached by fill_properties() to every IDS.
-            print('workflow')
-            imas_workflow(nci)
-
+            # Dataset-level FAIR metadata is written after physics outputs.
+            # Source input provenance was already committed to workflow first.
             print('dataset_fair')
             imas_dataset_fair(nci)
 

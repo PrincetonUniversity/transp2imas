@@ -124,6 +124,10 @@ def get_args(argv=None):
         help='toroidal field direction viewed from above; auto uses NLBCCW from TR.DAT')
     parser.add_argument('--dd-version', type=str, default='auto',
         help='target IMAS Data Dictionary version (e.g. 3.39.0 or 4.1.1); auto uses IMAS environment/default')
+    parser.add_argument('--pf-passive-geometry', type=str, default=None,
+        help='authoritative passive conductor geometry JSON; maps PS_n channels to physical loops')
+    parser.add_argument('--pf-active-geometry', type=str, default=None,
+        help='authoritative active PF coil/supply/circuit JSON; validates winding signs and channels')
     parser.add_argument('-mom', '--moments', type=str, choices=['yes', 'no'], default='no',
          help='convert moments to equilibrium, default is no')
     parser.add_argument('-zones', '--nzones', type=int, default=0,
@@ -137,7 +141,7 @@ def get_args(argv=None):
     parser.add_argument("-l", "--log", choices=['debug','info','warn','error','critical'],
         help="Provide logging level")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv[1:] if argv is not None else None)
 
     if not args.input_cdf:
         print("** Error: Failed to get command line arguments**\n")
@@ -217,5 +221,5 @@ def get_args(argv=None):
     user = args.user if args.user else None
     #new_db = True if occur == 0 else False
 
-    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, nzones, debug, ec_nml, args.ip_direction, args.bt_direction, args.dd_version
+    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, nzones, debug, ec_nml, args.ip_direction, args.bt_direction, args.dd_version, args.pf_passive_geometry, args.pf_active_geometry
 

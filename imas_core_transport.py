@@ -226,6 +226,7 @@ class imas_core_transport:
         ct=self.im.new_ids('core_transport')
         ct=self.im.fill_properties(ct)
         self.im.fill_code_properties(ct)
+        self.im.fill_external_model_inputs(ct, 'core_transport')
         ct.ids_properties.homogeneous_time=1
         ct.time=np.asarray(self.time,dtype=np.float64)
         self.im.fill_vac_tor_field(ct)

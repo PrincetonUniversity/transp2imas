@@ -18,8 +18,33 @@ that do not exist.
 
 ### 2. Source-side physics checks
 
-`make verify-all` runs independent checks against each bundled TRANSP regression
-case. These tests operate on the CDF/TR.DAT source and do not require IMAS.
+`make verify-all` automatically discovers **all** bundled `examples/data/**/*.CDF`
+files (10 in this snapshot), verifies their grids, EC/IC wave closures, PF
+channel mappings and XML input provenance, and runs detailed ITER/NSTX ISolver
+PF regressions. These source tests do not require IMAS. A per-run Markdown,
+JSON and log report is written to `build/verification/`. Missing source input
+files and known numerical residuals are WARN, not silently ignored. Use
+`make verify-deep` for the much slower legacy numerical diagnostic scripts
+across the entire dataset, and `--strict-inputs` / `--strict-current` for
+strict fail-on-warning versions. See `examples-verification.md`.
+
+`make verify-pf-passive` runs synthetic PS_n, machine-geometry and DD3/DD4
+outline regression tests, and checks that the current real fixtures (none of
+which has PS_n) never generate fictitious currents. It requires SciPy/NumPy
+but no IMAS installation. It is also included in the fast `make check` path.
+**The supplied ITER/NSTX ISolver cases now validate PS_n source channels; physical conductor geometry/signs still need authoritative machine data.**
+
+`make verify-core-profiles` tests the electron and ion temperature-peaking
+calculations against every example CDF. In particular, the TORAY 147634T13
+case has 4 `TIME` points for `TE0`, `TI0` and `PVOL`, but 7 `TIME3` points
+for profile data. The `core_profiles` writer must interpolate `TE0` before
+forming `t_e_peaking`; the fast source check enforces that contract and the
+full CDF check is also part of `make verify-all`.
+
+`make verify-waves` runs the RF-specific source regressions against every bundled CDF, including the
+DIII-D TORAY/TORBEAM/GENRAY EC, ITER EC+IC, and C-Mod IC cases. It validates component sums, finite-volume power
+integrals, absorbed-power traces, and EC driven-current closure without
+requiring an IMAS installation.
 
 Examples of useful validation patterns include:
 
@@ -72,10 +97,42 @@ A new regression case should be chosen because it unlocks validation of a
 specific previously untestable mapping. Useful future cases include:
 
 - a run with full NUBEAM FBM phase-space output for `distributions`;
-- a run with passive-structure currents and authoritative geometry for
-  `pf_passive`;
-- a run with spatial RF absorption/deposition for `waves`;
+- the ITER/NSTX ISolver runs now supplied for `pf_active` and `pf_passive`
+  currents; full geometry validation still requires authoritative device files;
 - a sawtoothing run with explicit crash-event diagnostics for `sawteeth`.
 
 Do not add large binary fixtures without confirming repository size and data
 redistribution constraints.
+
+## Active PF source-only regression
+
+Run `make verify-pf-active` to exercise synthetic `KK_/VV_/KT_/VS_/CC_`
+CDF channels, independent `TIME` and `TIME3` coordinates, measured-versus-target
+current protection, DD3/DD4 geometry/circuit matrices and no-data skipping.
+This regression is also run by `make check` through `examples/quick`. Real ITER/NSTX current-waveform regression is now provided by
+`make verify-isolver`; an end-to-end IMAS write and physical-current sign/geometry
+verification still require an authoritative device model. See
+[`pf-active.md`](pf-active.md).
+
+## Real ISolver PF source regression (optional large fixtures)
+
+`make verify-isolver` checks the ITER 38530P94 (11 active coil circuits, 119
+passive currents) and NSTX 142202U01 (9 active circuits, 82 passive currents)
+fixtures against the mapping helpers and the native CDF time axes. It also
+checks every `CC_* = N_effective * KK_*` closure and all `PFC_NAMES` from
+TR.DAT. It writes CSV reports to `build/pf-isolver/`.
+
+The NSTX CDF is roughly 166 MB and is intentionally not required by the fast
+GitHub CI. See [ISolver fixtures](isolver-fixtures.md) for storage policy and
+reproducible commands.
+
+## Equilibrium time-coordinate source regression
+
+`make verify-equilibrium` validates all CDF files in `examples/data` and tests
+resampling of `RMCB*/RMSB*/YMCB*/YMSB*` from source `TIME` into `TIME3`
+boundary moments.  This test executes the actual boundary writer methods
+through a SciPy-backed adapter, requiring no IMAS installation.  The
+`equilibrium-time-grid` result is included in `make verify-all`.
+
+See [TIME and TIME3](time-grids.md).  An IMAS DD4.1.1 runtime check must
+still be performed on a workstation with IMAS-Python installed.

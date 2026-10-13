@@ -88,8 +88,10 @@ class imas_equilibrium:
          rsin = np.zeros(shape=(nmoments, ncoord_xb))
          ycos = np.zeros(shape=(nmoments, ncoord_xb))
          ysin = np.zeros(shape=(nmoments, ncoord_xb))
-         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=time)
-         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=time)
+         # RAXIS/YAXIS are scalar TIME histories, but the Fourier surfaces
+         # RMCxx/YMCxx belong to profile TIME3.  Use the TIME3 sample time.
+         raxis = self.im.get_ncvar_on_time('RAXIS', scale=0.01)[time]
+         yaxis = self.im.get_ncvar_on_time('YAXIS', scale=0.01)[time]
 
          inv_grid_theta = np.zeros(ntheta)
          inv_grid_theta[ntheta-1] = self.im.pi
@@ -158,26 +160,33 @@ class imas_equilibrium:
 
     #to be called per time frame
     def get_moments_bdry(self):
-         if self.im.is_valid(self.rmcb):
-            print('RMCB already filled')
+         ntimep = self.im.ntimep
+         if self.im.is_valid(self.rmcb, self.ymcb, ind=ntimep-1):
             return
-         ntimes = len(self.im.get_ncvar('TIME'))
          nmoments = self.im.get_var_names_re('RMCB?', nd1=1, nd2=2, length=True)
+         if nmoments < 1:
+            self.logger.info('equilibrium: no LCFS boundary moments in CDF')
+            return
          self.nmoments = nmoments
-         self.rmcb = np.zeros(shape=(ntimes, nmoments))
-         self.rmsb = np.zeros(shape=(ntimes, nmoments))
-         self.ymcb = np.zeros(shape=(ntimes, nmoments))
-         self.ymsb = np.zeros(shape=(ntimes, nmoments))
-
-         cm2m = 0.01
+         # These boundary Fourier coefficients are TRANSP *TIME* histories,
+         # whereas equilibrium/time_slice uses TIME3.  Resample each original
+         # time series before indexing it in the TIME3 time-slice loop.
+         self.rmcb = np.zeros((ntimep, nmoments))
+         self.rmsb = np.zeros((ntimep, nmoments))
+         self.ymcb = np.zeros((ntimep, nmoments))
+         self.ymsb = np.zeros((ntimep, nmoments))
          for k in range(nmoments):
-            kn = k
-            #RMCBn(TIME); CM; nTH ASYM R BOUND MOMENT
-            self.rmcb[:, k] = self.im.get_ncvar(f'RMCB{kn}', scale=cm2m)
-            self.ymcb[:, k] = self.im.get_ncvar(f'YMCB{kn}', scale=cm2m)
-            if k>0:
-               self.rmsb[:, k] = self.im.get_ncvar(f'RMSB{kn}', scale=cm2m)
-               self.ymsb[:, k] = self.im.get_ncvar(f'YMSB{kn}', scale=cm2m)
+            required = [(f'RMCB{k}', self.rmcb), (f'YMCB{k}', self.ymcb)]
+            if k > 0:
+               required += [(f'RMSB{k}', self.rmsb), (f'YMSB{k}', self.ymsb)]
+            for name, target in required:
+               values = self.im.get_ncvar_on_time(name, scale=0.01)
+               if len(values) != ntimep:
+                  self.logger.warning(f'equilibrium: {name} missing/invalid; '
+                                      'skipping incomplete LCFS boundary')
+                  self.rmcb, self.rmsb, self.ymcb, self.ymsb = [], [], [], []
+                  return
+               target[:, k] = values
 
     #to be called per time frame
     def convert_moments_bdry(self, ntheta:int, time:int):
@@ -186,7 +195,7 @@ class imas_equilibrium:
          if not self.im.is_valid(self.rmcb, self.ymcb, ind=time):
             return [], []
 
-         if ntheta<1 or time<0:
+         if ntheta<2 or time<0:
             raise Exception(f'convert_moments_bdry: ntheta {ntheta} time {time}')
          rsurf = np.zeros(ntheta)
          ysurf = np.zeros(ntheta)
@@ -216,21 +225,23 @@ class imas_equilibrium:
          import matplotlib.pyplot as plt
 
          #psirz is 1D, to be reshaped
-         if nr==0 or nz==0 or nr<time or nz<time or len(psirz)==0:
+         if nr==0 or nz==0 or time<0 or time>=len(rgrid) or time>=len(zgrid) or len(psirz)==0:
             return [],[]
          rbdy = []
          zbdy = []
          plt.figure()
          #PBPMHD , PLCFSMHD
-         psib = self.im.get_ncvar('PLFLXA', scale=2.*self.im.pi, ind=time)
+         psib = self.im.get_ncvar_on_time('PLFLXA', scale=2.*self.im.pi)[time]
          if np.isscalar(psib):
             psib = 0.99*psib
 
          psi2d = np.reshape(psirz, (nz, nr)) #.T
          #psi2d = np.reshape(psirz, (nr, nz))
 
-         raxis = self.im.get_ncvar('RAXIS', scale=0.01, ind=time)
-         yaxis = self.im.get_ncvar('YAXIS', scale=0.01, ind=time)
+         # RAXIS/YAXIS are scalar TIME histories, but the Fourier surfaces
+         # RMCxx/YMCxx belong to profile TIME3.  Use the TIME3 sample time.
+         raxis = self.im.get_ncvar_on_time('RAXIS', scale=0.01)[time]
+         yaxis = self.im.get_ncvar_on_time('YAXIS', scale=0.01)[time]
 
          eps = 0.01
          try:
@@ -279,8 +290,6 @@ class imas_equilibrium:
         cm2m = 0.01
         pi = constants.pi  #scipy
         #scalar time
-        timesc = self.im.timesc
-        ntimes = self.im.ntimes
         timep = self.im.timep
         ntimep = self.im.ntimep
         coord_x = self.im.get_ncvar('X')
@@ -323,18 +332,8 @@ class imas_equilibrium:
         emhd = self.im.np_multiply_sum(pmhd, gvol, axis=1, scale=1.5,
                name1='pmhd', name2='gvol')
 
-        #TOTAL BETA TOROIDAL.
-        # 2 mu0 integral(p dV) / V / B0^2   ??
-        bttot = self.im.get_ncvar('BTTOT') #(TIME3, X)
-        beta_normal = [] #replaced by beta_tor_norm
-        try:
-          for it in range(ntimep):
-              beta_normal.append( np.multiply(bttot, gvol) / pvol[:,None] )
-        except (ValueError, TypeError, FloatingPointError):
-          self.logger.info(f'Error- beta_normal: bttot {bttot.shape} gvol {gvol.shape}')
-        else:
-          beta_normal = np.array(beta_normal)
-
+        # beta_tor_norm is constructed below from scalar histories first
+        # interpolated onto TIME3; no additional time axis is introduced.
         beta_tor_norm = []
         bz = self.im.get_ncvar('BZ', interp=True) #(TIME) T
         # PAREA(TIME) - plasma CS area[cm^2]
@@ -387,11 +386,13 @@ class imas_equilibrium:
         square_up = self.im.get_ncvar('SQUARE_UO')
         square_lo = self.im.get_ncvar('SQUARE_LO')
 
-        #if scalar time is different from profile time
-        elongb = self.im.interp1d_time(timesc, timep, elong, ind2=-1)
-        triangb = self.im.interp1d_time(timesc, timep,triang, ind2=-1)
-        triang_lob = self.im.interp1d_time(timesc, timep, triang_lo, ind2=-1)
-        triang_upb = self.im.interp1d_time(timesc, timep, triang_up, ind2=-1)
+        # Boundary shaping is already on TIME3: the last XB surface of each
+        # profile.  Do not interpolate backwards to scalar TIME, because these
+        # values are written in equilibrium/TIME3 time_slice objects.
+        elongb = elong[:, -1] if self.im.is_valid(elong) else []
+        triangb = triang[:, -1] if self.im.is_valid(triang) else []
+        triang_lob = triang_lo[:, -1] if self.im.is_valid(triang_lo) else []
+        triang_upb = triang_up[:, -1] if self.im.is_valid(triang_up) else []
 
         bdry_sepx_psi = psi_sign * self.im.get_ncvar('PBPMHD', 2.0*pi, interp=True)
         psi = self.im.get_ncvar('PLFLX2PI')
@@ -401,7 +402,7 @@ class imas_equilibrium:
             psi = psi_sign * psi
 
         # add psi at axis PSI0_TR(TIME)
-        if self.im.is_valid(psi, psi_axis, ind=ntimes-1):
+        if self.im.is_valid(psi, psi_axis, ind=ntimep-1):
             psi = psi + psi_axis[:,None]
 
         # TRFLX is already the full toroidal flux in Wb (not Wb/rad).
@@ -541,8 +542,10 @@ class imas_equilibrium:
         eqm = self.im.fill_properties(eqm)
         self.im.fill_code_properties(eqm)
         eqm.ids_properties.homogeneous_time = 1
+        # All equilibrium time slices and 1-D/2-D profiles use TIME3.
+        # Scalars read from TIME above were explicitly interpolated to TIME3.
         eqm.time.resize(ntimep)
-        eqm.time = timesc
+        eqm.time[:] = timep
         eqm.time_slice.resize(ntimep)
 
         has2d_eq = False

@@ -88,3 +88,9 @@ A new IDS writer should:
 ## Resource lifetime
 
 `netcdf_connection` owns the input TRANSP CDF and implements `__enter__`/`__exit__` plus an idempotent `close_ncfile()`. `nc2imas` extends that lifetime rule to both the input CDF and the IMAS `DBEntry`: `convert.py` uses `with nc2imas(...) as nci`, and `nc2imas.close_imas_database()` closes the IMAS entry and the NetCDF dataset. `__del__` remains only a last-resort cleanup path and is not required for correct operation.
+
+The `pf_active` writer delegates CDF decoding, optional machine JSON
+validation, and DD-specific element/circuit population to
+`pf_active_mapping.py` (source-only, no IMAS dependency). `KT_` is a target
+reference and is not written to an actual supply-current field; see
+[`pf-active.md`](pf-active.md).

@@ -37,3 +37,8 @@ __pycache__/
 .venv/
 build/
 examples/q-*.png
+
+# Local ISolver source regression: 142202U01.CDF is ~166 MB, above the
+# normal GitHub 100-MB blob limit. Keep it in this local example directory,
+# or deliberately use Git LFS when publishing this fixture.
+examples/data/nstx/142202U01/142202U01.CDF

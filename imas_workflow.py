@@ -31,7 +31,9 @@ class imas_workflow:
             ids.ids_properties.homogeneous_time = 2
 
         if hasattr(ids, 'time_loop') and hasattr(ids.time_loop, 'component'):
-            ids.time_loop.component.resize(1)
+            inventory = self.im.input_inventory()
+            models = inventory.models()
+            ids.time_loop.component.resize(1 + len(models))
             component = ids.time_loop.component[0]
             if hasattr(component, 'name'):
                 component.name = 'TRANSP'
@@ -42,6 +44,18 @@ class imas_workflow:
                 component.version = version
             if hasattr(component, 'parameters'):
                 component.parameters = self.im.build_code_parameters_xml()
+
+            # Record referenced model input sets independently, without
+            # claiming that every configured code was actually executed.
+            for i, name in enumerate(models, start=1):
+                external = ids.time_loop.component[i]
+                if hasattr(external, 'name'):
+                    external.name = name
+                if hasattr(external, 'description'):
+                    external.description = ('Referenced TRANSP model input set; '
+                                            'execution not independently verified')
+                if hasattr(external, 'parameters'):
+                    external.parameters = inventory.scoped_xml(name)
 
             # Preserve model-code hashes exposed by TRANSP as workflow libraries.
             libraries = []

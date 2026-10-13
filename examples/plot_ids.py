@@ -1,150 +1,179 @@
 #!/usr/bin/python
-"""Example plotting utility for selected quantities in converted IMAS IDSs."""
+"""Plot selected equilibrium IDS quantities after converting a TRANSP CDF.
 
+Examples (run from repository root):
+  python3 examples/plot_ids.py 38530P94 ITER HDF5 psirz --time-index 0
+  python3 examples/plot_ids.py 38530P94 ITER HDF5 q --time-index 0 --save build/iter_q.png
+  python3 examples/plot_ids.py 142202U01 NSTX HDF5 bfield --time-index 1
+
+Legacy positional arguments (<runid> <database> [backend] [quantity]) are
+accepted. This reads an existing IMAS database; it does not convert a CDF.
+"""
+
+import argparse
 import os
+from pathlib import Path
 import sys
+
 import numpy as np
-from matplotlib import pyplot as plt
 
-# Keep the example directly runnable without installing transp2imas as a package.
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-
-import imas
-# import MDSplus
-from plotter import *
-from utilities import *
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from utilities import find_runid_shot_code
 
 
-
-class Tests:
-    def __init__(self, pre:str='', save_plots:bool=True):
-        self.save = save_plots
-        self.pre = pre
-        print('Running tests')
-
-    def init_database(self, db, shot, run, backend=None, user=None):
-        if backend == 'MDS' or backend =='MDSPLUS':
-            backend = imas.ids_defs.MDSPLUS_BACKEND
-        elif backend == 'HDF' or backend == 'HDF5':
-            backend = imas.ids_defs.HDF5_BACKEND
-
-        if user is None:
-            user = os.getenv('USER')
-        print('backend', backend)
-        self.input = imas.DBEntry(backend,db,shot,run,user)
-
-    def test_equilibrium(self):
-        print('* testing equilibrium')
-        eq = self.input.get('equilibrium')
-        pre = self.pre+'_eq' if self.pre else 'eq'
-        #ni for number of indices to plot for all times
-        plot_equilibrium_ids(eq, ni=6, pre=pre, save=self.save)
-
-    def test_equil2d_interactive(self, name, times=[0], img=True):
-        print('* testing equilibrium')
-        eq = self.input.get('equilibrium')
-        plot_equil2d_interactive(eq, name, times, img=True)
-
-    def plot_eq_psi1d_interactive(self, times=[0]):
-        print('* testing equilibrium psi 1d')
-        eq = self.input.get('equilibrium')
-        plot_equil_psi1d_interactive(eq, times)
-
-    def test_core_profiles(self):
-        print('* testing test_core_profiles')
-        cp = self.input.get('core_profiles')
-        pre = self.pre+'_cp' if self.pre else 'cp'
-        plot_core_profiles(cp, pre=pre, save=self.save)
+FIELDS = ('psirz', 'bfield', 'q', 'psi1d', 'pressure', 'j_tor')
 
 
-    def test_limiters(self):
-        print('* testing limiters')
-        wall = self.input.get('wall')
-        pre = self.pre+'_wall' if self.pre else 'wall'
-        plot_limiter_ids(wall, pre=pre, save=self.save)
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('runid', help='TRANSP run identifier or CDF filename (e.g. 38530P94)')
+    parser.add_argument('database', help='IMAS machine/database name (e.g. ITER, NSTX, D3D)')
+    parser.add_argument('backend', nargs='?', default='HDF5', choices=('HDF5', 'HDF', 'MDSPLUS', 'MDS'))
+    parser.add_argument('field', nargs='?', default='psirz', choices=FIELDS)
+    parser.add_argument('--time-index', type=int, default=0,
+                        help='zero-based equilibrium time_slice index (default: 0)')
+    parser.add_argument('--run', type=int, default=None,
+                        help='override the IMAS run number derived from the TRANSP suffix')
+    parser.add_argument('--occurrence', type=int, default=0,
+                        help='IMAS IDS occurrence (default: 0)')
+    parser.add_argument('--user', default=os.getenv('USER'),
+                        help='IMAS DBEntry user/path (default: $USER)')
+    parser.add_argument('--dd-version', default=None,
+                        help='IMAS DD version, e.g. 4.1.1 (default: IMAS runtime)')
+    parser.add_argument('--save', type=Path, default=None,
+                        help='write PNG/PDF instead of opening an interactive window')
+    return parser.parse_args(argv)
 
-    def test_thomson_scattering(self):
-        print('*thomson_scattering')
-        ts = self.input.get('thomson_scattering')
-        pre = self.pre+'_thomson' if self.pre else 'thomson'
-        plot_thomson_scattering_ids(ts, pre=pre, save=self.save)
 
-    def test_PFActive(self):
-        pf = self.input.get('pf_active')
-        pre = self.pre+'_pf' if self.pre else 'pf'
-        plot_PFActive(pf, pre=pre, save=self.save)
-
-    def test_CHERS(self):
-        cx = self.input.get('charge_exchange')
-        pre = self.pre+'_chers' if self.pre else 'chers'
-        plot_CHERS(cx, pre=pre, save=self.save)
+def _time_slice(eq, index):
+    count = len(eq.time_slice)
+    if index < 0 or index >= count:
+        raise IndexError(f'time index {index} outside valid range 0..{count-1}')
+    return eq.time_slice[index]
 
 
-    def test_NBI(self):
-        nb = self.input.get('nbi')
-        pre = self.pre+'_nbi' if self.pre else 'nbi'
-        plot_NBI(nb, pre=pre, save=self.save)
+def _data_2d(profile, field):
+    if field == 'psirz':
+        return [('Poloidal flux $\\psi$ (Wb)', np.asarray(profile.psi))]
+    return [(label, np.asarray(getattr(profile, attr)))
+            for label, attr in (('Radial field $B_R$ (T)', 'b_field_r'),
+                                ('Toroidal field $B_\\phi$ (T)', 'b_field_tor'),
+                                ('Vertical field $B_Z$ (T)', 'b_field_z'))]
 
-    def do_test_eq(self, shot, run, db, backend):
-        self.init_database(db,shot,run,backend)
-        self.input.open()
-        self.test_equilibrium()
-        self.input.close()
 
-    def do_test_equil2d_interactive(self, shot, run, db, backend, name, times=[0], img=True):
-        self.init_database(db,shot,run,backend)
-        self.input.open()
-        self.test_equil2d_interactive(name, times, img)
-        self.input.close()
+def make_figure(eq, field, time_index):
+    """Return a matplotlib Figure without showing it; suitable for unit tests."""
+    from matplotlib import pyplot as plt
 
-    def do_test_eq_psi1d_interactive(self, shot, run, db, backend, times=[0]):
-        self.init_database(db,shot,run,backend)
-        self.input.open()
-        self.plot_eq_psi1d_interactive(times)
-        self.input.close()
+    ts = _time_slice(eq, time_index)
+    time_value = None
+    try:
+        time_value = float(np.asarray(eq.time)[time_index])
+    except (AttributeError, IndexError, ValueError, TypeError):
+        pass
+    time_label = (f'time slice {time_index}, t={time_value:.5g} s'
+                  if time_value is not None else f'time slice {time_index}')
 
-    def do_tests(self, shot, run, db, backend):
-        #shot,run,db = 141711,2502,'NSTX'
-        # 10000,99,'test'
-        self.init_database(db,shot,run,backend)
-        self.input.open()
-        self.test_NBI()
-        self.test_CHERS()
-        self.test_PFActive()
-        self.test_thomson_scattering()
-        self.test_core_profiles()
-        self.test_limiters()
-        self.test_equilibrium()
+    if field in ('psirz', 'bfield'):
+        if len(ts.profiles_2d) == 0:
+            raise ValueError('equilibrium has no profiles_2d; choose q, pressure, or psi1d')
+        profile = ts.profiles_2d[0]
+        r = np.asarray(profile.grid.dim1, dtype=float)
+        z = np.asarray(profile.grid.dim2, dtype=float)
+        if r.ndim != 1 or z.ndim != 1 or r.size < 2 or z.size < 2:
+            raise ValueError('equilibrium 2D grid has no usable R and Z axes')
+        datasets = _data_2d(profile, field)
+        fig, axes = plt.subplots(1, len(datasets), figsize=(6 * len(datasets), 5),
+                                 constrained_layout=True)
+        if len(datasets) == 1:
+            axes = [axes]
+        for ax, (label, values) in zip(axes, datasets):
+            if values.shape == (r.size, z.size):
+                arr = values.T
+            elif values.shape == (z.size, r.size):
+                arr = values
+            else:
+                raise ValueError(f'{label}: array shape {values.shape} incompatible '
+                                 f'with grid R={r.size}, Z={z.size}')
+            mesh = ax.pcolormesh(r, z, arr, shading='auto')
+            fig.colorbar(mesh, ax=ax, label=label)
+            if np.nanmax(arr) > np.nanmin(arr):
+                ax.contour(r, z, arr, levels=12, colors='black', linewidths=0.4, alpha=0.5)
+            try:
+                boundary = ts.boundary.outline
+                rr = np.asarray(boundary.r)
+                zz = np.asarray(boundary.z)
+                if rr.size > 2 and rr.shape == zz.shape:
+                    ax.plot(rr, zz, 'w-', lw=1.2, label='LCFS')
+            except (AttributeError, IndexError, ValueError):
+                pass
+            ax.set_xlabel('R (m)')
+            ax.set_ylabel('Z (m)')
+            ax.set_aspect('equal', adjustable='box')
+            ax.set_title(label)
+            ax.grid(alpha=0.15)
+    else:
+        field_name = {'q': 'q', 'psi1d': 'psi', 'pressure': 'pressure',
+                      'j_tor': 'j_tor'}[field]
+        values = np.asarray(getattr(ts.profiles_1d, field_name), dtype=float)
+        if values.ndim != 1 or not values.size:
+            raise ValueError(f'profiles_1d.{field_name} is not a populated 1D array')
+        try:
+            rho = np.asarray(ts.profiles_1d.rho_tor_norm, dtype=float)
+            if rho.shape != values.shape:
+                raise ValueError('rho_tor_norm grid length mismatch')
+            xlabel = r'$\rho_{tor, norm}$'
+        except (AttributeError, ValueError, TypeError):
+            rho = np.arange(len(values))
+            xlabel = 'Radial grid index'
+        fig, ax = plt.subplots(figsize=(7, 4.5), constrained_layout=True)
+        ax.plot(rho, values, lw=1.6)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(field_name)
+        ax.grid(alpha=0.3)
+    fig.suptitle(f'IMAS equilibrium — {time_label}')
+    return fig
 
-        self.input.close()
-    #end of tests
+
+def main(argv=None):
+    ns = parse_args(argv)
+    inferred_run, shot, _code = find_runid_shot_code(ns.runid)
+    run = inferred_run if ns.run is None else ns.run
+    backend = ns.backend.upper()
+    if ns.save:
+        import matplotlib
+        matplotlib.use('Agg')
+    try:
+        import imas
+    except ImportError as exc:
+        raise SystemExit('IMAS-Python is required to plot an existing IDS: '
+                         'activate your IMAS environment first.') from exc
+    backend_id = (imas.ids_defs.HDF5_BACKEND if backend in ('HDF5', 'HDF')
+                  else imas.ids_defs.MDSPLUS_BACKEND)
+    opts = {'dd_version': ns.dd_version} if ns.dd_version else {}
+    entry = imas.DBEntry(backend_id, ns.database, shot, run, ns.user, **opts)
+    print(f'Opening {ns.database} {shot}/{run}, backend={backend}, '
+          f'occurrence={ns.occurrence}')
+    try:
+        entry.open()
+        eq = entry.get('equilibrium', occurrence=ns.occurrence)
+        fig = make_figure(eq, ns.field, ns.time_index)
+    finally:
+        entry.close()
+    if ns.save:
+        ns.save.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(ns.save, dpi=160)
+        print('Saved:', ns.save.resolve())
+    else:
+        from matplotlib import pyplot as plt
+        plt.show()
+    from matplotlib import pyplot as plt
+    plt.close(fig)
+    return 0
 
 
 if __name__ == '__main__':
-    if(len(sys.argv)<3):
-        print('usage: python examples/plot_ids.py <runid/CDFname> <db(NSTX)> '
-              '<backend/HDF,MDS> [<name>]')
-        sys.exit(1)
-
-    runid = sys.argv[1]
-    run, shot, rid = find_runid_shot_code(runid)
-    db = sys.argv[2]
-    backend = sys.argv[3] if len(sys.argv)>3 else 'HDF5'
-    name = sys.argv[4] if (len(sys.argv)>3 and sys.argv[4]!='-') else ''
-
-    #shot,run,db = 163303,8702,'D3Dr' #r'
-    print(f'testing  {db} {shot} {run} {backend}')
-
-    pre = db+str(run) # +'_h5'
-    save_plots = True
-    tt = Tests(pre, save_plots)
-    #tt.do_test_eq(shot, run, db, backend)
-    times = [0]
-    name = 'psirz' if not name else name #'bfield' # 'psirz'
-    for time in times:
-      tt.do_test_equil2d_interactive(shot, run, db, backend, name, times=time, img=True)
-      if name == 'psirz':
-         tt.do_test_eq_psi1d_interactive(shot, run, db, backend, times=time)
-    #tt.do_test(shot,run,db)
+    sys.exit(main())

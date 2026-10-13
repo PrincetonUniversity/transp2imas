@@ -17,9 +17,15 @@ make test PYTHON="$HOME/venvs/imas/bin/python"
 ```
 
 Run `make help` for the supported developer workflows. In particular,
-`make check` runs fast static checks, `make verify-all` audits both NSTX
-fixtures, `make verify-waves` validates the bundled RF deposition cases, and
+`make check` runs fast static checks, `make verify-all` automatically audits
+all 10 currently bundled CDFs, `make verify-waves` examines every CDF for EC/IC
+wave deposition (including the new TORAY case), and
 `make verify-dd` inspects the installed Data Dictionary layouts.
+`make verify-equilibrium` checks native CDF TIME/TIME3 coordinates and LCFS
+boundaries for every bundled example; see [time-grid guide](docs/time-grids.md).
+`make verify-pf-active` validates the PF coil/supply mapping and the synthetic
+DD3/DD4 machine geometry, without requiring IMAS. `make verify-isolver`
+validates the two real ITER/NSTX ISolver current datasets (local large fixtures).
 
 
 The static checks also reject duplicate Python dictionary literal keys and bare `except:` handlers. Converter resources are managed explicitly: `convert.py` runs `nc2imas` as a context manager so both the IMAS database entry and the source NetCDF file are closed even if a writer fails.
@@ -35,8 +41,11 @@ For a repository-managed environment instead, run `make install`; it creates
   dedicated Makefile.
 - `examples/data/nstx/<runid>/` contains the active general NSTX regression
   cases, one directory per CDF/TR.DAT pair.
+- `examples/data/iter/` contains the ITER 38530P94 ISolver CDF/TR.DAT and PT_SOLVER namelist.
+- `examples/data/nstx/142202U01/` contains the NSTX 142202U01 ISolver CDF/TR.DAT.
+  The >100 MB CDF is a local-only regression fixture unless stored via Git LFS.
 - `examples/data/d3d/` contains the TORBEAM and GENRAY EC-wave regression
-  cases.
+  cases, plus TORAY and PT_SOLVER/MMM examples.
 - `examples/data/cmod/` contains the multi-frequency C-Mod ICRF-wave
   regression case.
 - `docs/` contains architecture, development, testing, mapping, release, and
@@ -48,12 +57,19 @@ For a repository-managed environment instead, run `make install`; it creates
 
 Start with [docs/README.md](docs/README.md). The main references are:
 
+- [all-example verification](docs/examples-verification.md);
+- [TIME/TIME3 coordinate mapping](docs/time-grids.md);
+- [plotting converted IMAS IDSs](docs/plotting.md);
+- [input XML and code provenance](docs/input-provenance.md);
 - [architecture](docs/architecture.md);
 - [development guide](docs/development.md);
 - [testing and validation](docs/testing.md);
 - [mapping workflow and roadmap](docs/mapping-workflow.md);
 - [release process](docs/release-process.md);
 - [technical mapping reference](docs/technical-reference.md);
+- [active PF coil, supply and circuit mapping](docs/pf-active.md);
+- [real ITER/NSTX ISolver validation and fixture storage](docs/isolver-fixtures.md);
+- [passive PF loop mapping](docs/pf-passive.md);
 - [contribution guide](CONTRIBUTING.md).
 
 ## Repository Python policy
@@ -430,6 +446,29 @@ choosing the next mapping group, not a claim that every referenced variable has
 a complete one-to-one IMAS mapping. See
 [the mapping workflow](docs/mapping-workflow.md) for interpretation and policy.
 
+## Passive-structure currents and geometry (`pf_passive`)
+
+The converter can export TRANSP `PS_n` passive-loop current histories, using
+**each loop's own time axis** (not just top-level `pf_passive.time`). Without
+an authoritative device description, it retains a clearly logged **current-only
+legacy mode** and does not invent geometry, turns, resistance or connectivity.
+
+With an explicitly sourced geometry manifest, the converter additionally writes
+all `pf_passive/loop/element/geometry` shapes supported by the DD and maps a
+current to a physical loop only after its identity and sign have been specified:
+
+```bash
+python3 convert.py -i /path/to/RUN.CDF -b HDF5 -new \
+    --pf-passive-geometry /path/to/machine-pf-passive.json
+make verify-pf-passive
+```
+
+The only manifest included in the repository is **synthetic test data**, not a
+machine file. All current bundled CDF fixtures lack `PS_n`, so actual device
+current/geometry correlation is not yet physically validated. See
+[the complete manifest specification, DD3/DD4 outline rules and validation
+status](docs/pf-passive.md).
+
 ## Pre-0.9.0 development milestones
 
 The following 8.x labels were internal development snapshots created before the
@@ -515,3 +554,17 @@ annotated version in `nc2imas.py` is updated in the same release PR.
 - `0.9.0` is the bootstrap baseline. After the one-time `v0.9.0` GitHub release
   exists, routine development should not edit version files or the manifest
   manually.
+
+### Model input XML in workflow and physics IDSs
+
+The complete source TR.DAT and recursively referenced external model namelists
+are embedded as XML under `workflow.time_loop.component[0].parameters`.
+Individual configured wave codes (TORIC, GENRAY, TORBEAM, CQL3D, FPP, etc.)
+are additionally recorded in separate workflow components and in
+`waves.code.library[].parameters`. Referenced transport/NUBEAM model input
+subsets are associated with their corresponding IDS code libraries. Missing
+files are explicitly flagged; comments do not count as active model inputs.
+Input provenance is written before physics IDS conversion starts.
+
+See [docs/input-provenance.md](docs/input-provenance.md). Test using
+`make verify-inputs` (source-only) and `make verify-dd` (IMAS-Python).

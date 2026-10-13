@@ -1,0 +1,27 @@
+! the following parameters are common to all EC codes
+! Once the transition to IDS is complete, these input parameters 
+! will become internal variables in the EC module
+
+&ech_dim
+nantech = 1
+/
+
+&ech_inp
+xecech  = 9.0,
+zecech  = 1.0,
+phecech = 0.0,
+thetech = 100.0,
+phaiech = 200.0,
+freqech = 170.0,
+powech  = 1.0e6,
+rfmodech= 1.0,
+/
+
+! the following settings are specific to EC codes 
+! they are here temporarily, until a better solution is found
+&ech_beam
+ecb_width_hor = 3.0, 
+ecb_width_vert= 3.0,
+ecb_curv_hor  = 1.0,
+ecb_curv_vert = 1.0,
+/

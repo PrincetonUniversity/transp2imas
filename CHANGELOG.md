@@ -8,6 +8,21 @@ messages.
 
 Initial public pre-1.0 baseline of the IMAS-Python converter.
 
+- Validate real ISolver `pf_active`/`pf_passive` source waveforms using ITER
+  38530P94 (11 active / 119 passive) and NSTX 142202U01 (9 active / 82
+  passive). Add `make verify-isolver`, per-case coil/loop CSV inventories and
+  source-side `CC_* = N_effective * KK_*` closures. Require explicit,
+  externally verified `cc_effective_turns` before using any `CC_*` ampere-turns
+  as physical coil current; recognize and defer KD_/KS_ controller channels.
+- Rebuild `pf_active` writer with distinct coil/supply names from the CDF,
+  per-channel time and unit conversions, source-aware current and voltage
+  assignments, and optional authoritative coil/circuit machine geometry.
+  Correct the KT_ target-current bug without incorrectly treating targets
+  as measured currents, remove fake `-999` times, and support DD3/DD4
+  geometry/circuit conventions. Add `make verify-pf-active`, a synthetic
+  device example, and `docs/pf-active.md`. Actual ISolver current waveforms are now tested; device geometry and winding
+  conventions still require an authoritative machine model.
+
 Code-quality fixes included in the baseline:
 
 - fix duplicate atomic-species dictionary keys for lithium and Hassium/Holmium;
@@ -33,6 +48,65 @@ Code-quality fixes included in the baseline:
   quantities rather than being incorrectly summed as wave absorption.
 - Add `examples/verify_waves_mapping.py` and `make verify-waves` for portable
   RF source-side regression checks.
+- Extend `pf_passive`: preserve PS_n-native time bases, read A/kA/MA currents,
+  allow audited external machine geometry and explicit source-channel sign
+  correspondences, support all six DD geometries, and handle the DD3/DD4
+  outline-closure difference. Keep geometry out of current-only mode and
+  enable device-geometry-only export without PS_n.
+- Add `examples/verify_pf_passive_mapping.py`, a synthetic device JSON example,
+  `make verify-pf-passive`, and `docs/pf-passive.md`. Real PS_n regression is now
+  available through `make verify-isolver`; physical geometry remains pending.
 - Add `examples/audit_mapping_coverage.py` and `make audit` to classify CDF variables
   as converter-referenced, derived/support, validation-only, deliberately deferred,
   or still unclassified, with Markdown/CSV/JSON reports.
+
+### Unreleased input provenance extension
+
+- Preserve TR.DAT and recursively referenced external namelist contents in
+  workflow XML with hashes, raw text, parsed assignments and missing-file flags.
+- Add model-specific input XML to workflow components and waves/core_transport/NBI
+  code libraries (TORIC, CQL3D, GENRAY, TORBEAM, FPP, LSC, PT_SOLVER, etc.).
+- Store workflow provenance before physics writers; add source-only input XML
+  verification and DD checks for wave-code library parameters.
+
+### Unreleased all-example verification and plotting extension
+
+- Dynamically discover every CDF under `examples/data/`; validate CDF grids,
+  the available PF and waves mappings, and lossless XML model inputs.
+  Write `build/verification/summary.md`, JSON and per-run diagnostic logs.
+- Reorganize `make verify-all`, `make verify-waves` and `make verify-inputs` to
+  include all 10 current examples; retain `make verify-deep` as an optional slow
+  legacy diagnostic suite and run dedicated real-ISolver checks.
+- Archive adjacent model input files with an explicit unreferenced marker;
+  preserve explicit `PT_TEMPLATE` file authority and flag a missing T16 TR.DAT.
+- Correct legacy source diagnostics where scalar `TIME` and profile `TIME3`
+  differ (notably DIII-D TORAY `147634T13`).
+- Replace fragile `plot_ids.py` positional/time-array logic with an argparse
+  CLI that supports DD selection, equilibrium fields, correct R-Z plotting,
+  zero-based time selection, and headless PNG/PDF output; add mock plot tests.
+- Record the existing ITER 38530P94 EC current closure of 0.543% as a WARN
+  (0.5% strict threshold; fail above 0.6%), not as an exact closure.
+
+### Unreleased core-profile time-grid hotfix
+
+- Fix DIII-D 147634T13 DD4.1.1 `core_profiles.global_quantities.t_e_peaking`
+  broadcasting failure by interpolating scalar `TE0(TIME)` onto `TIME3`
+  before dividing by the volume-averaged electron temperature.
+- Add source-only verification for electron and ion peaking on every bundled
+  CDF, a synthetic unequal-grid test, and a writer-contract check. This runs
+  with `make verify-all` and the new `make verify-core-profiles` target.
+
+### Unreleased equilibrium TIME/TIME3 coordinate fix
+
+- Fix DD 4.1.1 `equilibrium` coordinate validation when CDF scalar TIME has
+  fewer samples than profile TIME3 (DIII-D TORAY 147634T13: 4 versus 7).
+  `equilibrium.time` and `time_slice` now both use native TIME3.
+- Interpolate LCFS Fourier boundary coefficients and magnetic-axis helpers
+  from their declared source time grids onto TIME3.  Keep profile-derived
+  boundary shaping directly on TIME3; correct psi-axis time validation.
+- Introduce dimension-aware `get_ncvar_on_time` and fix the shared time
+  interpolation helpers to compare actual coordinates, not just lengths.
+  Apply this distinction to core-profile scalar/profile mixing.
+- Validate the boundary methods and time coordinates against all 10 bundled
+  CDFs, including a synthetic case with equal-length but different TIME and
+  TIME3 values.  See `make verify-equilibrium` and `docs/time-grids.md`.

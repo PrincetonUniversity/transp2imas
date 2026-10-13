@@ -113,6 +113,7 @@ class imas_nbi:
         if nunits > 0:
             nbi = self.im.fill_properties(nbi)
             self.im.fill_code_properties(nbi)
+            self.im.fill_external_model_inputs(nbi, 'nbi')
             nbi.ids_properties.homogeneous_time = 1
             nbi.time.resize(ntimes)
             nbi.time = timesc

@@ -119,12 +119,25 @@ def main():
     if all(name in variables for name in ('DVOL','PVOL')):
         dv = arr(variables['DVOL'])
         pv = arr(variables['PVOL'])
-        err = np.max(np.abs(np.sum(dv, axis=1) - pv))
+        enclosed = np.sum(dv, axis=1)
+        if enclosed.shape != pv.shape:
+            # PVOL is on scalar TIME while DVOL is on profile TIME3.
+            ts = arr(variables['TIME'])
+            tp = arr(variables['TIME3'])
+            pv = np.interp(tp, ts, pv)
+            print('  PVOL interpolated TIME -> TIME3 before volume check')
+        err = np.max(np.abs(enclosed - pv))
         print(f'sum(DVOL) vs PVOL: max abs difference={err:.6g} cm^3')
     if all(name in variables for name in ('DAREA','PAREA')):
         da = arr(variables['DAREA'])
         pa = arr(variables['PAREA'])
-        err = np.max(np.abs(np.sum(da, axis=1) - pa))
+        enclosed = np.sum(da, axis=1)
+        if enclosed.shape != pa.shape:
+            ts = arr(variables['TIME'])
+            tp = arr(variables['TIME3'])
+            pa = np.interp(tp, ts, pa)
+            print('  PAREA interpolated TIME -> TIME3 before area check')
+        err = np.max(np.abs(enclosed - pa))
         print(f'sum(DAREA) vs PAREA: max abs difference={err:.6g} cm^2')
 
     print(f'namelist: {nml} ({"present" if nml.exists() else "missing"})')

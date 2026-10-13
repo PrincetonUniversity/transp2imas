@@ -7,10 +7,17 @@ policy, and release process in more detail.
 
 ## Start here
 
+- [All-example verification](examples-verification.md) -- automatic CDF discovery,
+  all-run reports, PF/waves coverage, and known input/current warnings.
+- [Plotting converted IDSs](plotting.md) -- real `plot_ids.py` commands and options.
+- [Input provenance](input-provenance.md) -- XML, source references, and model code libraries.
+
 - [Architecture](architecture.md) -- module layout, control flow, shared helper
   classes, and where to add new conversion logic.
 - [Development guide](development.md) -- local environment, coding conventions,
   Python header policy, and contribution workflow.
+- [Passive conductors](pf-passive.md) -- PS_n current conventions, authority-bound
+  geometry JSON, DD3/DD4 outline rules, and verification procedure.
 - [Testing and validation](testing.md) -- what each `make` target checks and which
   checks require an installed IMAS Data Dictionary.
 - [Mapping workflow](mapping-workflow.md) -- the group-by-group procedure used to
@@ -38,3 +45,9 @@ mapping change. In particular:
 
 The pre-0.9 internal 8.x labels retained in the technical reference are
 historical development milestones, not public semantic versions.
+
+- [pf_active](pf-active.md) - audited coil/supply channels, KT_ target-current exclusion, machine geometry, and DD3/DD4 circuits.
+
+- [Real ITER/NSTX ISolver PF source validation](isolver-fixtures.md) — coil and passive-current CDF channels, CC/KK effective turns, file layout and large-fixture guidance.
+
+- [TIME/TIME3 mapping and equilibrium regression](time-grids.md)
