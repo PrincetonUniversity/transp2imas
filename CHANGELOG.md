@@ -4,6 +4,13 @@ Notable changes to transp2imas are recorded here. Future entries and GitHub
 releases are managed automatically by Release Please from Conventional Commit
 messages.
 
+## [0.9.1](https://github.com/PrincetonUniversity/transp2imas/compare/v0.9.0...v0.9.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* pf_active and pd_passive IDSs are included now ([#101](https://github.com/PrincetonUniversity/transp2imas/issues/101)) ([85b59f8](https://github.com/PrincetonUniversity/transp2imas/commit/85b59f8b1ec1c92d75f1f4d0f39c81f0c21469e5))
+
 ## 0.9.0 - 2026-09-28
 
 Initial public pre-1.0 baseline of the IMAS-Python converter.
