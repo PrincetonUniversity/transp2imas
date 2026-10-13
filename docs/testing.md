@@ -19,14 +19,22 @@ that do not exist.
 ### 2. Source-side physics checks
 
 `make verify-all` automatically discovers **all** bundled `examples/data/**/*.CDF`
-files (10 in this snapshot), verifies their grids, EC/IC wave closures, PF
-channel mappings and XML input provenance, and runs detailed ITER/NSTX ISolver
-PF regressions. These source tests do not require IMAS. A per-run Markdown,
+files (10 in the complete local fixture set), verifies their grids, EC/IC wave
+closures, PF channel mappings and XML input provenance, and runs detailed
+ISolver PF regressions for the fixtures actually available. In GitHub CI the
+large NSTX `142202U01.CDF` is absent, so `verify-all` reports it as `SKIP`
+while still validating ITER and all 9 checked-in CDFs. Use
+`make verify-isolver` to **require** both real ISolver CDFs locally. These
+source tests do not require IMAS. A per-run Markdown,
 JSON and log report is written to `build/verification/`. Missing source input
 files and known numerical residuals are WARN, not silently ignored. Use
 `make verify-deep` for the much slower legacy numerical diagnostic scripts
 across the entire dataset, and `--strict-inputs` / `--strict-current` for
 strict fail-on-warning versions. See `examples-verification.md`.
+
+The quick suite also tests the ISolver fixture policy: CI may skip a missing
+optional NSTX CDF without discarding ITER coverage, while strict local runs,
+present CDFs missing their matching TR.DAT, and zero-fixture runs still fail.
 
 `make verify-pf-passive` runs synthetic PS_n, machine-geometry and DD3/DD4
 outline regression tests, and checks that the current real fixtures (none of
@@ -122,9 +130,11 @@ fixtures against the mapping helpers and the native CDF time axes. It also
 checks every `CC_* = N_effective * KK_*` closure and all `PFC_NAMES` from
 TR.DAT. It writes CSV reports to `build/pf-isolver/`.
 
-The NSTX CDF is roughly 166 MB and is intentionally not required by the fast
-GitHub CI. See [ISolver fixtures](isolver-fixtures.md) for storage policy and
-reproducible commands.
+The NSTX CDF is roughly 166 MB and is intentionally not required by GitHub
+CI: `make verify-all` runs the optional-fixture mode and reports a visible
+`SKIP`, while direct `make verify-isolver` remains strict. See
+[ISolver fixtures](isolver-fixtures.md) for storage policy and reproducible
+commands.
 
 ## Equilibrium time-coordinate source regression
 

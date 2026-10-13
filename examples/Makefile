@@ -37,7 +37,7 @@ help:
 	@echo "  make verify-inputs Validate embedded TR.DAT and model namelists"
 	@echo "  make verify-pf-passive Validate synthetic PS_n currents and DD3/DD4 passive geometries"
 	@echo "  make verify-pf-active  Validate PF coil/supply/circuit source mappings"
-	@echo "  make verify-isolver    Check real ITER/NSTX ISolver sources; produces build/pf-isolver reports"
+	@echo "  make verify-isolver    Require BOTH real ITER/NSTX ISolver sources; write PF reports"
 	@echo "  make verify-dd   Inspect DD 3.39.0 and DD 4.1.1 schemas"
 	@echo "  make audit       Write full CDF mapping-coverage reports for CASE"
 	@echo "  make inspect     Write a q-profile plot to PLOT"
@@ -49,6 +49,7 @@ quick:
 	$(PYTHON) verify_writer_api.py
 	$(PYTHON) verify_pf_passive_mapping.py
 	$(PYTHON) verify_pf_active_mapping.py
+	$(PYTHON) verify_isolver_fixture_policy.py
 	$(PYTHON) verify_input_provenance.py
 	$(PYTHON) verify_plot_ids.py
 	$(PYTHON) verify_core_profiles_timegrids.py --quick
@@ -67,7 +68,7 @@ verify: quick
 
 verify-all: quick
 	$(PYTHON) verify_all_examples.py --quick --report-dir "$(ROOT)/build/verification" --python "$(PYTHON)"
-	$(PYTHON) verify_isolver_mapping.py --report-dir "$(ROOT)/build/pf-isolver"
+	$(PYTHON) verify_isolver_mapping.py --allow-missing --report-dir "$(ROOT)/build/pf-isolver"
 
 verify-deep: quick
 	$(PYTHON) verify_all_examples.py --report-dir "$(ROOT)/build/verification-deep" --python "$(PYTHON)"

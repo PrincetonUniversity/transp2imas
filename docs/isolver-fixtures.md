@@ -72,8 +72,8 @@ build/pf-isolver/142202U01-pf-passive.csv
 make check                 # fast checks, no large ISolver files needed
 make verify-pf-active      # synthetic geometry / sign / DD3/DD4 tests
 make verify-pf-passive     # synthetic geometry / sign / DD3/DD4 tests
-make verify-isolver        # both real CDFs; requires data at paths above
-make verify-all            # existing NSTX physics regressions
+make verify-isolver        # strict: require both real CDFs at paths above
+make verify-all            # all CDFs present; report missing optional large CDF
 make verify-waves          # existing RF physics regressions
 make verify-dd             # IMAS-installed environment only
 ```
@@ -93,7 +93,16 @@ explicit machine JSON manifest to the converter and run the end-to-end
 single-file limit**. It is included in the downloadable full source fixture
 archive and expected at the path above for local regression, but is ignored
 by `.gitignore` to prevent accidental plain-Git commits. The lightweight
-`make check` and public GitHub CI do not require it.
+`make check` and public GitHub CI do not require it.  The `verify-all` target
+invokes `verify_isolver_mapping.py --allow-missing`: it still validates the
+available ITER ISolver CDF, prints an explicit `SKIP` for the absent NSTX
+CDF, and reports `PARTIAL (1/2 real fixtures verified)`.  All other CDF
+examples are independently scanned by `verify_all_examples.py`.  If the NSTX
+CDF *is* available, `verify-all` validates it in full as well.
+
+`make verify-isolver` intentionally runs **without** `--allow-missing` and
+fails if either real fixture is absent.  A present CDF with a missing TR.DAT
+or incorrect contents also fails, even in the `--allow-missing` CI mode.
 
 If repository maintainers wish to store that CDF in GitHub, establish the
 project's Git LFS policy and ensure LFS storage/quota is available, then run

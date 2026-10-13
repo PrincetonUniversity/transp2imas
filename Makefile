@@ -40,7 +40,7 @@ help:
 	@echo "  make export-inputs Preview TR.DAT and model XML in build/input-xml"
 	@echo "  make verify-pf-passive Test PS_n/geometry mapping without an IMAS runtime"
 	@echo "  make verify-pf-active  Test KK/VV/VS coil/supply mappings without IMAS"
-	@echo "  make verify-isolver    Check real ITER/NSTX ISolver PF-current mappings (local large fixtures)"
+	@echo "  make verify-isolver    Require both real ITER/NSTX ISolver PF-current fixtures (local)"
 	@echo "  make verify-dd    Check supported IMAS Data Dictionary layouts"
 	@echo "  make audit        Write CDF mapping-coverage reports for CASE"
 	@echo "  make inspect      Plot the final six q profiles from CDF"

@@ -12,8 +12,10 @@ CC_(t) = N_effective * KK_(t), with an integer-like device-specific factor.
 That is a numerical consistency check, not a license to invent a machine
 geometry, winding polarity, or an IMAS effective-turns value from a CDF.
 
-Run ``make verify-isolver``.  Results can be inspected in build/pf-isolver/.
-Large source files are an optional local regression dataset, not part of CI.
+Run ``make verify-isolver`` to require both local fixtures.  Results can be
+inspected in build/pf-isolver/.  ``make verify-all`` uses ``--allow-missing``:
+GitHub CI verifies every available fixture but explicitly skips the large NSTX
+CDF if it was not downloaded.  A present, malformed CDF still fails the check.
 """
 
 from __future__ import annotations
@@ -172,19 +174,39 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report-dir', type=Path, default=None,
                         help='Directory for per-device PF source-channel CSV reports')
+    parser.add_argument('--allow-missing', action='store_true',
+                        help='Skip and report absent CDF fixtures (for source-only CI); '
+                             'present CDFs and their TR.DAT files must still pass')
     args = parser.parse_args()
     if args.report_dir:
         args.report_dir.mkdir(parents=True, exist_ok=True)
 
+    verified = 0
+    skipped = []
     for machine, runid, cdf, trdat, ncoil, npassive in CASES:
+        if args.allow_missing and not cdf.is_file():
+            skipped.append(runid)
+            print(f"{machine} {runid}: SKIP: optional ISolver CDF not available: {cdf}")
+            if args.report_dir:
+                # Do not leave misleading stale reports from an earlier run.
+                for suffix in ('pf-active', 'pf-passive'):
+                    (args.report_dir / f"{runid}-{suffix}.csv").unlink(missing_ok=True)
+            continue
         active, passive = verify_run(cdf, trdat, machine, ncoil, npassive)
+        verified += 1
         max_error = max(float(x['max_rel_cc_closure_error']) for x in active)
         print(f"{machine} {runid}: PASS: {len(active)} coil currents/voltages/supplies, "
               f"{len(passive)} passive loops; CC/KK max relative error={max_error:.3g}")
         if args.report_dir:
             save_csv(args.report_dir / f"{runid}-pf-active.csv", active)
             save_csv(args.report_dir / f"{runid}-pf-passive.csv", passive)
-    print('ISolver PF source mapping: PASS (real ITER + NSTX fixtures; no IMAS runtime)')
+    verify(verified > 0, 'No ISolver CDF fixtures were available for verification')
+    if skipped:
+        print(f"ISolver PF source mapping: PARTIAL ({verified}/{len(CASES)} real fixtures "
+              f"verified; skipped absent CDFs: {', '.join(skipped)})")
+    else:
+        print(f"ISolver PF source mapping: PASS ({verified}/{len(CASES)} real fixtures "
+              "verified; no IMAS runtime)")
     return 0
 
 
