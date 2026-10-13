@@ -1,0 +1,83 @@
+&mmm_input
+
+! Component Model Switches (1: Enabled, 0: Disabled)
+cmodel  =
+   1  ! Weiland
+   1  ! DRIBM
+   1  ! ETGM
+   1  ! MTM
+
+! MMM integer options (1: True, 0: False)
+iMMM =
+   0  ! Separate diffusivity and convective velocity
+   0  ! Convert negative diffusivity to convective velocity
+   0  ! Allow negative diffusivity output
+   0  ! Modify diffusivity using solver gradients
+   0  ! Reduce large diffusivity due to small gradients
+
+! MMM real options
+rMMM =
+   200  ! max |xti|  (Diffusivities)
+   200  ! max |xte|
+   200  ! max |xne|
+   200  ! max |xnz|
+   200  ! max |xvt|
+   200  ! max |xvp|
+   5D4  ! max |vti|  (Convective Velocities)
+   5D4  ! max |vte|
+   5D4  ! max |vne|
+   5D4  ! max |vnz|
+   5D4  ! max |vvt|
+   5D4  ! max |vvp|
+
+! Weiland integer options
+iW20 =
+   0  ! [Effective Shear Definition] 0: use elong, 1: use gxi
+
+! Weiland real options
+rW20 =
+   1      ! ExB shear coefficient
+   0.5    ! Max diffusivity coefficient
+   1      ! Max convective velocity coefficient
+   0.316  ! kyrhos
+
+! DBM integer options
+iDBM = 
+   0      ! [Model] 0: Default, 1: Alternate
+   1      ! [Frequency Direction] 0: Any, 1: Electron, -1: Ion
+   0      ! [Mode Handling] 0: Most unstable mode, 1: Sum modes
+   7      ! Number of scanned ky modes (min 7), 0: Disable ky scan (use lower bound)
+
+! DBM real options
+rDBM =
+   1      ! ExB shear coefficient
+   0.5    ! Max diffusivity coefficient
+   0.05   ! Kyrhos Scan: Lower Bound
+   0.30   !              Upper Bound
+   
+! ETGM integer options
+iETGM =
+   0      ! [Model] 0: Default, 1: Alternate, 2: Horton
+   1      ! [Jenko threshold (Horton)] 1: Electrostatic, 2: Electromagnetic
+   0      ! [Frequency Direction] 0: Any, 1: Electron, -1: Ion
+   0      ! [Mode Handling] 0: Most unstable mode, 1: Sum modes
+   7      ! Number of scanned ky modes (min 7), 0: Disable ky scan (use lower bound)
+
+! ETGM real options
+rETGM =
+   1      ! ExB shear coefficient
+   0.25   ! Max diffusivity coefficient
+   1      ! Kyrhos Scan: Lower Bound
+   40     !              Upper Bound
+
+! MTM integer options
+iMTM =
+   200    ! Number of scanned ky modes (min 200), 0: Disable ky scan (use lower bound)
+   
+! MTM real options
+rMTM =
+   0.25   ! Max diffusivity coefficient
+   0.005  ! kyrhos Scan: Lower Bound
+   10     !              Upper Bound
+/
+

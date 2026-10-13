@@ -1,0 +1,25 @@
+1
+&pt_controls
+ pt_update_time = -1.
+ 
+ ! Anomalous transport model
+ ! Possible selections : GLF23, TGLF, MMM, RLW, COPPI, CDBM, USER, Paleo
+ pt_confinement%mmm%active = .true.
+ pt_confinement%exb%active = .true.
+ pt_confinement%exb%version  = 4 ! 1 - NCEXB; 2 - DMEXB; 3 - TGYROEXB; 4 - TRANSPEXB
+
+ ! Neoclassical transport model
+ ! Possible selections : NEOCH, NEOGK, NCLASS, GTCNEO
+ pt_confinement%neoch%active = .true. 
+ pt_confinement%neoch%xanom  = .0, .0, .0, .0, .0, .0  ! Te, Ti, Pphi, Ni, Nz, Ne
+
+ ! Residuals
+ pt_residual%RES_NE = 5D-1
+
+ pt_num_diffusivity%pt_chii_fact = 25D0
+ pt_num_diffusivity%pt_chii_min  = 1D-2
+
+
+ ! Number of iterations
+ NEWTON_ITERATES = 30
+/

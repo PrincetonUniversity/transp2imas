@@ -15,6 +15,7 @@ import inspect
 from scipy import constants
 from scipy.interpolate import interp1d
 from datetime import datetime, timezone
+from input_provenance import InputInventory, append_file_xml, fill_model_libraries
 
 __version__ = "0.9.0"  # x-release-please-version
 VERSION = __version__
@@ -69,6 +70,7 @@ class nc2imas(imas_connection, netcdf_connection):
         self.get_nc_times()
         self._code_parameters_xml_cache = None
         self._provenance_file_records_cache = None
+        self._input_inventory_cache = None
 
     def close_imas_database(self):
         """Close the IMAS entry and TRANSP CDF deterministically.
@@ -475,13 +477,47 @@ class nc2imas(imas_connection, netcdf_connection):
                   dat = dat[ind1, :]
                if ind1 is None and ind2 is not None:
                   dat = dat[:, ind2]
-           if len(time_new) == len(time):
+           # TIME and TIME3 may have *equal lengths but different sample
+           # locations*.  Comparing lengths is not sufficient to skip the
+           # interpolation; compare the actual coordinates instead.
+           if np.array_equal(np.asarray(time_new), np.asarray(time)):
                return dat
-           else:
-               return np.interp(time_new, time, dat)
+           if np.asarray(dat).ndim != 1 or len(dat) != len(time):
+               return []
+           return np.interp(time_new, time, dat)
         else:
            return []
 
+    def get_ncvar_on_time(self, var: str, target: str = 'TIME3', scale: float = 1.0):
+        """Read a 1-D TRANSP time history on an explicitly selected time grid.
+
+        The CDF variable's declared leading dimension, not the array length,
+        identifies the source grid.  Interpolation is needed whenever the
+        numerical TIME and TIME3 coordinates differ, even at equal lengths.
+        This routine is deliberately restricted to 1-D histories; spatial
+        profiles must be handled on their native TIME3 grid.
+        """
+        if target not in ('TIME', 'TIME3'):
+            raise ValueError(f'Unsupported TRANSP target time coordinate: {target}')
+        try:
+            dimensions = self.nc.variables[var].dimensions
+        except KeyError:
+            return np.array([])
+        if len(dimensions) != 1 or dimensions[0] not in ('TIME', 'TIME3'):
+            raise ValueError(f'{var} is not a 1-D TIME/TIME3 history: {dimensions}')
+        source = np.asarray(self.timesc if dimensions[0] == 'TIME' else self.timep)
+        destination = np.asarray(self.timesc if target == 'TIME' else self.timep)
+        values = self.get_ncvar(var, scale=scale)
+        if values.ndim != 1 or values.shape != source.shape:
+            raise ValueError(f'{var} shape {values.shape} disagrees with {dimensions[0]} '
+                             f'coordinate {source.shape}')
+        if not np.all(np.isfinite(source)) or not np.all(np.diff(source) > 0):
+            raise ValueError(f'{var} has an invalid {dimensions[0]} time coordinate')
+        if not np.all(np.isfinite(destination)) or not np.all(np.diff(destination) > 0):
+            raise ValueError(f'{var} has an invalid {target} target time coordinate')
+        if np.array_equal(source, destination):
+            return values
+        return np.interp(destination, source, values)
 
     #fill ids.value
     def fill_value(self, ids, dat, rsz:int=-1, mult:float=None, name:str=None):
@@ -523,7 +559,7 @@ class nc2imas(imas_connection, netcdf_connection):
         else:
             if mult is not None:
                 dat = mult*dat
-            if interp is True and self.ntimes != self.ntimep:
+            if interp is True and not np.array_equal(self.timesc, self.timep):
                 dat = np.interp(self.timep, self.timesc, dat)
             if resize:
                 ids.resize(len(dat), refcheck=False)
@@ -552,7 +588,7 @@ class nc2imas(imas_connection, netcdf_connection):
                raise Exception('Cannot fill scalar value')
             if mult is not None:
                 dat = mult*dat
-            if interp is True and self.ntimes != self.ntimep:
+            if interp is True and not np.array_equal(self.timesc, self.timep):
                 dat = np.interp(self.timep, self.timesc, dat)
             if (not np.isscalar(dat)) and resize:
                 ids.resize(len(dat), refcheck=False)
@@ -597,6 +633,10 @@ class nc2imas(imas_connection, netcdf_connection):
         if self.nmlist is not None:
             self.nmlist.clear()
         self.load_namelist()
+        # A changed TR.DAT must not retain XML/provenance for the prior file.
+        self._code_parameters_xml_cache = None
+        self._provenance_file_records_cache = None
+        self._input_inventory_cache = None
 
 
     #TODO move to utilities
@@ -843,7 +883,7 @@ class nc2imas(imas_connection, netcdf_connection):
         #(TIME) TESLA*CM. vac field
         bzxR = self.get_ncvar('BZXR', self.cm2m)
         if self.is_valid(raxis, bzxR):
-            if self.ntimep != self.ntimes:
+            if not np.array_equal(self.timesc, self.timep):
                raxis = np.interp(self.timep, self.timesc, raxis)
                bzxR = np.interp(self.timep, self.timesc, bzxR)
             b_field_tor = self.bt_sign * bzxR / raxis
@@ -867,7 +907,7 @@ class nc2imas(imas_connection, netcdf_connection):
         bflux_tor_b = self.get_ncvar('TRFLX')
         bflux_tor = self.interp_radial_profiles(bflux_tor_b, coord_xb, coord_x, axis_value=0.0)
         bz = self.get_ncvar('BZ')
-        if self.ntimes != self.ntimep:
+        if not np.array_equal(self.timesc, self.timep):
             bz = self.interp1d_time(self.timep, self.timesc, bz)
         rho_tor = []
         if self.is_valid(bz, bflux_tor):
@@ -879,7 +919,7 @@ class nc2imas(imas_connection, netcdf_connection):
         # Poloidal flux: PLFLX is an enclosed increment on XB in Wb/rad.
         psi_rel_b = self.psi_sign * self.get_ncvar('PLFLX', 2.*self.pi)
         psi_axis = self.psi_sign * self.get_ncvar('PSI0_TR', 2.*self.pi)
-        if self.ntimes != self.ntimep:
+        if not np.array_equal(self.timesc, self.timep):
             psi_axis = self.interp1d_time(self.timep, self.timesc, psi_axis)
         psi_rel = self.interp_radial_profiles(psi_rel_b, coord_xb, coord_x, axis_value=0.0)
         psi = psi_rel + psi_axis[:,None] if self.is_valid(psi_rel, psi_axis) else psi_rel
@@ -1184,107 +1224,37 @@ class nc2imas(imas_connection, netcdf_connection):
                 prior = last_parameter.get('value', '')
                 last_parameter.set('value', (prior + ' ' + line).strip())
 
-    def _collect_parameter_files(self):
-        """Collect TRANSP input and referenced model/template namelists.
+    def input_inventory(self):
+        """Resolve and cache the run's TR.DAT and recursively referenced inputs.
 
-        The source TRANSP namelist is always included when available. Template
-        files are discovered from keys containing ``TEMPLATE`` in TR.DAT and
-        recursively from every embedded namelist. Missing referenced files are
-        retained as provenance records. Adjacent run-specific ``*.nml`` files
-        are also included to catch workflow-generated model inputs whose path
-        is not explicitly present in TR.DAT.
+        Missing or oversized files remain explicit provenance records; they are
+        *not* silently counted as archived inputs.
         """
-        pending = []
-        if self.nml_name:
-            pending.append(('TRANSP_INPUT', 'TRANSP_NAMELIST', str(self.nml_name), None))
+        if self._input_inventory_cache is None:
+            self._input_inventory_cache = InputInventory(
+                self.nml_name, runid=self.get_ncattr_text('Runid', default=''))
+            for item in self._input_inventory_cache.missing:
+                message = (f'Source input NOT embedded ({item.status}): '
+                           f'{item.key} -> {item.path}')
+                self.logger.warning(message)
+                print(f'*** WARNING: {message}')
+            if self._input_inventory_cache.truncated:
+                message = ('Source input discovery exceeded safety limits; '
+                           'input inventory is incomplete')
+                self.logger.warning(message)
+                print(f'*** WARNING: {message}')
+        return self._input_inventory_cache
 
-        if isinstance(self.nmlist, dict):
-            for key, value in sorted(self.nmlist.items()):
-                if 'TEMPLATE' not in str(key).upper():
-                    continue
-                filename = self._clean_namelist_path(value)
-                if filename:
-                    pending.append(('TEMPLATE', str(key), filename, self.nml_name))
+    def _collect_parameter_files(self):
+        """Legacy API consumed by IDS-provenance summary; use new inventory."""
+        return [(item.role, item.key, item.reference, item.path)
+                for item in self.input_inventory().records]
 
-        # Include adjacent run-specific model namelists even when a workflow
-        # supplied them through defaults/indirection rather than a TEMPLATE key.
-        if self.nml_name:
-            try:
-                nml_dir = Path(self.nml_name).expanduser().resolve().parent
-                runid = self.get_ncattr('Runid')
-                if isinstance(runid, bytes):
-                    runid = runid.decode('ISO-8859-1', errors='replace')
-                runid = str(runid).strip() if runid is not None else ''
-                patterns = [f'{runid}*.nml', f'{runid}*.NML'] if runid else ['*.nml', '*.NML']
-                for pattern in patterns:
-                    for path in sorted(nml_dir.glob(pattern)):
-                        pending.append(('AUX_NAMELIST', 'AUTO_DISCOVERED', str(path), self.nml_name))
-            except Exception:
-                pass
-
-        def resolve_from(filename, parent_file=None):
-            """Resolve filename first relative to the referring namelist."""
-            expanded = os.path.expandvars(str(filename))
-            candidate = Path(expanded).expanduser()
-            if candidate.is_absolute():
-                return candidate.resolve()
-            roots = []
-            if parent_file:
-                try:
-                    roots.append(Path(parent_file).expanduser().resolve().parent)
-                except Exception:
-                    pass
-            if self.nml_name:
-                try:
-                    roots.append(Path(self.nml_name).expanduser().resolve().parent)
-                except Exception:
-                    pass
-            roots.append(Path.cwd())
-            for root in roots:
-                path = (root / candidate).resolve()
-                if path.exists():
-                    return path
-            return (roots[0] / candidate).resolve() if roots else candidate.resolve()
-
-        def template_refs_from_text(text):
-            """Yield TEMPLATE assignments from a Fortran-style namelist."""
-            refs = []
-            for raw in str(text).splitlines():
-                # A template path is normally scalar and on one assignment line.
-                line = raw.split('!', 1)[0].strip()
-                if '=' not in line:
-                    continue
-                key, value = line.split('=', 1)
-                if 'TEMPLATE' not in key.upper():
-                    continue
-                filename = self._clean_namelist_path(value)
-                if filename:
-                    refs.append((key.strip(), filename))
-            return refs
-
-        # Breadth-first walk so template files can themselves reference more
-        # templates. A resolved path is embedded once; missing references are
-        # also deduplicated by their intended resolved location.
-        seen = set()
-        result = []
-        idx = 0
-        while idx < len(pending):
-            role, key, filename, parent_file = pending[idx]
-            idx += 1
-            resolved = resolve_from(filename, parent_file)
-            identity = str(resolved)
-            if identity in seen:
-                continue
-            seen.add(identity)
-            result.append((role, key, filename, resolved))
-
-            text, _digest, status = self._read_parameter_file(resolved)
-            if status != 'embedded' or not text:
-                continue
-            for child_key, child_name in template_refs_from_text(text):
-                pending.append(('TEMPLATE_NESTED', child_key, child_name, str(resolved)))
-
-        return result
+    def fill_external_model_inputs(self, ids, family):
+        """Attach model-specific XML to the appropriate IDS code libraries."""
+        if not hasattr(ids, 'code'):
+            return []
+        return fill_model_libraries(ids.code, self.input_inventory(), family)
 
     def build_code_parameters_xml(self):
         """Build XML provenance for IMAS code.parameters.
@@ -1334,22 +1304,13 @@ class nc2imas(imas_connection, netcdf_connection):
             ('phi_sign', self.phi_sign)):
             ET.SubElement(signs, 'item', {'name': key, 'value': str(value)})
 
-        inputs = ET.SubElement(root, 'input_files')
-        for role, key, filename, resolved in self._collect_parameter_files():
-            attrs = {'role': role, 'key': key, 'reference': filename}
-            if resolved is not None:
-                attrs['resolved_path'] = str(resolved)
-            text, digest, status = self._read_parameter_file(resolved) if resolved is not None else ('', '', 'missing')
-            attrs['status'] = status
-            if digest:
-                attrs['sha256'] = digest
-            node = ET.SubElement(inputs, 'file', attrs)
-            if text:
-                content = ET.SubElement(node, 'content', {'encoding': 'text'})
-                content.text = text
-                # Also expose a machine-readable namelist view while retaining
-                # the exact source text above for full-fidelity provenance.
-                self._append_namelist_xml(node, text)
+        inventory = self.input_inventory()
+        inputs = ET.SubElement(root, 'input_files', {
+            'complete': str(not (inventory.missing or inventory.truncated)).lower(),
+            'discovery_truncated': str(inventory.truncated).lower(),
+        })
+        for record in inventory.records:
+            append_file_xml(inputs, record)
 
         xml = ET.tostring(root, encoding='unicode')
         self._code_parameters_xml_cache = xml

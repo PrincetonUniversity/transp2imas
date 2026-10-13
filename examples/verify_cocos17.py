@@ -77,6 +77,11 @@ def main():
             pljb = np.asarray(nc.variables["PLJB"].data, dtype=float).copy()
             bz = np.asarray(nc.variables["BZ"].data, dtype=float).copy()
             j_phi = si * cur * 1.0e4
+            if len(bz) != len(pljb):
+                time_scalar = np.asarray(nc.variables['TIME'][:], dtype=float)
+                time_profile = np.asarray(nc.variables['TIME3'][:], dtype=float)
+                bz = np.interp(time_profile, time_scalar, bz)
+                print('j_total: BZ interpolated from TIME to TIME3')
             j_total = si * (pljb * 1.0e4) / bz[:, None]
             print(f"j_phi      expected A/m2 range={rng(j_phi)}")
             print(f"j_total    expected A/m2 range={rng(j_total)}  [PLJB/BZ]")

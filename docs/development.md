@@ -39,12 +39,15 @@ do not require IMAS.
 make help
 make check
 make verify-all
+make verify-waves
+make verify-pf-passive
 make verify-dd
 make test
 ```
 
 `make check` is intended to be fast and should be run before every commit.
-`make verify-all` exercises the bundled source regression cases. `make
+`make verify-all` exercises the bundled general NSTX source regression cases.
+`make verify-waves` exercises the dedicated DIII-D EC and C-Mod IC RF cases. `make
 verify-dd` requires an IMAS environment and should be run before merging changes
 that touch schema-dependent code.
 

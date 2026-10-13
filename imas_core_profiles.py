@@ -391,7 +391,7 @@ class imas_core_profiles:
         # dividing by it and multiplying by ip_sign gives the IMAS definition
         # <J.B>/B0 in the physical +phi convention.
         bz_parallel = self.im.get_ncvar('BZ')
-        if ntimep != ntimes:
+        if not np.array_equal(self.im.timep, self.im.timesc):
             bz_parallel = self.im.interp1d_time(self.im.timep, self.im.timesc, bz_parallel)
 
         def _parallel_from_jdotb(varname):
@@ -459,13 +459,15 @@ class imas_core_profiles:
             self.im.fill_data(cp.global_quantities.energy_diamagnetic, edia)
 
         #t_e_peaking
-        te0 = self.im.get_ncvar('TE0') #magnetic axis
+        # TE0 is sampled on scalar TIME, while TE and DVOL use profile TIME3.
+        # Interpolate the axis temperature before computing the peaking factor.
+        te0 = self.im.get_ncvar('TE0', interp=True)  # magnetic axis, TIME3
         tel = self.im.get_ncvar('TE')  #TE(TIME3,X) eV
         tev = []
         #volume PVOL(TIME) CM^3 : PLASMA VOLUME
         pvol_pt = self.im.get_ncvar('PVOL', vconv)
         #interpolate pvol from scalar time onto profile times
-        if ntimep != ntimes:
+        if not np.array_equal(self.im.timep, self.im.timesc):
             pvol_pt = self.im.interp1d_time(self.im.timep, self.im.timesc, pvol_pt)
 
         te0_tev = []
@@ -495,7 +497,7 @@ class imas_core_profiles:
         if self.im.is_valid(ti0, tion, pvol_pt):
             ti_ = self.im.np_multiply_sum(tion, gvol, axis=1)
             tiv = self.im.operate_arrays(ti_, '/', pvol_pt)
-            if ntimep != ntimes:
+            if not np.array_equal(self.im.timep, self.im.timesc):
                ti0_pt = self.im.interp1d_time(self.im.timep, self.im.timesc, ti0)
             else:
                ti0_pt = ti0
@@ -543,7 +545,7 @@ class imas_core_profiles:
         bflux_tor = self.im.get_ncvar('TRFLX')
         rho_tor = []
         #interpolate onto profile time
-        if ntimep != ntimes:
+        if not np.array_equal(self.im.timep, self.im.timesc):
             bz = self.im.interp1d_time(self.im.timep, self.im.timesc, bz)
 
         try:
@@ -570,7 +572,7 @@ class imas_core_profiles:
         # PSI0_TR is the magnetic-axis offset in Wb/rad. Convert to full Wb
         # and apply the target COCOS sign before constructing absolute psi.
         psi_axis = psi_sign * self.im.get_ncvar('PSI0_TR', 2.*pi)
-        if ntimep != ntimes:
+        if not np.array_equal(self.im.timep, self.im.timesc):
             psi_axis = self.im.interp1d_time(self.im.timep, self.im.timesc, psi_axis)
 
         psi = psi_rel + psi_axis[:,None] if self.im.is_valid(psi_rel, psi_axis) else psi_rel
@@ -660,7 +662,7 @@ class imas_core_profiles:
         # Q profile at XB ; Q(TIME3, XB)
         qtmp = q_sign * self.im.get_ncvar('Q')
         q0 = q_sign * self.im.get_ncvar('Q0')
-        if ntimep != ntimes:
+        if not np.array_equal(self.im.timep, self.im.timesc):
             q0 = self.im.interp1d_time(self.im.timep, self.im.timesc, q0)
         qprof = []
         if len(qtmp)>1:

@@ -359,7 +359,8 @@ class imas_waves:
             if has_e:
                 self._fill_vector(prof.electrons.power_density_thermal, electron_pd[it])
                 self._fill_vector(prof.electrons.power_inside_thermal, e_inside[it])
-                prof.electrons.distribution_assumption = 0
+                # distribution_assumption is a global_quantities.electrons
+                # field, not a profiles_1d.electrons field (DD3 and DD4).
             if has_j:
                 self._set_current_inside(prof, current_inside[it])
             if has_nphi and nphi.ndim == 2 and nphi.shape[0] > it:
@@ -474,6 +475,7 @@ class imas_waves:
         self.im.fill_vac_tor_field(ids)
         ids = self.im.fill_properties(ids)
         self.im.fill_code_properties(ids)
+        self.im.fill_external_model_inputs(ids, 'waves')
         ids.ids_properties.homogeneous_time = 1
         ids.time.resize(self.nt)
         ids.time[:] = self.time

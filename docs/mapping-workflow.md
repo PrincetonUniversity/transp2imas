@@ -81,16 +81,22 @@ source-side validation reference, or record a specific deferral reason.
 - `core_transport`
 - `radiation`
 - `edge_sources`
+- `waves` -- EC and IC absorbed/deposited wave output is now validated against
+  dedicated DIII-D and C-Mod regression cases.
 - NBI `distribution_sources`
 - `nbi`, `ec_launchers`, `ic_antennas`, `lh_antennas`
-- `tf`, `pf_active`, `wall`
+- `tf`, `pf_active` (source-verified waveforms and optional external geometry), `wall`
 - `workflow`, `dataset_fair`, and per-IDS provenance
 
 ### Implemented but dependent on richer source data
 
-- `waves` -- requires spatial RF absorption/deposition data.
-- `pf_passive` -- requires passive-structure currents plus trustworthy structure
-  geometry/electrical definitions.
+- `pf_active` -- mapped KK_/VV_/VS_ waveforms, validated per-channel time and unit conversions,
+  optional DD3/DD4 coil/circuit device model, and intentionally deferred KT_
+  target-current references. No regression CDF contains active PF output; see
+  [pf_active](pf-active.md).
+- `pf_passive` -- implemented for source-side PS_n currents and explicitly supplied
+  authoritative geometry, including DD3/DD4 outline conversion. Actual passive
+  current/geometry identity awaits a PS_n regression CDF; see [pf_passive](pf-passive.md).
 - `sawteeth` -- requires explicit sawtooth crash-event data.
 
 ### Highest-value next group
@@ -101,9 +107,10 @@ pitch, species, radial, and time coordinates. `distribution_sources` already
 provides a natural validated stepping stone but must not be confused with a
 full phase-space distribution.
 
-If an FBM regression case is not available, the next target should be chosen by
-which validation-quality source case is available first: `pf_passive`, `waves`,
-or `sawteeth`.
+If NUBEAM/FBM extension is postponed, `pf_passive` is implemented with
+explicit geometry and source-only synthetic regression, but it still needs a real
+`PS_n` CDF with matching authoritative machine description. The next unfilled
+physics IDS is `sawteeth`, contingent on a validated crash-event source case.
 
 ## Intentionally unmapped or deferred examples
 

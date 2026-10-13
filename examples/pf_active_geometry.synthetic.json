@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "machine": "SYNTHETIC",
+  "source_reference": "SYNTHETIC TEST ONLY -- NOT A REAL TOKAMAK DEVICE MODEL",
+  "units": "m",
+  "coils": [
+    {
+      "name": "PF1_AU",
+      "description": "Synthetic PF1 upper coil",
+      "cdf_current": "KK_PF1AU",
+      "current_sign": -1,
+      "cdf_voltage": "VV_PF1AU",
+      "voltage_sign": 1,
+      "resistance_ohm": 0.004,
+      "elements": [
+        {"name": "PF1A", "turns_with_sign": 4, "geometry": {
+          "type": "rectangle", "r": 1.1, "z": 0.9, "width": 0.1, "height": 0.12
+        }}
+      ]
+    },
+    {
+      "name": "CS_01",
+      "cdf_current": "KK_CS1",
+      "current_sign": 1,
+      "elements": [
+        {"name": "CS1", "turns_with_sign": 10, "geometry": {
+          "type": "outline", "r": [0.45, 0.55, 0.55, 0.45], "z": [-0.3, -0.3, 0.3, 0.3]
+        }}
+      ]
+    },
+    {
+      "name": "EQUILIBRIUM_AUX",
+      "cdf_current": "CC_EQ1",
+      "current_sign": 1,
+      "cc_effective_turns": 3,
+      "elements": [
+        {"name": "EQ_A", "turns_with_sign": 1, "geometry": {
+          "type": "annulus", "r": 1.5, "z": 0.1, "radius_inner": 0.01, "radius_outer": 0.04
+        }}
+      ]
+    }
+  ],
+  "supplies": [
+    {
+      "name": "SUPPLY1",
+      "description": "Example supply connected to PF1_AU (connection is synthetic)",
+      "cdf_voltage": "VS_PF1AU",
+      "voltage_sign": -1,
+      "cdf_current": "KK_PF1AU",
+      "current_sign": 1
+    }
+  ],
+  "circuits": [
+    {
+      "name": "SYNTHETIC_CIRCUIT",
+      "description": "Illustrative, intentionally synthetic node connectivity",
+      "connections_dd3": [
+        [1, 0, 1, 0, 0, 0, 0, 0],
+        [0, 1, 0, 1, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 1, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 1]
+      ],
+      "connections_dd4": [
+        [1, -1, 0, 0],
+        [-1, 1, -1, 0],
+        [0, 0, 1, 0]
+      ],
+      "cdf_current": "KK_PF1AU",
+      "current_sign": 1
+    }
+  ]
+}

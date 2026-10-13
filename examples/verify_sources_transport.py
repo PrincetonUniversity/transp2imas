@@ -83,6 +83,18 @@ dv_cm3 = get('DVOL')
 def max_rel(a, b, floor=1.0):
     if not (a.size and b.size):
         return np.nan
+    a = np.asarray(a)
+    b = np.asarray(b)
+    if a.shape != b.shape and a.ndim == b.ndim == 1:
+        ts = get('TIME')
+        tp = get('TIME3')
+        if len(a) == len(tp) and len(b) == len(ts):
+            b = np.interp(tp, ts, b)
+        elif len(a) == len(ts) and len(b) == len(tp):
+            b = np.interp(ts, tp, b)
+        else:
+            print('  WARNING: cannot compare different time axes', a.shape, b.shape)
+            return np.nan
     den = np.maximum(np.maximum(np.abs(a), np.abs(b)), floor)
     return np.nanmax(np.abs(a-b) / den)
 

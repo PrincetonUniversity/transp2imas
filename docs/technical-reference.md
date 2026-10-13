@@ -4,7 +4,8 @@ This document contains detailed mapping audits, compatibility notes, provenance 
 
 The DIII-D `174783Q32` data referenced in historical audits below are no longer
 distributed with the repository. The active, distributable regression fixtures
-are the two NSTX cases under `examples/data/nstx/`.
+are the two NSTX cases under `examples/data/nstx/`, two DIII-D EC cases under
+`examples/data/d3d/`, and the C-Mod ICRF case under `examples/data/cmod/`.
 
 
 
@@ -833,7 +834,7 @@ rather than a blind interpolation.
 
 ### DD 4.1.1 v5
 - Explicitly skip VPOLD_NC/VTORD_NC when their RMAJM grid length does not match the core_profiles radial grid; this no longer depends on nc2imas.fill_data(chk=...).
-- Assign pf_active.time as an explicit float64 ndarray and use float64 for the no-coil sentinel.
+- Assign pf_active.time as an explicit float64 ndarray only when a real time coordinate exists; skip pf_active entirely when no KK/VV/VS source and no authoritative geometry are available (no sentinel).
 - Added a startup patch-level print (`DD411-v5`) so the active checkout can be verified immediately.
 
 
@@ -1114,14 +1115,29 @@ The sawteeth IDS remains disabled rather than writing an empty or inferred event
 A sawtooth-enabled run with actual crash output (and, if prescribed, the PRESAW/
 EXTSAW event input) is required for validation.
 
-### pf_passive: current run cannot validate it
+### pf_passive: implemented with explicit machine-data provenance
 
-There are no `PS_1...PS_n` passive-current channels in this CDF.  The converter now
-logs explicitly that it will not write `pf_passive` for such a run.  On runs where
-`PS_n` exists, the legacy path remains current-only: names/currents can come from
-TRANSP output, while hardware geometry, resistance/inductance, and circuit
-connectivity must be taken from the authoritative machine-description/IDS database
-rather than reconstructed from run-specific TRANSP settings.
+None of the bundled CDFs contains `PS_1...PS_n` passive-current channels, so
+**real passive-current physics remains unvalidated**. The current writer detects
+`PS_n` using strictly matched numeric indices, retains its physical-current
+sign independent of plasma `Ip`/`Bphi`, converts supported A/kA/MA units, and
+uses each time series' native timebase in `pf_passive/loop[i]/time`.
+
+In the legacy mode (`--pf-passive-geometry` absent), it writes any available
+`PS_n` histories as current-only loops and warns that the resulting IDS lacks
+authoritative mechanical/electrical properties. With an external, audited
+machine-specific JSON description it fills geometries, signed element turns,
+optional area/resistance/resistivity and trace-to-device mappings. Current sign
+conversion in this mode is **explicit**, not inferred from the CDF label.
+All six geometry types are supported; outline vertices are normalized open
+for DD3 and explicitly closed for DD4. The JSON source, SHA256 and reference
+are recorded in IDS provenance. A full geometry-only IDS can also be written
+when `PS_n` output is absent.
+
+The portable `make verify-pf-passive` suite uses synthetic CDFs and manifest
+values only; no NSTX, DIII-D or C-Mod geometry is invented. Refer to the
+[full passive-conductor mapping guide](pf-passive.md) for schema, sign and time
+conventions, and the requirements for real-machine validation.
 
 ### Remaining inputs that would unlock the next implementation steps
 
@@ -1129,8 +1145,8 @@ rather than reconstructed from run-specific TRANSP settings.
 2. A run with `NLSAW=.true.` and saved sawtooth crash/mixing output for sawteeth.
 3. A run containing `PS_n` passive currents plus the matching authoritative machine
    description / `pf_passive` geometry if a complete passive-loop IDS is desired.
-4. An EC/IC/LH run containing absorbed/deposited RF profiles to exercise `waves`
-   against a real payload.
+4. The bundled DIII-D and C-Mod EC/IC cases now validate `waves`; no further
+   RF fixture is required for the already supported coherent-wave quantities.
 
 ### v8.6.0 metadata/provenance and additional saved moments
 
@@ -1198,7 +1214,7 @@ handled by `edge_sources`. A radiation process 11 should only be added when an
 explicit radiative recombination-emission quantity is identified.
 
 
-## TRANSP -> IMAS `waves` mapping (v8.5.4)
+## TRANSP -> IMAS `waves` mapping (validated for 0.9.0)
 
 The `waves` writer is enabled in v8.5.4, but it is intentionally conservative:
 it creates a coherent wave only when the TRANSP CDF contains absorbed/deposited
@@ -1231,19 +1247,26 @@ cumulative toroidal current fields are populated.
 | --- | --- | --- |
 | `FREQAj(TIME)` | `global_quantities/frequency` | interpolated onto `TIME3` |
 | `RFPWRABj(TIME)` | `global_quantities/power` | absorbed wave power, interpolated onto `TIME3` |
-| `PEICH(TIME3,X)` | electron thermal power-density branch | W/cm3 -> W/m3 |
-| `PEICH + PIICH + QRFBTOT` | total `profiles_1d/power_density` | only when exactly one IC coherent wave is represented |
-| cumulative volume integrals | `power_inside` and electron `power_inside_thermal` | using `DVOL` |
+| `PIC_Fj(TIME3,X)` | `profiles_1d/power_density` | frequency/antenna-resolved absorbed RF power; W/cm3 -> W/m3 |
+| cumulative integral of `PIC_Fj` | `profiles_1d/power_inside` | using finite-zone `DVOL` |
+| `QICHA(TIME3,X)` | fallback `profiles_1d/power_density` | only when exactly one IC coherent wave exists and `PIC_Fj` is unavailable |
+| `ICCUR(TIME3,X)` | cumulative `current_phi_inside` / legacy `current_tor_inside` | only when exactly one IC coherent wave exists; aggregate current is not duplicated across multiple waves |
 | `XGRID_NPHI` | `n_phi` (legacy `n_tor`) | only for a single IC coherent wave because the CDF grid is not antenna-resolved |
 
 IC uses wave identifier `IC` index **3** and the full-wave solver category
 index **2**.  The antenna reference is `antenna{j}`, matching the IC antenna
 writer.
 
-`PIICH` and `QRFBTOT` are aggregate ion/fast-ion heating profiles.  They are
-included in total absorbed wave power for a single-wave case, but are not
-assigned to a fictitious thermal-ion species.  A species-resolved mapping
-requires source data that identify the receiving species.
+`PEICH`, `PIICH`, and `QRFBTOT` are not interpreted as additive wave-absorption
+partitions.  In the C-Mod validation case their sum greatly exceeds the
+absorbed antenna power because these profiles describe plasma heating/source
+channels after RF/Fokker-Planck processing.  They remain mapped through
+`core_sources`, where their source semantics belong.
+
+For multi-frequency IC runs, a CDF may contain an aggregate `XGRID_NPHI` and
+`PIC_NPHI` spectrum without a frequency-resolved spectral decomposition.  The
+writer does not copy that same aggregate spectrum onto every coherent wave.  A
+single-wave case may still use the aggregate `XGRID_NPHI` representation.
 
 ### Time base and grid
 
@@ -1252,21 +1275,64 @@ IDS as homogeneous in time.  Scalar `TIME` traces are interpolated to `TIME3`.
 The radial grid is the TRANSP `X` finite-volume grid and reuses the standard
 `fill_profiles1d_grid()` geometry/flux mapping.
 
-### Attached 174783Q32 result
+### RF regression results
 
-The supplied `174783Q32.CDF` has no `PEECH*`, `ECCUR*`, `PICHA*`, `FREQA*`,
-`RFPWRAB*`, `PEICH`, `PIICH`, `QRFBTOT`, or `XGRID_NPHI` wave-deposition
-payload.  Its TR.DAT sets `EC_MODEL='NONE'` and `NLLH=.false.`.  The CDF only
-contains RF-to-fast-ion summary quantities (`PRFB_D`, `PRFFI`), which are not a
-spatial coherent-wave solution.  Therefore v8.5.4 correctly writes **no
-`waves` IDS for this run**.
+`examples/verify_waves_mapping.py` provides the source-side regression contract
+for the mapping and is run by `make verify-waves`.
+
+For DIII-D `147634B13` (TORBEAM) and `147634G14` (GENRAY):
+
+- six `PEECHj` profiles sum to aggregate `PEECH` at numerical precision;
+- the finite-volume integral of aggregate `PEECH` reproduces `PECHT` with
+  relative error of order `1e-7`;
+- integrated `ECCURj` contributions reproduce aggregate `ECCUR` within about
+  `2.3e-3` relative error or better.
+
+For C-Mod `89846`:
+
+- `integral(PIC_F1)` reproduces `RFPWRAB1` within `2.3e-7` relative error;
+- `integral(PIC_F2)` reproduces `RFPWRAB2` within `3.8e-7` relative error;
+- `PIC_F1 + PIC_F2` reproduces aggregate `QICHA` with normalized maximum error
+  below `5e-7`;
+- the CDF contains two frequencies (80 and 78 MHz) and an aggregate
+  `XGRID_NPHI/PIC_NPHI` spectrum, so per-frequency `n_phi` is intentionally not
+  fabricated.
 
 ### Not yet mapped
 
 - Lower-hybrid coherent-wave output.  No suitable LH payload is present in the
-  supplied validation run, so no unvalidated mapping is enabled.
+  supplied validation cases, so no unvalidated mapping is enabled.
 - Parallel current density from EC current drive, because it requires the
   proper `<j.B>/B0` quantity rather than direct reuse of `ECCUR`.
-- Multi-antenna allocation of aggregate IC deposition profiles.  TRANSP output
-  must provide an antenna-resolved decomposition before those profiles can be
-  split safely.
+- Frequency-resolved IC `n_phi` spectra when only aggregate `PIC_NPHI` output
+  is present.
+
+## Active PF circuits and DD3/DD4 geometry (0.9.0 extension)
+
+`imas_pf_active.py` now delegates to `pf_active_mapping.py`. The writer
+collects KK_ and VV_ by union of coil names, independently collects VS_
+supplies, and records each waveform's native 1D time and source units.
+The old bug writing a KT_ *target current* to the supply-voltage array
+is removed; KT_ is not a measured current and is reserved for later
+`pulse_schedule` mapping. CC_ equilibrium-current output is used only
+when explicitly bound by an authoritative machine manifest. The manifest
+provides geometry, resistance, turns/sign, and optionally supply current
+relations and DD3/DD4 circuit connectivity. Without it the IDS is
+electrical-output-only and explicitly incomplete for field reconstruction.
+The previously bundled six general CDFs lack active PF coil currents. Two
+additional real ISolver CDFs now provide active currents and passive loops:
+ITER 38530P94 (11 coil circuits, 119 passive channels) and NSTX 142202U01
+(9 coil circuits, 82 passive channels). The new `verify-isolver` source regression
+checks source/time identity and CC/KK integer-like turns, while authoritative
+machine geometry remains a separate requirement.
+See [pf_active details](pf-active.md).
+
+### Per-model input provenance (0.9.0 extension)
+
+In addition to the full original TR.DAT and referenced model input XML in
+`workflow` and `code.parameters`, `workflow.time_loop.component[].parameters`
+and `waves.code.library[].parameters` now separately retain configured
+TORIC/GENRAY/TORBEAM/CQL3D/FPP/LSC model input sets, including hashes and
+explicit missing-file records. Transport and NUBEAM model input sets are
+associated with their respective IDS code libraries. See
+`docs/input-provenance.md` for resolution rules and safety limits.

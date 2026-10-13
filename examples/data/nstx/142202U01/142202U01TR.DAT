@@ -1,0 +1,421 @@
+!
+! Isolver regression test.  Start run with ohmic coil fixed at 20 keV and the
+! other coils adjusted for minimum current.  q profile evolved for inductive
+! coupling.  Ohmic coil feedeback to match plasma current.  PID voltage sources
+! drive the coils.
+!
+
+ RPLOT_ITEM(1) = "CPDIS"
+ RPLOT_ITEM(2) = "IPCMP"
+ RPLOT_ITEM(3) = "LBPOL"
+ RPLOT_ITEM(4) = "ISOITER"
+
+ !NISO_VERBOSE=0
+
+ NISO_DEF_DRIVE_TYPE=4
+ FB_NAMES = 'vver','vhor','voh'
+
+ NPFC_JIT=2
+
+ PFC_NAMES    = 'OH'
+ PFC_NAMES(2) = 'PF1AU'
+ PFC_NAMES(3) = 'PF2U'
+ PFC_NAMES(4) = 'PF3U'
+ PFC_NAMES(5) = 'PF5'
+ PFC_NAMES(6) = 'PF3L'
+ PFC_NAMES(7) = 'PF2L'
+ PFC_NAMES(8) = 'PF1B'
+ PFC_NAMES(9) = 'PF1AL'
+
+ PROBE_NAMES = '@all'
+
+ PFC_CUR(1)   = 20000.     ! oh initial value
+ PFC_SIGMA(1) = 100.       ! small error
+
+ XISO_JIT_RELAX=.005       ! start small, use update_time to restore to nominal
+ XISO_JIT_MINFRAC = 0.6	   ! fast relaxation during early time steps
+ 
+ NLISODIF = .TRUE.
+
+ NEQ_XGUESS = -1
+
+ ISO_CONFIG='pass'
+
+ PASS_NAMES = '@pass'
+
+ XISO_SMOOTH = 2.5d-2
+
+ !XISO_RELBAL    = 5.E-4
+ !XISO_RELBAL_DT = 2.E-4
+
+ XBDYCHK  = 0.
+ BDY_YFIX = 0.
+
+ NLPCUR   = .FALSE.
+ NLINDUCT = .TRUE.
+
+DTMAXG=0.001
+DTMAXB=0.002
+DTMAXT=0.002
+
+NBI_PSERVE=1
+! ------------------------------------------------------------------------------------
+! template namelist for NSTX data prep.
+! Lines with commets containing !-> are expected to be changed from the data prep code.
+! -------------------------------------------------------------------------------------
+ 
+NSHOT=142202 !-> <shot>	!**** DATA SHOT NUMBER
+ 
+NZONES=50    ! RGA, 06Jun2009, increased from default 20
+ 
+!
+! CALCULATION TIME LIMITS
+!
+!TINIT=1.5d-2 !-> <toi-0.03>  	!**** START TIME
+TINIT=.015
+FTIME=0.54   !-> <toi>  	!**** STOP TIME
+FTIME_OK = 0.52
+TBONMIN=1.5d-2 !-> <toi-0.03>	!**** MINIMUM BEAM TURN ON TIME
+ 
+!
+NSYZF2= 2       !  TBT
+ 
+!
+!--------------------------
+FTEMIN=10.0
+ 
+!DTMAXG=0.005
+ 
+NMOM=16
+LEVTRK=2
+LEVGEO=12
+LEVGB=3
+ 
+!
+! PLASMA COMPOSITION:
+!
+AIMP=12.
+XZIMP=6.
+APLASM=1.,2.    !* 1ST SPECIES, 2ND SPECIES (IF ANY) ATOMIC WTS.
+BACKZ=1.,1.
+XZEFFI=2.0	   !* PLASMA COMPOSITION ZEFF
+NLZFIM=.FALSE.
+NLZEFM=.false.    !* SET .TRUE. FOR PC ZEFF = MAGDIF ZEFF
+NLZFIN=.false.    !* SET .TRUE. TO READ ZEFF(T) DATA
+NLZFI2=.false.
+NLZFXI=.TRUE.
+XPZEFF=0.0
+ 
+!
+!  INITIAL CONDITIONS
+!
+NG=2        !INITIAL NUMBER OF HYDROGENIC SPECIES
+FRAC=0.0,1.00    !SPECIES FRACTIONS (IF NG=2)
+GFRAC=0.0,1.00
+FTITE=.9       !INITIAL GUESS AT TI = FTITE * TE
+ 
+!
+!  OUTPUT (GENERATION OF PLOTS)
+!
+NGMAX=2         !* MAX NO. OF HYDROGENIC SPECIES = 1 **
+ NLNBI_TEST_OUT = .FALSE.
+SEDIT=0.001
+STEDIT=0.001
+ 
+!
+! PTCL BALANCE MODEL
+!
+NMODEL=1            !USE (1) CONST. FRAC (2) CONST V OR (3) CONST D PTCL MODEL
+TAUPH=2*0.15        !* PTCL CONFINEMENT TIME
+TAUPO=0.15          !* IMPURITY CONFINEMENT TIME
+RFRAC=0.00,0.9
+ 
+!
+! ION CONDUCTIVITY MODEL
+!
+
+XKFMIN=0.01
+NLXKIE=.false.
+XKFAC=1.            !* ANOMOLOUS MULTIPLIER FOR N.C. KAPA(I)
+NLFXKF=.false.      !*** ADJUST XKFAC TO FIT MEASURED TI IF .TRUE.
+NLTIF0=.FALSE.
+nlti2=.true.
+nlti2tx=.true.
+nltipro=.true.
+fiefac=1.0
+!tixlim=.85
+!tidxsw=0.1
+!tifacx=1.0
+nlvphi=.true.
+nlntx=.true.
+alph0i=0.6
+alph0e=0.6
+NLPCX=.F           ! PASSIVE CX IS SCE OF TI DATA FOR XKFAC ADJ.
+NCHPCX=1           ! WHICH CX EFLUX CHORD
+NSPPCX=1           ! WHICH EFLUX SPECIES
+ 
+!-----------------------------------------------------------------
+!  "FISH-BONE" CONTROLS
+NLFBON=.false.      !*.TRUE. TO TURN ON "FISH-BONES"
+TFSHON=0.465       !*TIME OF FIRST FISHBONE
+TFSHOF=0.500       !*TIME OF LAST FISHBONE
+FSHPER=1.0e-3      !*FISHBONE PERIOD (CYCLE) TIME
+FSHWID=1.0e-3      !*FISHBONE WIDTH (DURATION OF EACH "BONE")
+FBEMIN=0.0         !*MIN ENERGY OF BEAM PTCLS AFFECTED BY FISHBONES
+FBEMAX=2.0e4       !*MAX ENERGY OF BEAM PTCLS AFFECTED BY FISHBONES
+FVPVMX=0.25        !*MAX VPAR/V OF BEAM PTCLS AFFECTED BY FISHBONES
+FVPVMN=0.0         !*MIN VPAR/V OF BEAM PTCLS AFFECTED BY FISHBONES
+FBLTIM=5.0e-5      !*AVG LOSS TIME OF FISHBONED BEAM PTCLS (VERY SHORT)
+!------------------------------------------------------------------
+!  FAST ION Diffusion Model
+!
+NMDIFB=0
+BDIFB=0.0
+CDIFB=0.0
+TDIFBA=0.100,0.495,1.00
+BDIFBA=0.0E4,0.0E4,3.0E4
+CDIFBA=0.0E4,0.0E4,3.0E4
+EDIFBE=30000.,45000.,90000.
+FDIFBE=1.0,1.0,1.0
+ 
+!
+! MAGNETICS MODELING
+!
+NLSPIZ=.f      !* .T TO USE SPITZER INSTEAD OF N.C. RESISTIVITY
+NLMDIF=.t      !-> <mdiff>     !**** .T TO SOLVE POLOIDAL FIELD DIFFUSION EQN., ELSE .F
+NLBOOT=.t      !* =.T TO INCLUDE BOOTSTRAP CURRENTS
+NEFLD=3
+RQEFLD=0.0
+QEFLD=20.0   
+NLVSUR=.f
+NLQDATA=.f     !-> <qdata>	   !**** .F if solving poloidal field diffusion eqn., ELSE .T
+NLDFLX=.T      !-> <dflx>	   !**** .T if diamag flux exists, ELSE .F
+NLBCCW=.FALSE.
+NLJCCW=.TRUE.
+ 
+!
+!NCLASS Controls
+!
+NCMODEL=2
+NLVWNC=.TRUE.
+NLBOOTW=.TRUE.
+NLETAW =.TRUE.
+
+NLTINC=.TRUE.
+NLSQUEEZ=.FALSE.
+NLNCSMOO=.TRUE.
+TAUSMNNC=0.020
+TAUSMTNC=0.020
+XSMN_NC=0.100
+XSMT_NC=0.100
+ 
+!---- SAUTER Controls
+!NLRES_SAU=.TRUE.
+!NLBOOT_SAU=.TRUE.
+ 
+!
+! NEUTRALS MODEL - SEE ALSO PTCL BALANCE
+!
+NSOMOD=1      ! SELECT 1 FOR FRANTIC, 8 FOR SORCE8
+MOD0ED=1      ! =2 TO SET HOT EDGE NEUT TEMP=CONST. FRAC OF CENTRAL TI
+TI0FRC=.033333   ! T0(A)=TI0FRC*TI(0) IF MOD0ED=2
+E0IN=20., 2*.025, 20., 2*.025  ! T0(A) FOR COLD SCES, HOT SCES IF MOD0ED=1
+FH0ESC=.3       ! FRAC. OF ESC. NEUTRALS REFLECTED TO PLASMA "HOT"
+ 
+!
+!
+NZNBMR=13
+ 
+!
+!  DATA HANDLING
+!
+NRITER=3       ! EXPECT 2-SIDED SYMMETRIZABLE TE PROFILE DATA IF =3
+NRINER=3       ! EXPECT 2-SIDED SYMMETRIZABLE NE PROFILE DATA IF =3
+nriti2=4
+nriomg=4
+NRINIM=4
+!NRIZF2=6
+NRIQPR=5	!VS SQRT(TOROIDAL FLUX)
+NRIGRB=5
+NRIPRS=5
+NRID2F=5
+!nrizf2=3
+NRIBOL=3
+NSYTER=1       ! IF =1 SYMMETRIZE TE DATA WITH 2R CHORD FIT
+NSYNER=3       ! IF =2 SYMMETRIZE NE DATA WITH IN/OUT AVG
+nsyti2=0
+nsyomg=0
+NSYNIM=0
+NSYQPR=0
+!NSYZF2=0
+nsybol=2
+ 
+NLMICW=.F      ! .T TO RENORM NE(R) IN TRANSP (NORMALLY DONE IN TRDAT)
+NLPFIN=.F      ! .T TO READ PASSIVE CX TI FIT LIMS FOR SELECTED CHORD
+NLPXIN=.F      ! .T TO READ PASSIVE CX XSECT DATA FOR SELECTED CHORD
+PRFAC=0.0      !* FRACTION OF CX EFLUX TOT POWER TO SUBTRACT FROM BOLO.
+ 
+!
+!  TRDAT NAMELIST
+!
+$TRDATA
+LFIXUP=2     ! TBT 5/19/92
+RMJCHK=-1.   ! TBT 5/19/92
+NLRNNE = .false.     ! .T TO RENORM NE(R) TO LINE AVG NE
+!  NLBOLO = .true.     !  BOLO FLAG
+!  NLDBUG = .FALSE.
+!
+ 
+INPUTDIR='142202'
+ 
+PRERFS = 'BB'
+PREZFS = 'BB'
+EXTRFS = 'RFS'
+EXTZFS = 'ZFS'
+
+PRECUR='A'
+EXTCUR='CUR'
+PRERBZ='A'
+EXTRBZ='RBZ'
+PREQPR='BB' !-> <pre>	!**** pre='AA' if EFIT01; ='BB' if EFIT02
+EXTQPR='QPR'
+PREGRB='BB' !-> <pre>	!**** pre='AA' if EFIT01; ='BB' if EFIT02
+EXTGRB='GRB'
+PREPRS='BB' !-> <pre>	!**** pre='AA' if EFIT01; ='BB' if EFIT02
+EXTPRS='PRS'
+PRETRF='BB' !-> <pre>	!**** pre='AA' if EFIT01; ='BB' if EFIT02
+EXTTRF='TRF'
+PREPLF='BB' !-> <pre>	!**** pre='AA' if EFIT01; ='BB' if EFIT02
+EXTPLF='PLF'
+PREVSF='BB' !-> <pre>	!**** pre='AA' if EFIT01; ='BB' if EFIT02
+EXTVSF='VSF'
+PRETER='S'
+EXTTER='TER' !-> <xte>	!**** 'TE1' if time slice; 'TER' if fully time-dependent
+PRENER='S'
+EXTNER='NER' !-> <xne>	!**** 'NE1' if time slice; 'NER' if fully time-dependent
+PRETI2='CSR'
+EXTTI2='TIR' !-> <xti>	!**** 'TI1' if time slice; 'TIR' if fully time-dependent
+preomg='CSR'
+extomg='OMG'
+            !-> <xvph>	!**** 'VP1' if time slice; 'VPH' if fully time-dependent
+prenim='CSR'
+extnim='NCR' !-> <xnc>	!**** 'NC1' if time slice; 'NCR' if fully time-dependent
+prebol='A'
+extbol='BOL'
+predfl='A'		!**** Comment out if dflx=.F
+extdfl='FLX'		!**** Comment out if dflx=.F
+prentx='A'
+extntx='NTS'
+prenb2='P'
+extnb2='NBI'
+$END
+ 
+DTBEAM=0.005
+NPTCLS=8000
+NDEP0=500
+DN0OUT=6.e10
+ 
+NLBEAM = .T
+GOOMAX = 5000.0      ! max goosing factor
+DTN = 0.2e-6      ! orbit timestep control
+REDGE = 11.0      ! aperture dimensions
+XZEDGE = 30.25
+NBSHAP = 1      ! 1=rectangular source grid
+FOCLR = 0.988E3     ! focal lengths
+FOCLZ = 0.988E3
+DIVR = 4.94E-3      ! divergences
+DIVZ = 1.36E-2
+BMWIDR = 6.0      ! source grid dimensions
+BMWIDZ = 21.5
+ 
+NCIRLM = 0      ! circle limiters
+CRLMR1 = 0.
+CRLMY1 = 0.
+CRLMRD = 0.
+NLINLM = 14      !line limiters
+ALNLMR = 18.52,18.52,27.9,57.1,104.33,131.91,149.51,157.1,149.51,131.91,104.33,57.1,27.9,18.52
+ALNLMY = 0.0,100.81,160.34,160.34,146.01,103.97,54.5,0.0,-54.5,-103.97,-146.01,-160.34,-160.34,-100.81
+ALNLMT = 90.0,-81.0,0.0,16.89,56.73,71.5,81.04,90.0,-81.04,-71.5,-56.73,-16.89,0.0,81.00
+ 
+!
+! BEAMLINE 1A
+!
+NLCO(1) = .T
+EINJA(1) =  2.5d4
+PINJA(1) =  0.000000E+00
+TBONA(1) =  0.232499986887
+TBOFFA(1) =  0.5874999761581
+ABEAMA(1) =  2.000000E+00
+XZBEAMA(1) =  1.000000E+00
+PDELTA(1) =  1.000000E-03
+RTCENA(1) =  6.940000E+01
+XLBAPA(1) =  5.103000E+02
+XLBTNA(1) =  1.134000E+03
+FFULLA(1) =  0.000000E+00
+FHALFA(1) =  0.000000E+00
+XYBAPA(1) =  0.000000E+00
+XYBSCA(1) =  0.000000E+00
+NBAPSHA(1) =      1
+RAPEDGA(1) =  1.100000E+01
+XZPEDGA(1) =  3.025000E+01
+XBZETA(1) = -8.550000E+01
+ 
+!
+! BEAMLINE 1B
+!
+NLCO(2) = .T
+EINJA(2) =  2.5d4
+PINJA(2) =  0.000000E+00
+TBONA(2) =  0.0
+TBOFFA(2) =  0.0
+ABEAMA(2) =  2.000000E+00
+XZBEAMA(2) =  1.000000E+00
+PDELTA(2) =  1.000000E-03
+RTCENA(2) =  5.920000E+01
+XLBAPA(2) =  5.090000E+02
+XLBTNA(2) =  1.138000E+03
+FFULLA(2) =  0.000000E+00
+FHALFA(2) =  0.000000E+00
+XYBAPA(2) =  0.000000E+00
+XYBSCA(2) =  0.000000E+00
+NBAPSHA(2) =      1
+RAPEDGA(2) =  1.100000E+01
+XZPEDGA(2) =  3.025000E+01
+XBZETA(2) = -8.200000E+01
+ 
+!
+! BEAMLINE 1C
+!
+NLCO(3) = .T
+EINJA(3) =  2.5d4
+PINJA(3) =  0.000000E+00
+TBONA(3) =  0.0
+TBOFFA(3) =  0.0
+ABEAMA(3) =  2.000000E+00
+XZBEAMA(3) =  1.000000E+00
+PDELTA(3) =  1.000000E-03
+RTCENA(3) =  4.970000E+01
+XLBAPA(3) =  5.103000E+02
+XLBTNA(3) =  1.142000E+03
+FFULLA(3) =  0.000000E+00
+FHALFA(3) =  0.000000E+00
+XYBAPA(3) =  0.000000E+00
+XYBSCA(3) =  0.000000E+00
+NBAPSHA(3) =      1
+RAPEDGA(3) =  1.100000E+01
+XZPEDGA(3) =  3.025000E+01
+XBZETA(3) = -7.850000E+01
+NBEAM=  3  ! NBLIST.FOR: NO. OF BEAMS
+ 
+! NBLIST.FOR:  20% .GT. MAX(INJECTION ENERGY):
+EBDMAX= 1.094220E+05
+NLBDAT=.T   ! ** BEAM DATA UFILE FLAG **
+
+~update_time = .030
+XISO_JIT_MINFRAC = 0.
+
+~update_time = .040
+XISO_JIT_RELAX=.01
+
+~update_time = .060
+XISO_JIT_RELAX=-1.

@@ -472,6 +472,7 @@ def inspect_version(version):
         "vacuum_toroidal_field": hasattr(waves, "vacuum_toroidal_field"),
         "generic_time": hasattr(waves, "time"),
         "code_parameters": hasattr(waves, "code") and hasattr(waves.code, "parameters"),
+        "model_libraries": hasattr(waves, "code") and hasattr(waves.code, "library"),
     }
     print("waves:")
     for key, value in waves_fields.items():
@@ -484,6 +485,13 @@ def inspect_version(version):
                   "profile_time", "vacuum_toroidal_field", "generic_time",
                   "code_parameters"):
         check(waves_fields[field], f"waves lacks {field}", errors)
+    check(waves_fields["model_libraries"],
+          "waves.code.library unavailable for model-specific input XML", errors)
+    if waves_fields["model_libraries"]:
+        waves.code.library.resize(1)
+        model_parameters = hasattr(waves.code.library[0], "parameters")
+        print(f"  model_library_parameters         {yn(model_parameters)}")
+        check(model_parameters, "waves.code.library[].parameters unavailable", errors)
     if vt < (3, 42, 0):
         check(waves_fields["global_n_tor"] and waves_fields["profile_n_tor"],
               "early-DD3 waves lacks n_tor fields", errors)
@@ -543,6 +551,35 @@ def inspect_version(version):
             errors.append(f"workflow unavailable in supported DD: {exc}")
         else:
             print("workflow: unavailable (predates IDS)")
+
+    # Active PF hardware: each waveform has its own time axis, coil geometry is
+    # explicitly element-based and circuit connections differ by DD version.
+    active = factory.new("pf_active")
+    active.coil.resize(1)
+    active.supply.resize(1)
+    active.circuit.resize(1)
+    ac = active.coil[0]
+    ac.element.resize(1)
+    asupply = active.supply[0]
+    acircuit = active.circuit[0]
+    active_fields = {
+        "coil_current_data": hasattr(ac.current, "data"),
+        "coil_current_time": hasattr(ac.current, "time"),
+        "coil_voltage_time": hasattr(ac.voltage, "time"),
+        "coil_elements": hasattr(ac.element[0], "turns_with_sign"),
+        "coil_geometry": hasattr(ac.element[0], "geometry") and
+                         hasattr(ac.element[0].geometry, "rectangle"),
+        "supply_current_time": hasattr(asupply.current, "time"),
+        "supply_voltage_time": hasattr(asupply.voltage, "time"),
+        "circuit_connections": hasattr(acircuit, "connections"),
+        "circuit_current_time": hasattr(acircuit.current, "time"),
+        "generic_time": hasattr(active, "time"),
+        "code_parameters": hasattr(active, "code") and hasattr(active.code, "parameters"),
+    }
+    print("pf_active:")
+    for key, present in active_fields.items():
+        print(f"  {key:32s} {yn(present)}")
+        check(present, f"pf_active lacks {key}", errors)
 
     tf = factory.new("tf")
     tf_tor = hasattr(tf, "b_field_tor_vacuum_r")

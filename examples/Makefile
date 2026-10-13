@@ -13,7 +13,7 @@ AUDIT_DIR ?= $(ROOT)/build/audit
 AUDIT_MD ?= $(AUDIT_DIR)/$(CASE)-mapping-coverage.md
 AUDIT_CSV ?= $(AUDIT_DIR)/$(CASE)-mapping-coverage.csv
 AUDIT_JSON ?= $(AUDIT_DIR)/$(CASE)-mapping-coverage.json
-WAVES_CDFS ?= data/cmod/89846.CDF data/d3d/147634B13.CDF data/d3d/147634G14.CDF
+WAVES_CDFS = $(shell find data -type f -name "*.CDF" | sort)
 
 F90 ?= gfortran
 FFLAGS ?= -cpp -g -O0 -fPIE
@@ -22,15 +22,22 @@ LDLIBS += -L$(IMAS_PREFIX)/lib -limas-gfortran -limas
 
 .DEFAULT_GOAL := help
 
-.PHONY: help quick verify verify-all verify-waves verify-dd audit inspect plot-ids fortran clean
+.PHONY: help quick verify verify-all verify-deep verify-waves verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd audit inspect plot-ids fortran clean
 
 help:
 	@echo "Diagnostic and example commands"
 	@echo
 	@echo "  make quick       Run checks that do not scan the full CDF"
 	@echo "  make verify      Run source-side checks for CASE"
-	@echo "  make verify-all  Run source-side checks for both NSTX cases"
-	@echo "  make verify-waves Validate bundled EC/IC wave-deposition cases"
+	@echo "  make verify-all  Discover, validate, and report all bundled CDF examples"
+	@echo "  make verify-deep Run optional slow per-CDF source diagnostics on ALL CDFs"
+	@echo "  make verify-waves Validate every bundled CDF for EC/IC wave deposition"
+	@echo "  make verify-core-profiles  Verify Te/Ti peaking on TIME/TIME3 for every CDF"
+	@echo "  make verify-equilibrium    Verify equilibrium TIME3 slices and interpolated TIME boundary moments"
+	@echo "  make verify-inputs Validate embedded TR.DAT and model namelists"
+	@echo "  make verify-pf-passive Validate synthetic PS_n currents and DD3/DD4 passive geometries"
+	@echo "  make verify-pf-active  Validate PF coil/supply/circuit source mappings"
+	@echo "  make verify-isolver    Require BOTH real ITER/NSTX ISolver sources; write PF reports"
 	@echo "  make verify-dd   Inspect DD 3.39.0 and DD 4.1.1 schemas"
 	@echo "  make audit       Write full CDF mapping-coverage reports for CASE"
 	@echo "  make inspect     Write a q-profile plot to PLOT"
@@ -40,6 +47,13 @@ help:
 quick:
 	$(PYTHON) -m py_compile $(wildcard *.py)
 	$(PYTHON) verify_writer_api.py
+	$(PYTHON) verify_pf_passive_mapping.py
+	$(PYTHON) verify_pf_active_mapping.py
+	$(PYTHON) verify_isolver_fixture_policy.py
+	$(PYTHON) verify_input_provenance.py
+	$(PYTHON) verify_plot_ids.py
+	$(PYTHON) verify_core_profiles_timegrids.py --quick
+	$(PYTHON) verify_equilibrium_timegrids.py --quick
 
 verify: quick
 	@test -f "$(CDF)" || { echo "CDF not found: $(CDF)" >&2; exit 1; }
@@ -52,17 +66,34 @@ verify: quick
 	$(PYTHON) verify_next_ids_inventory.py "$(CDF)" "$(TRDAT)"
 	$(PYTHON) verify_metadata_provenance_inputs.py "$(CDF)" "$(TRDAT)"
 
-verify-all:
-	@set -e; for case in $(CASES); do \
-		echo "Verifying NSTX case $$case"; \
-		$(MAKE) --no-print-directory verify CASE="$$case" PYTHON="$(PYTHON)"; \
-	done
+verify-all: quick
+	$(PYTHON) verify_all_examples.py --quick --report-dir "$(ROOT)/build/verification" --python "$(PYTHON)"
+	$(PYTHON) verify_isolver_mapping.py --allow-missing --report-dir "$(ROOT)/build/pf-isolver"
 
-verify-waves: quick
-	@for cdf in $(WAVES_CDFS); do \
-		test -f "$$cdf" || { echo "waves CDF not found: $$cdf" >&2; exit 1; }; \
-	done
+verify-deep: quick
+	$(PYTHON) verify_all_examples.py --report-dir "$(ROOT)/build/verification-deep" --python "$(PYTHON)"
+
+verify-waves:
+	@test -n "$(WAVES_CDFS)" || { echo "No bundled CDF files available" >&2; exit 1; }
 	$(PYTHON) verify_waves_mapping.py $(WAVES_CDFS)
+
+verify-inputs:
+	$(PYTHON) verify_input_provenance.py
+
+verify-pf-passive:
+	$(PYTHON) verify_pf_passive_mapping.py
+
+verify-pf-active:
+	$(PYTHON) verify_pf_active_mapping.py
+
+verify-core-profiles:
+	$(PYTHON) verify_core_profiles_timegrids.py --data-root data
+
+verify-equilibrium:
+	$(PYTHON) verify_equilibrium_timegrids.py --data-root data
+
+verify-isolver:
+	$(PYTHON) verify_isolver_mapping.py --report-dir "$(ROOT)/build/pf-isolver"
 
 verify-dd:
 	$(PYTHON) verify_dd_compat.py 3.39.0 4.1.1
@@ -77,7 +108,9 @@ inspect:
 	$(PYTHON) inspect_cdf.py "$(CDF)" --output "$(PLOT)"
 
 plot-ids:
-	@echo "$(PYTHON) examples/plot_ids.py <runid> <database> [HDF5|MDSPLUS] [quantity]"
+	@echo "Example: $(PYTHON) examples/plot_ids.py 38530P94 ITER HDF5 psirz --time-index 0"
+	@echo "Save:    $(PYTHON) examples/plot_ids.py 38530P94 ITER HDF5 q --time-index 0 --save build/iter_q.png"
+	@echo "Help:    $(PYTHON) examples/plot_ids.py --help"
 
 build:
 	@mkdir -p $@
