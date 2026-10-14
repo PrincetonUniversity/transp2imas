@@ -51,3 +51,5 @@ historical development milestones, not public semantic versions.
 - [Real ITER/NSTX ISolver PF source validation](isolver-fixtures.md) — coil and passive-current CDF channels, CC/KK effective turns, file layout and large-fixture guidance.
 
 - [TIME/TIME3 mapping and equilibrium regression](time-grids.md)
+
+- [End-to-end IMAS readback](end-to-end.md): convert every example, reopen written IDSs and validate native TIME3.

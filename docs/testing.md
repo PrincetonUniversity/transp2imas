@@ -84,7 +84,17 @@ catch field renames, array-shape differences, and DD3/DD4 incompatibilities.
 This check requires the target IMAS Data Dictionary installation and therefore
 is not part of the generic GitHub-hosted CI job.
 
-### 4. End-to-end conversion
+### 4. End-to-end conversion and real readback
+
+`make verify-end-to-end DD_VERSION=4.1.1 BACKEND=HDF5` runs all available
+examples in isolated real IMAS HDF5 databases, checks accepted writes and
+reopens each stored IDS with `validate()`. It checks the native `TIME3` arrays
+and associated profile/slice shape constraints. This requires IMAS-Python and
+is deliberately separate from the CI source-only suite. The output includes
+per-case JSON and Markdown reports; failures are never downgraded to skips.
+See [end-to-end instructions](end-to-end.md).
+
+### 5. Legacy manual conversion
 
 `make test` performs the source checks and converts the active regression cases
 using the selected backend/environment. Run it in a configured IMAS environment

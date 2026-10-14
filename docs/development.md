@@ -101,3 +101,10 @@ Before opening a pull request:
 4. update the relevant mapping documentation;
 5. update/add a verifier for new physics mappings;
 6. confirm no generated database output or local virtual environment is staged.
+
+## Real database validation
+
+Use `make verify-end-to-end PYTHON=python3 DD_VERSION=4.1.1` from an IMAS-equipped
+workstation after running `make check` and `make verify-all`. This opt-in test
+converts every discovered CDF into temporary HDF5 entries and reads back only
+accepted IDS writes. See [end-to-end details](end-to-end.md).

@@ -4,12 +4,14 @@ Notable changes to transp2imas are recorded here. Future entries and GitHub
 releases are managed automatically by Release Please from Conventional Commit
 messages.
 
-## [0.9.1](https://github.com/PrincetonUniversity/transp2imas/compare/v0.9.0...v0.9.1) (2026-10-13)
+## Unreleased
 
-
-### Bug Fixes
-
-* pf_active and pd_passive IDSs are included now ([#101](https://github.com/PrincetonUniversity/transp2imas/issues/101)) ([85b59f8](https://github.com/PrincetonUniversity/transp2imas/commit/85b59f8b1ec1c92d75f1f4d0f39c81f0c21469e5))
+- Fix end-to-end conversion journals failing *after* otherwise successful IMAS
+  writes when NetCDF supplies NumPy `int32`/`int64` machine metadata. Normalize
+  shot/run/occurrence IDs to native Python integers, serialize other NumPy
+  scalars/lists safely, and test successful and partially failed write journals.
+  This prevents all-example false failures from `json.dumps` and restores real
+  IMAS readback to the end-to-end verification sequence.
 
 ## 0.9.0 - 2026-09-28
 
@@ -117,3 +119,7 @@ Code-quality fixes included in the baseline:
 - Validate the boundary methods and time coordinates against all 10 bundled
   CDFs, including a synthetic case with equal-length but different TIME and
   TIME3 values.  See `make verify-equilibrium` and `docs/time-grids.md`.
+
+## Unreleased
+
+- End-to-end conversion/readback harness, selective IDS CLI and write journal.

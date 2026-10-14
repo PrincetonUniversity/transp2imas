@@ -11,6 +11,9 @@ CDF ?= $(CASE_DIR)/$(CASE).CDF
 TRDAT ?= $(CASE_DIR)/$(CASE)TR.DAT
 BACKEND ?= HDF5
 DD_VERSION ?= auto
+E2E_DD_VERSION ?= $(if $(filter auto,$(DD_VERSION)),4.1.1,$(DD_VERSION))
+E2E_TIMEOUT ?= 1800
+E2E_IDS ?=
 OUTPUT_DIR ?= $(CURDIR)/build/imas
 CONVERT_FLAGS ?= -new
 PF_PASSIVE_GEOMETRY ?=
@@ -19,7 +22,7 @@ PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not 
 
 .DEFAULT_GOAL := help
 
-.PHONY: help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd audit inspect plot-ids fortran clean
+.PHONY: help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
 
 help:
 	@echo "TRANSP-to-IMAS developer commands"
@@ -42,6 +45,8 @@ help:
 	@echo "  make verify-pf-active  Test KK/VV/VS coil/supply mappings without IMAS"
 	@echo "  make verify-isolver    Require both real ITER/NSTX ISolver PF-current fixtures (local)"
 	@echo "  make verify-dd    Check supported IMAS Data Dictionary layouts"
+	@echo "  make verify-end-to-end  Convert/read back EVERY bundled CDF using real IMAS-Python"
+	@echo "  make verify-end-to-end-plan  List examples without claiming real IMAS verification"
 	@echo "  make audit        Write CDF mapping-coverage reports for CASE"
 	@echo "  make inspect      Plot the final six q profiles from CDF"
 	@echo "  make plot-ids     Print usage for the converted-IDS plotting example"
@@ -127,6 +132,13 @@ verify-equilibrium:
 
 verify-dd:
 	$(MAKE) -C examples verify-dd PYTHON="$(PYTHON)"
+
+verify-end-to-end:
+	$(PYTHON) examples/verify_end_to_end.py --python "$(PYTHON)" --dd-version "$(E2E_DD_VERSION)" --backend "$(BACKEND)" --timeout "$(E2E_TIMEOUT)" \
+		--report-dir "$(CURDIR)/build/end-to-end" $(if $(E2E_IDS),--ids "$(E2E_IDS)")
+
+verify-end-to-end-plan:
+	$(PYTHON) examples/verify_end_to_end.py --plan-only --report-dir "$(CURDIR)/build/end-to-end-plan"
 
 audit:
 	$(MAKE) -C examples audit PYTHON="$(PYTHON)" CDF="$(CDF)" CASE="$(CASE)"

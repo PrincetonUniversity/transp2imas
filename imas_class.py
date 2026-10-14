@@ -35,6 +35,9 @@ class imas_connection:
         self.dd_version_tuple = self._parse_dd_version(self.dd_version)
         self.dd_major_version = str(self.dd_version_tuple[0])
         self.ids = None
+        # Updated only after IMAS DBEntry.put() accepts an IDS.
+        self._written_ids = []
+        self._active_writer = None
         self.outdir = ''
         self.iter_ = True if db[:4].upper()=='ITER' else False
         self.init_imas_database()
@@ -166,28 +169,34 @@ class imas_connection:
             raise TypeError('database entry is not valid')
         return self.ids.factory.new(ids_name)
 
+    def _record_accepted_put(self, ids, occurrence):
+        """Keep a readback manifest; never record a failed database write."""
+        name = self._active_writer
+        if name is None:
+            metadata = getattr(ids, 'metadata', None)
+            name = getattr(metadata, 'name', None) or getattr(ids, '_name', None)
+        self._written_ids.append({'ids': str(name or 'unknown'),
+                                  'occurrence': int(occurrence)})
+
     def putdb_imas(self, ids):
-        if ids:
-            self.ids.put(ids, occurrence=self.occur)
-        else:
+        if ids is None:
             raise TypeError('ids not valid')
+        self.ids.put(ids, occurrence=self.occur)
+        self._record_accepted_put(ids, self.occur)
 
     def putdb_imas_(self, ids):
+        if ids is None:
+            raise TypeError('ids not valid')
         for i in range(3):
-           if ids:
-               self.ids.put(ids, occurrence=i) # self.occur
-           else:
-               raise TypeError('ids not valid')
+            self.ids.put(ids, occurrence=i)
+            self._record_accepted_put(ids, i)
 
     def putdb_imas_profile(self, ids, occur):
-        '''
-         Write each profile using occurrence
-         NOTE: this overrides self.occur
-        '''
-        if ids and isinstance(occur, int):
-            self.ids.put(ids, occurrence=occur)
-        else:
+        """Write an explicit occurrence without changing self.occur."""
+        if ids is None or not isinstance(occur, int):
             raise TypeError('ids/occur not valid')
+        self.ids.put(ids, occurrence=occur)
+        self._record_accepted_put(ids, occur)
 
     def close_imas_database(self):
         if self.ids:
