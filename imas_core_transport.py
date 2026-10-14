@@ -6,7 +6,7 @@ from nc2imas import *
 from neoclassical_neutral_mapping import (
     discover_neoclassical_channels, validate_profile, divergence_to_surface_flux,
 )
-from mmm_transport_mapping import MODEL_SPECS, build_mmm_plan, mmm_model_xml
+from mmm_transport_mapping import MODEL_SPECS, AUXILIARY_SPECS, build_mmm_plan, mmm_model_xml
 
 
 class imas_core_transport:
@@ -105,7 +105,7 @@ class imas_core_transport:
                 specs.append((sp,self._flux_from_divergence(name,self.im.vol_inv),name))
         return specs
 
-    def _prepare_model(self,model,name,index,description,comment):
+    def _prepare_model(self,model,name,index,description,comment,flux_grid='XB'):
         model.identifier.name=name
         model.identifier.index=index
         model.identifier.description=description
@@ -121,7 +121,16 @@ class imas_core_transport:
             p.time=float(self.time[it])
             self._fill_grid(p.grid_d,it)
             self._fill_grid(p.grid_v,it)
-            self._fill_grid(p.grid_flux,it)
+            if flux_grid == 'X':
+                # MMM reduced-mode arrays (gamma, omega, ky*rhos) reside on
+                # TIME3/X, unlike transport diffusivities on TIME3/XB.
+                # No typed fluxes are assigned for these MMM component models.
+                # Store X once as the secondary native radial coordinate;
+                # do not fabricate geometry/flux values on this grid.
+                self.im.fill_data(p.grid_flux.rho_tor_norm, self.x,
+                                  ind=it, chk=self.x.shape[1])
+            else:
+                self._fill_grid(p.grid_flux,it)
 
     def _fill_combined_model(self,model):
         # Effective coefficients used in the TRANSP balance analysis.
@@ -326,12 +335,18 @@ class imas_core_transport:
                'This is a component of MMM07, not an independent experimental diagnostic '
                'or an additional contribution to the stored MMM07 total. ')
             + 'Native CDF coefficients on TIME3/XB are in cm^2/s or cm/s; '
-              'typed IMAS fields are in SI. Other reduced-model results are '
-              'preserved in code.parameters XML with native coordinates. '
+              'typed IMAS fields are in SI. Reduced-mode output values are '
+              'preserved in code.parameters XML, with TIME3 in core_transport.time '
+              'and their native X grid in profiles_1d.grid_flux.rho_tor_norm. '
             + 'Sources: ' + ', '.join(sources) + '.'
         )
+        use_native_x = any(
+            source in fields and AUXILIARY_SPECS[source][1] == 'X'
+            for source in spec['auxiliary']
+        )
         self._prepare_model(model, spec['name'], spec['index'],
-                            spec['description'], comment)
+                            spec['description'], comment,
+                            flux_grid='X' if use_native_x else 'XB')
         model.code.name = 'TRANSP/MMM07'
         model.code.description = spec['label']
         model.code.parameters = mmm_model_xml(plan, spec)

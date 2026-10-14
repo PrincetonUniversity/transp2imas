@@ -205,7 +205,7 @@ def mmm_model_xml(plan, model):
     in code.parameters; it is not an experimental measurement.
     """
     root = ET.Element('transp2imas_mmm_output', {
-        'format_version': '1', 'model': model['name'],
+        'format_version': '2', 'model': model['name'],
         'classification': 'reduced_anomalous_transport_model_output',
         'parent_model': 'mmm07_total' if model['name'] != 'mmm07_total' else '',
     })
@@ -224,25 +224,36 @@ def mmm_model_xml(plan, model):
         supplements = ET.SubElement(root, 'supplementary_model_outputs', {
             'note': 'These are source MMM outputs, not experimentally measured diagnostics',
         })
-        times = ET.SubElement(supplements, 'coordinate', {
-            'name': 'TIME3', 'units': 's', 'shape': str(len(plan['time3'])),
+        # Coordinate *values* are stored in native IMAS arrays, never
+        # duplicated inside code.parameters.  grid_d is the XB coefficient
+        # grid.  For component models with reduced-mode outputs on X, the
+        # otherwise-unused grid_flux stores that distinct radial coordinate.
+        ET.SubElement(supplements, 'coordinate_reference', {
+            'source': 'TIME3', 'ids_path': 'core_transport/time',
+            'units': 's', 'length': str(len(plan['time3'])),
         })
-        times.text = _numbers(plan['time3'])
         for grid in ('X', 'XB'):
             if any(AUXILIARY_SPECS[name][1] == grid for name in remaining):
                 a = plan[grid.lower()]
-                node = ET.SubElement(supplements, 'coordinate', {
-                    'name': grid, 'units': 'rho_tor_norm',
+                suffix = 'grid_flux' if grid == 'X' else 'grid_d'
+                ET.SubElement(supplements, 'coordinate_reference', {
+                    'source': grid,
+                    'ids_path': ('core_transport/model[identifier.name=' +
+                                 model['name'] + ']/profiles_1d[*]/' + suffix +
+                                 '/rho_tor_norm'),
                     'shape': ' '.join(map(str, a.shape)),
+                    'units': '1',
                 })
-                node.text = _numbers(a)
         for name in remaining:
             meaning, grid, unit, scale = AUXILIARY_SPECS[name]
             data = plan['fields'][name] * scale
             node = ET.SubElement(supplements, 'quantity', {
                 'source': name,
                 'meaning': meaning,
-                'grid': 'TIME3,' + grid,
+                'source_dimensions': 'TIME3,' + grid,
+                'radial_coordinate': ('grid_flux/rho_tor_norm' if grid == 'X'
+                                      else 'grid_d/rho_tor_norm'),
+                'time_coordinate': 'core_transport/time',
                 'units': ('m^2/s' if scale != 1 else ('1' if unit == '-' else unit.lower())),
                 'shape': ' '.join(map(str, data.shape)),
             })

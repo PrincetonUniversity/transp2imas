@@ -584,7 +584,10 @@ and separate Weiland (source `W19`), DRIBM/DRBM, ETG and reduced-MTM
 contributions as **model outputs**, not experimental diagnostics. Diffusivities
 are mapped in SI units on the original `TIME3/XB` grid, while model growth
 rates, frequencies, selected `ky*rho_s`, and untyped aggregate coefficients
-are kept with model-specific native-grid XML. The combined result and its
+remain in model-specific XML, but their `TIME3` and `X` coordinates are now
+stored only in the native `core_transport.time` and
+`model[].profiles_1d[].grid_flux.rho_tor_norm` fields. The transport
+coefficient grid remains `model[].profiles_1d[].grid_d.rho_tor_norm` (`XB`). The combined result and its
 components must not be added together. Only nonzero MMM source families are
 instantiated; other example CDFs contain zero-filled placeholders.
 

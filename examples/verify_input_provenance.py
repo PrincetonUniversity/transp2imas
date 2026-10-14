@@ -117,6 +117,39 @@ def test_bundled():
     print(f'INPUT INVENTORY COVERAGE: {len(cdfs)}/{len(cdfs)} CDF examples')
 
 
+def test_missing_relative_top_level_trdat_not_doubled():
+    """Regression for -i examples/data/.../T16.CDF without TR.DAT.
+
+    The first inventory entry must be relative to the CWD, while subsequent
+    explicit references are relative to the referring namelist directory.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        directory = root / 'examples/data/d3d/147634T16'
+        directory.mkdir(parents=True)
+        (directory / 'mmm.nml').write_text('&mmm\n model=1\n/\n')
+        relative = Path(__import__('os').path.relpath(
+            directory / '147634T16TR.DAT', Path.cwd()))
+        inv = InputInventory(relative, '147634T16')
+        assert inv.records[0].status == 'missing'
+        assert inv.records[0].path == (directory / '147634T16TR.DAT').resolve()
+        assert '147634T16/examples/' not in str(inv.records[0].path)
+        assert len(inv.records) == 2
+        assert inv.records[1].path == (directory / 'mmm.nml').resolve()
+        root_xml = ET.fromstring(inv.scoped_xml('MMM'))
+        missing = root_xml.find(".//file[@status='missing']")
+        assert missing is not None
+        assert missing.get('resolved_path') == str(inv.records[0].path)
+        # A present TR.DAT may point to a nested relative file; only those
+        # child references are resolved from the TR.DAT parent directory.
+        (directory / '147634T16TR.DAT').write_text(
+            "MMM_NML = 'mmm.nml'\n")
+        present = InputInventory(relative, '147634T16')
+        assert present.records[0].status == 'embedded'
+        assert any(item.path == (directory / 'mmm.nml').resolve()
+                   and item.status == 'embedded' for item in present.records)
+
+
 def test_nested_and_missing():
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)
@@ -280,6 +313,7 @@ def test_parser_preserves_source():
 if __name__ == '__main__':
     test_parser_preserves_source()
     test_nested_and_missing()
+    test_missing_relative_top_level_trdat_not_doubled()
     test_bundled()
     test_actual_nc2imas_xml_methods_without_imas()
     test_workflow_writer_without_imas()

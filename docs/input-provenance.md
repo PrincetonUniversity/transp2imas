@@ -96,3 +96,12 @@ while the missing master input is visible as an incomplete-input warning.
 
 Use `make verify-inputs` for all 10 examples or `make verify-all` to validate
 input provenance together with CDF and physics checks.
+
+### Relative top-level TR.DAT versus nested input paths
+
+The converter obtains a TR.DAT pathname relative to the invocation directory
+when `-i` supplies a relative CDF path. That **top-level** path must be
+resolved relative to the current working directory, not to the TR.DAT's
+containing directory (which would duplicate `examples/data/...` in a missing
+file's reported path). Only nested referenced files are resolved relative to
+the file that refers to them. Missing files remain explicitly recorded.

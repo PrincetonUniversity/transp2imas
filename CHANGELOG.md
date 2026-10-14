@@ -6,6 +6,16 @@ messages.
 
 ## Unreleased
 
+- Keep MMM07 `TIME3`, `X`, and `XB` coordinates in native `core_transport`
+  fields instead of serializing them repeatedly in model XML. For MMM reduced
+  DRIBM/ETG/MTM component outputs, store `X` in the otherwise-unused
+  `profiles_1d.grid_flux.rho_tor_norm` (while keeping `XB` in `grid_d`), and
+  reference native IDS coordinates from version 2 supplementary-output XML.
+  Expand all-example writer and schema checks to verify native coordinate grids.
+- Fix doubled paths when an absent top-level `TR.DAT` is supplied relative to
+  the invocation working directory, notably DIII-D `147634T16`; preserve the
+  genuine missing-file status and the separate unreferenced MMM/PT namelists.
+
 - Map the reduced MMM07 anomalous-transport output to `core_transport` as
   a combined model plus physically distinct Weiland (CDF `W19`), DRIBM/DRBM,
   ETG, and reduced MTM contributions. Preserve source `TIME3/XB` coefficients
