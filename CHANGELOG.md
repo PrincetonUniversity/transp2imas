@@ -6,6 +6,15 @@ messages.
 
 ## Unreleased
 
+- Map the reduced MMM07 anomalous-transport output to `core_transport` as
+  a combined model plus physically distinct Weiland (CDF `W19`), DRIBM/DRBM,
+  ETG, and reduced MTM contributions. Preserve source `TIME3/XB` coefficients
+  in SI, model-specific `TIME3/X` reduced growth/frequency outputs as XML,
+  and audit the component sum against total diffusivities on DIII-D T16.
+  Do not create MMM models from zero-filled inactive placeholders. Add
+  `make verify-mmm`, all-example source checks, writer regression and DD
+  node checks. Clarify that MTM is an MMM **model output**, not a measurement.
+
 - Fix real IMAS-Python DD4 `core_profiles.code.parameters` handling when
   appending neutral rotation XML: read the `IDSString0D.value` text before
   parsing, and always return a Python string even if no rotation channels
@@ -31,13 +40,6 @@ messages.
   scalars/lists safely, and test successful and partially failed write journals.
   This prevents all-example false failures from `json.dumps` and restores real
   IMAS readback to the end-to-end verification sequence.
-
-## [0.9.2](https://github.com/PrincetonUniversity/transp2imas/compare/v0.9.1...v0.9.2) (2026-10-14)
-
-
-### Bug Fixes
-
-* adding neutrals to code_profiles and code_transport IDSs ([#104](https://github.com/PrincetonUniversity/transp2imas/issues/104)) ([2accc1c](https://github.com/PrincetonUniversity/transp2imas/commit/2accc1ca3c9ef891d3027401f4ea014d2c021e42))
 
 ## 0.9.0 - 2026-09-28
 
@@ -147,5 +149,14 @@ Code-quality fixes included in the baseline:
   TIME3 values.  See `make verify-equilibrium` and `docs/time-grids.md`.
 
 ## Unreleased
+
+- Map the reduced MMM07 anomalous-transport output to `core_transport` as
+  a combined model plus physically distinct Weiland (CDF `W19`), DRIBM/DRBM,
+  ETG, and reduced MTM contributions. Preserve source `TIME3/XB` coefficients
+  in SI, model-specific `TIME3/X` reduced growth/frequency outputs as XML,
+  and audit the component sum against total diffusivities on DIII-D T16.
+  Do not create MMM models from zero-filled inactive placeholders. Add
+  `make verify-mmm`, all-example source checks, writer regression and DD
+  node checks. Clarify that MTM is an MMM **model output**, not a measurement.
 
 - End-to-end conversion/readback harness, selective IDS CLI and write journal.

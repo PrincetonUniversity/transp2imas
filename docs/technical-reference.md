@@ -1353,3 +1353,17 @@ that information is preserved in supplementary `core_profiles.code.parameters`
 XML with source channel, grid and physical sign. See
 [the detailed mapping specification](neoclassical-neutrals.md).
 
+
+
+## MMM07 anomalous-transport decomposition (October 2026)
+
+TRANSP's MMM07 `core_transport` outputs are *reduced turbulence-model
+predictions*: the combined `XKEMMM07`/`XKIMMM07` coefficients and individual
+Weiland `XKEW19`/`XKIW19`, DRIBM `XKEDRBM`/`XKIDRBM`, ETG `XKEETG`, and MTM
+`XKEMTM` components. They are not experimental diagnostics. Their CDF
+`TIME3/XB` data are converted from cm^2/s to m^2/s without flux integration.
+`GAMMAETG`, `GAMMAMTM`, `OMEGA*`, `KYRS*`, `XDBMTM` and untyped aggregate
+momentum/impurity coefficients are preserved in the corresponding model's
+`code.parameters` XML at native coordinates. See [the precise mapping and
+closure tests](mmm-transport.md). No MMM model is fabricated from all-zero
+placeholder arrays.

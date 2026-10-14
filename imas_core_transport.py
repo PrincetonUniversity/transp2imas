@@ -6,6 +6,7 @@ from nc2imas import *
 from neoclassical_neutral_mapping import (
     discover_neoclassical_channels, validate_profile, divergence_to_surface_flux,
 )
+from mmm_transport_mapping import MODEL_SPECS, build_mmm_plan, mmm_model_xml
 
 
 class imas_core_transport:
@@ -304,6 +305,53 @@ class imas_core_transport:
                                       energy_flux[heat_names[sp]], ind=it, chk=self.nx)
         return True, used
 
+    def _fill_mmm_model(self, model, spec, plan):
+        """Populate one MMM07 total/component *model*, never an observation.
+
+        Model coefficients are already flux-surface-boundary (XB) profiles;
+        unlike TRANSP flux *divergences*, they must NOT be volume-integrated.
+        Preserve source separation and convert cm^2/s and cm/s to SI.
+        """
+        fields = plan['fields']
+        sources = [name for name in (*spec['coefficients'], *spec['auxiliary'])
+                   if name in fields]
+        if not sources:
+            return False
+        is_total = spec['name'] == 'mmm07_total'
+        comment = (
+            spec['label'] + '. TRANSP MMM07 reduced anomalous transport MODEL OUTPUT. '
+            + ('This is the total MMM07 result; its Weiland, DRIBM/DRBM, ETG and MTM '
+               'model entries are a decomposition and must NOT be added again. '
+               if is_total else
+               'This is a component of MMM07, not an independent experimental diagnostic '
+               'or an additional contribution to the stored MMM07 total. ')
+            + 'Native CDF coefficients on TIME3/XB are in cm^2/s or cm/s; '
+              'typed IMAS fields are in SI. Other reduced-model results are '
+              'preserved in code.parameters XML with native coordinates. '
+            + 'Sources: ' + ', '.join(sources) + '.'
+        )
+        self._prepare_model(model, spec['name'], spec['index'],
+                            spec['description'], comment)
+        model.code.name = 'TRANSP/MMM07'
+        model.code.description = spec['label']
+        model.code.parameters = mmm_model_xml(plan, spec)
+        converted = {}
+        for source, (destination, kind) in spec['coefficients'].items():
+            if source not in fields:
+                continue
+            multiplier = 1.0e-4 if kind == 'diffusivity' else 1.0e-2
+            converted[source] = (destination, fields[source] * multiplier)
+        for it in range(self.nt):
+            prof = model.profiles_1d[it]
+            for destination, values in converted.values():
+                target = prof
+                for section in destination.split('.'):
+                    if section == 'momentum_phi' and not self.im.dd_at_least(3, 42, 0):
+                        section = 'momentum_tor'
+                    target = getattr(target, section)
+                self.im.fill_data(target, values, ind=it, chk=self.nx)
+        return True
+
     def create_ids(self):
         ct=self.im.new_ids('core_transport')
         ct=self.im.fill_properties(ct)
@@ -313,9 +361,10 @@ class imas_core_transport:
         ct.time=np.asarray(self.time,dtype=np.float64)
         self.im.fill_vac_tor_field(ct)
 
-        # Reserve space for observed, predictive, NC and NC+classical models.
-        # Omit unavailable models instead of exporting empty placeholder slots.
-        ct.model.resize(4)
+        # Reserve space for existing models and the maximum five MMM07 entries.
+        # Resize down after filling so zero-filled inactive MMM placeholders
+        # never appear as artificial active transport models.
+        ct.model.resize(4 + len(MODEL_SPECS))
         nobs=self._fill_combined_model(ct.model[0])
         next_model=1
         has_solver,present=self._fill_transport_solver_model(ct.model[next_model])
@@ -331,6 +380,19 @@ class imas_core_transport:
             ct.model[next_model], channels, classical=True)
         if has_classical:
             next_model+=1
+        mmm_plan = build_mmm_plan(self.im.nc)
+        if mmm_plan['active']:
+            for quantity, check in mmm_plan['closure'].items():
+                if check['status'] == 'FAIL':
+                    self.logger.warning(
+                        'core_transport: MMM07 %s component sum differs from '
+                        'CDF total (normalized discrepancy %.4g); exporting '
+                        'source values unchanged',
+                        quantity, check['max_normalized_difference'])
+            for spec in MODEL_SPECS:
+                if self._fill_mmm_model(ct.model[next_model], spec, mmm_plan):
+                    next_model += 1
+                    self.logger.info('core_transport: MMM07 model: %s', spec['name'])
         ct.model.resize(next_model)
 
         if self.im.check_var_name('IPTR_MOD'):

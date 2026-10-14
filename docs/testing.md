@@ -59,6 +59,15 @@ mock and is included in `make check`; every source CDF is also audited in
 actual IMAS DD4.1.1 write/readback still requires `make verify-end-to-end`.
 See [neoclassical/neutral mapping notes](neoclassical-neutrals.md).
 
+`make verify-mmm` checks the native `TIME3/XB` MMM07 transport coefficients,
+its Weiland, DRIBM/DRBM, ETG and MTM submodels, the total heat-diffusivity
+component closure, the model-specific reduced outputs on `TIME3/X`, and the
+actual `core_transport` writer logic (mock IDS). All bundled CDFs are checked,
+including MMM-inactive cases. Its per-run report is under `build/mmm-transport/`.
+It runs synthetic/writer checks in `make check`, and source checks in
+`make verify-all`. Real write/readback still requires IMAS-Python; see
+[MMM mapping notes](mmm-transport.md).
+
 `make verify-waves` runs the RF-specific source regressions against every bundled CDF, including the
 DIII-D TORAY/TORBEAM/GENRAY EC, ITER EC+IC, and C-Mod IC cases. It validates component sums, finite-volume power
 integrals, absorbed-power traces, and EC driven-current closure without

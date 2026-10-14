@@ -577,6 +577,20 @@ See [docs/input-provenance.md](docs/input-provenance.md). Test using
 `make verify-inputs` (source-only) and `make verify-dd` (IMAS-Python).
 
 
+### Reduced anomalous transport from MMM07
+
+`core_transport.model[]` now preserves the combined MMM07 transport coefficients
+and separate Weiland (source `W19`), DRIBM/DRBM, ETG and reduced-MTM
+contributions as **model outputs**, not experimental diagnostics. Diffusivities
+are mapped in SI units on the original `TIME3/XB` grid, while model growth
+rates, frequencies, selected `ky*rho_s`, and untyped aggregate coefficients
+are kept with model-specific native-grid XML. The combined result and its
+components must not be added together. Only nonzero MMM source families are
+instantiated; other example CDFs contain zero-filled placeholders.
+
+Verify with `make verify-mmm`, followed by `make verify-all` and (where IMAS
+is installed) `make verify-dd`. See [MMM mapping details](docs/mmm-transport.md).
+
 ### Neoclassical transport and neutral populations
 
 The `core_transport` writer exports separate neoclassical particle/heat flux

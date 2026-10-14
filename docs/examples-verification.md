@@ -76,3 +76,13 @@ units/native TIME3 grid checks. The stand-alone target
 `make verify-neoclassical-neutrals` produces a focused JSON/Markdown report
 for all CDFs. It also executes actual writer methods against IMAS-shaped
 objects, and does not imply a completed IMAS DD4.1.1 write/readback.
+
+
+### MMM07 reduced anomalous transport
+
+`make verify-mmm` inspects every available example. Of the ten current cases,
+DIII-D `147634T16` has nonzero MMM07 (Weiland, DRIBM/DRBM, ETG, MTM)
+outputs; other declared MMM source arrays are zero-filled placeholders.
+Source component closure and model code XML are checked, but these source
+checks are not a substitute for an actual IMAS write/readback.
+See [MMM mapping](mmm-transport.md).
