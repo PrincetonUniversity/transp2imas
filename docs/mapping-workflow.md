@@ -125,6 +125,12 @@ record important deferred quantities and the reason for deferral.
 
 ### Neoclassical and neutral-state extension
 
+`core_transport` MMM07 model outputs are kept as five separate total/component
+entries (combined, Weiland, DRIBM/DRBM, ETG, MTM). MMM coefficients are on
+`TIME3/XB`, not flux divergences; reduced-model growth/frequency results are
+preserved separately on `TIME3/X`. See [MMM mapping](mmm-transport.md) and
+run `make verify-mmm` on every CDF before merging.
+
 `core_transport` neoclassical model sources are reconstructed from native
 TRANSP flux divergences, never directly copied as transport flux.
 `core_profiles` neutral state is mapped per wall/volume/recombination

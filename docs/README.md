@@ -12,6 +12,7 @@ policy, and release process in more detail.
 - [Plotting converted IDSs](plotting.md) -- real `plot_ids.py` commands and options.
 - [Input provenance](input-provenance.md) -- XML, source references, and model code libraries.
 - [Neoclassical transport and neutral state](neoclassical-neutrals.md) -- GFLNC/QFLNC divergences, SI flux reconstruction and neutral temperature/rotation provenance.
+- [MMM reduced anomalous transport](mmm-transport.md) -- Weiland, DRIBM, ETG and MTM components, source coefficient closures, and model-specific output XML.
 
 - [Architecture](architecture.md) -- module layout, control flow, shared helper
   classes, and where to add new conversion logic.

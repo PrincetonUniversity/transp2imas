@@ -40,6 +40,7 @@ import verify_waves_mapping as waves
 from verify_core_profiles_timegrids import verify_case as verify_core_profiles_case, verify_writer_contract
 from verify_equilibrium_timegrids import verify_case as verify_equilibrium_case, writer_contract as equilibrium_writer_contract, synthetic as equilibrium_synthetic
 from verify_neoclassical_neutrals import verify_case as verify_nc_neutral_case
+from verify_mmm_transport import verify_case as verify_mmm_case
 
 
 DEEP_SOURCE_CHECKS = (
@@ -96,7 +97,7 @@ def process_case(cdf, report_dir, python, deep, strict_inputs, strict_current):
     trdat = cdf.with_name(f'{runid}TR.DAT')
     result = {'case':runid, 'cdf':str(rel), 'trdat':trdat.exists(),
               'status':'PASS', 'checks':{}, 'warnings':[], 'failures':[],
-              'wave_status':'N/A', 'models':[], 'input_files':[], 'neoclassical_neutrals':{},
+              'wave_status':'N/A', 'models':[], 'input_files':[], 'neoclassical_neutrals':{}, 'mmm_transport':{},
               'pf_active_coils':0, 'pf_passive_loops':0}
     run_log = report_dir / (runid + '.log')
     lines = [f'Case {runid}', f'CDF: {cdf}', f'TR.DAT: {trdat if trdat.exists() else "MISSING"}']
@@ -161,6 +162,17 @@ def process_case(cdf, report_dir, python, deep, strict_inputs, strict_current):
         return True
 
     check('neoclassical-neutral-source', neoclassical_neutrals_check)
+
+    def mmm_check():
+        with netcdf_file(str(cdf), 'r', mmap=False) as nc:
+            result['mmm_transport'] = verify_mmm_case(nc, cdf.name)
+        item = result['mmm_transport']
+        lines.append(f"MMM07: {'active' if item['active'] else 'inactive'}; "
+                     f"components={len(item['models'])}; "
+                     f"source quantities={len(item['source_channels'])}")
+        return True
+
+    check('mmm-reduced-transport-source', mmm_check)
 
     def inputs():
         inv = InputInventory(trdat, runid)

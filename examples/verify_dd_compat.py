@@ -321,6 +321,14 @@ def inspect_version(version):
         "model_identifier": hasattr(ctm, "identifier"),
         "flux_multiplier": hasattr(ctm, "flux_multiplier"),
         "electron_particle_flux": hasattr(ctp.electrons.particles, "flux"),
+        "electron_particle_diffusivity": hasattr(ctp.electrons.particles, "d"),
+        "electron_heat_diffusivity": hasattr(ctp.electrons.energy, "d"),
+        "ion_heat_diffusivity": hasattr(ctp.total_ion_energy, "d"),
+        "toroidal_momentum_diffusivity": hasattr(ctp.momentum_phi if vt >= (3, 42, 0)
+                                                 else ctp.momentum_tor, "d"),
+        "toroidal_momentum_convection": hasattr(ctp.momentum_phi if vt >= (3, 42, 0)
+                                                else ctp.momentum_tor, "v"),
+        "model_code_parameters": hasattr(ctm, "code") and hasattr(ctm.code, "parameters"),
         "electron_energy_flux": hasattr(ctp.electrons.energy, "flux"),
         "total_ion_energy_flux": hasattr(ctp.total_ion_energy, "flux"),
         "ion_particle_flux": hasattr(ctp.ion[0].particles, "flux"),
@@ -333,7 +341,9 @@ def inspect_version(version):
         print(f"  {key:32s} {yn(value)}")
     for field in ("model_identifier", "flux_multiplier", "model_comment", "electron_particle_flux",
                   "electron_energy_flux", "total_ion_energy_flux", "ion_particle_flux",
-                  "ion_energy_flux"):
+                  "ion_energy_flux", "electron_particle_diffusivity", "electron_heat_diffusivity",
+                  "ion_heat_diffusivity", "toroidal_momentum_diffusivity",
+                  "toroidal_momentum_convection", "model_code_parameters"):
         check(ct_fields[field], f"core_transport lacks {field}", errors)
     # The v8.5.2 mapper intentionally relies on there being no aggregate ion
     # particle-flux node; IPTR_MOD must not be forced into ion[0].
