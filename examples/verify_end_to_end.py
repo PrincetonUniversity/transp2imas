@@ -20,6 +20,9 @@ import numpy as np
 from scipy.io import netcdf_file
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from mmm_transport_mapping import MODEL_SPECS, AUXILIARY_SPECS, build_mmm_plan
 DEFAULT_DATA = ROOT / 'examples' / 'data'
 
 
@@ -93,6 +96,52 @@ def source_time3(cdf):
     return t, t3
 
 
+def source_mmm_coordinates(cdf):
+    """Retrieve native source grids and MMM component identities for readback."""
+    with netcdf_file(str(cdf), 'r', mmap=False) as nc:
+        plan = build_mmm_plan(nc)
+    if not plan['active']:
+        return None
+    mode_models = {
+        spec['name'] for spec in MODEL_SPECS
+        if any(source in plan['fields'] and AUXILIARY_SPECS[source][1] == 'X'
+               for source in spec['auxiliary'])
+    }
+    return {'X': plan['x'], 'XB': plan['xb'], 'mode_models': mode_models}
+
+
+def check_mmm_native_grids(ids, time3, source):
+    """Enforce native TIME3/X and TIME3/XB after an actual IMAS readback.
+
+    Coefficients always use grid_d (XB).  Only reduced MMM components with
+    mode quantities on X have grid_flux (X); their actual flux nodes remain
+    unset.  Comparing full native grids catches accidental regridding.
+    """
+    count = 0
+    for model in ids.model:
+        name = str(model.identifier.name)
+        if not name.startswith('mmm07_'):
+            continue
+        if len(model.profiles_1d) != len(time3):
+            raise AssertionError(f'{name}: expected {len(time3)} TIME3 profiles, '
+                                 f'found {len(model.profiles_1d)}')
+        radial = source['X'] if name in source['mode_models'] else source['XB']
+        for i, profile in enumerate(model.profiles_1d):
+            if not np.isclose(float(profile.time), time3[i], rtol=1e-9, atol=1e-9):
+                raise AssertionError(f'{name}[{i}]: profile time != CDF TIME3')
+            for node, expected, label in ((profile.grid_d.rho_tor_norm,
+                                           source['XB'][i], 'grid_d/XB'),
+                                          (profile.grid_flux.rho_tor_norm,
+                                           radial[i], 'grid_flux/' +
+                                           ('X' if name in source['mode_models'] else 'XB'))):
+                actual = np.asarray(node, dtype=np.float64)
+                if actual.shape != expected.shape or not np.allclose(
+                        actual, expected, rtol=1e-9, atol=1e-9):
+                    raise AssertionError(f'{name}[{i}]: {label} differs from CDF native grid')
+        count += 1
+    return count
+
+
 def check_time_vector(name, actual, expected, count):
     arr = np.asarray(actual, dtype=np.float64)
     if arr.ndim != 1 or len(arr) != len(expected) or count != len(expected):
@@ -109,7 +158,7 @@ def check_time_vector(name, actual, expected, count):
     return len(arr)
 
 
-def validate_readback(ids_name, ids, time3):
+def validate_readback(ids_name, ids, time3, mmm_source=None):
     """Validate schema and known time/radial coordinate invariants."""
     ids.validate()  # IMAS DD coordinate and mandatory-field validator.
     checks = {'schema': 'PASS'}
@@ -129,6 +178,14 @@ def validate_readback(ids_name, ids, time3):
             te = np.asarray(profile.electrons.temperature, dtype=np.float64)
             if rho.size and te.size and (rho.ndim != 1 or te.ndim != 1 or rho.size != te.size):
                 raise AssertionError(f'core_profiles[{i}]: Te does not match radial grid')
+    elif ids_name == 'core_transport':
+        if len(ids.model):
+            n = check_time_vector('core_transport', ids.time, time3,
+                                  len(ids.model[0].profiles_1d))
+            checks['native_TIME3_samples'] = n
+        if mmm_source is not None:
+            checks['mmm_native_coordinate_models'] = check_mmm_native_grids(
+                ids, time3, mmm_source)
     return checks
 
 
@@ -145,6 +202,9 @@ def readback_accepted_ids(imas, manifest, database_root, cdf):
     db = imas.DBEntry(backend, str(machine), int(shot), int(run), str(database_root),
                       dd_version=str(manifest['dd_version']))
     _, t3 = source_time3(cdf)
+    mmm_source = (source_mmm_coordinates(cdf)
+                  if any(row['ids'] == 'core_transport' for row in accepted)
+                  else None)
     opened = False
     try:
         db.open()
@@ -159,7 +219,7 @@ def readback_accepted_ids(imas, manifest, database_root, cdf):
             record = {'ids': name, 'occurrence': occurrence, 'status': 'PASS'}
             try:
                 ids = db.get(name, occurrence=occurrence)
-                record['checks'] = validate_readback(name, ids, t3)
+                record['checks'] = validate_readback(name, ids, t3, mmm_source)
             except Exception as exc:
                 record['status'] = 'FAIL'
                 record['error'] = f'{type(exc).__name__}: {exc}'

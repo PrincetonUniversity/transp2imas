@@ -334,6 +334,12 @@ def inspect_version(version):
         "ion_particle_flux": hasattr(ctp.ion[0].particles, "flux"),
         "ion_energy_flux": hasattr(ctp.ion[0].energy, "flux"),
         "model_comment": hasattr(ctm, "comment"),
+        "time": hasattr(ct, "time"),
+        "profile_time": hasattr(ctp, "time"),
+        "grid_d_rho_tor_norm": (hasattr(ctp, "grid_d") and
+                                hasattr(ctp.grid_d, "rho_tor_norm")),
+        "grid_flux_rho_tor_norm": (hasattr(ctp, "grid_flux") and
+                                   hasattr(ctp.grid_flux, "rho_tor_norm")),
         "aggregate_total_ion_particles": hasattr(ctp, "total_ion_particles"),
     }
     print("core_transport:")
@@ -343,7 +349,8 @@ def inspect_version(version):
                   "electron_energy_flux", "total_ion_energy_flux", "ion_particle_flux",
                   "ion_energy_flux", "electron_particle_diffusivity", "electron_heat_diffusivity",
                   "ion_heat_diffusivity", "toroidal_momentum_diffusivity",
-                  "toroidal_momentum_convection", "model_code_parameters"):
+                  "toroidal_momentum_convection", "model_code_parameters", "time",
+                  "profile_time", "grid_d_rho_tor_norm", "grid_flux_rho_tor_norm"):
         check(ct_fields[field], f"core_transport lacks {field}", errors)
     # The v8.5.2 mapper intentionally relies on there being no aggregate ion
     # particle-flux node; IPTR_MOD must not be forced into ion[0].

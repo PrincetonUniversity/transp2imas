@@ -263,7 +263,12 @@ class InputInventory:
 
     def _resolve(self, filename, parent):
         candidate = Path(os.path.expandvars(filename)).expanduser()
-        if candidate.is_absolute():
+        # The top-level TR.DAT path comes from convert.py, which may pass a
+        # relative path containing parent directories (e.g. examples/data/...).
+        # It is relative to the invocation working directory, NOT relative to
+        # the TR.DAT's parent.  Only *referenced child* filenames are resolved
+        # relative to their referring file.
+        if parent is None or candidate.is_absolute():
             return candidate.resolve()
         roots = []
         if parent:

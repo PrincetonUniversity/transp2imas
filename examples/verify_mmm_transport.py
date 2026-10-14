@@ -116,7 +116,7 @@ class TestMMMContracts(unittest.TestCase):
         self.assertEqual(closure['electron_heat']['status'], 'FAIL')
         self.assertEqual(closure['ion_heat']['status'], 'PASS')
 
-    def test_reduced_model_output_xml_retains_native_X_and_XB(self):
+    def test_reduced_model_xml_references_native_imas_coordinates(self):
         plan = build_mmm_plan(FakeCDF())
         mtm = ET.fromstring(mmm_model_xml(plan, MODEL_SPECS[-1]))
         self.assertEqual(mtm.get('classification'), 'reduced_anomalous_transport_model_output')
@@ -124,14 +124,23 @@ class TestMMMContracts(unittest.TestCase):
         sp = mtm.find('supplementary_model_outputs')
         self.assertIsNotNone(sp)
         arrays = {el.get('source'): el for el in sp.findall('quantity')}
-        self.assertEqual(arrays['GAMMAMTM'].get('grid'), 'TIME3,X')
+        self.assertEqual(arrays['GAMMAMTM'].get('source_dimensions'), 'TIME3,X')
+        self.assertEqual(arrays['GAMMAMTM'].get('radial_coordinate'),
+                         'grid_flux/rho_tor_norm')
         self.assertEqual(arrays['XDBMTM'].get('units'), '1')
         self.assertEqual(np.fromstring(arrays['OMEGAMTM'].text, sep=' ').shape, (6,))
-        self.assertEqual({p.get('name') for p in sp.findall('coordinate')}, {'TIME3', 'X'})
+        self.assertFalse(sp.findall('coordinate'), 'XML must not duplicate coordinate arrays')
+        refs = {ref.get('source'): ref for ref in sp.findall('coordinate_reference')}
+        self.assertEqual(set(refs), {'TIME3', 'X'})
+        self.assertEqual(refs['TIME3'].get('ids_path'), 'core_transport/time')
+        self.assertIn('grid_flux/rho_tor_norm', refs['X'].get('ids_path'))
+        self.assertIsNone(refs['X'].text)
         total = ET.fromstring(mmm_model_xml(plan, MODEL_SPECS[0]))
         self.assertEqual(total.find('typed_coefficients/coefficient').get('source'), 'XKDMMM07')
-        self.assertEqual({p.get('name') for p in total.findall('supplementary_model_outputs/coordinate')},
-                         {'TIME3', 'XB'})
+        total_refs = {p.get('source'): p for p in
+                      total.findall('supplementary_model_outputs/coordinate_reference')}
+        self.assertEqual(set(total_refs), {'TIME3', 'XB'})
+        self.assertIn('grid_d/rho_tor_norm', total_refs['XB'].get('ids_path'))
         self.assertEqual(total.find('source_component_closure/check').get('status'), 'PASS')
 
     def test_no_implicit_mixing_with_standalone_models(self):
@@ -167,6 +176,7 @@ class TestMMMWriter(unittest.TestCase):
         writer.nx = writer.xb.shape[1]
         writer.create_ids()
         ids = im.written
+        self.last_core_transport = ids
         return {ids.model[i].identifier.name: ids.model[i]
                 for i in range(len(ids.model))}
 
@@ -181,6 +191,7 @@ class TestMMMWriter(unittest.TestCase):
                 self.assertEqual(models[spec['name']].identifier.index, spec['index'])
                 self.assertEqual(len(models[spec['name']].profiles_1d), 9)
             source = lambda name: np.asarray(nc.variables[name][:], dtype=np.float64)
+            np.testing.assert_allclose(self.last_core_transport.time, source('TIME3'))
             np.testing.assert_allclose(
                 models['mmm07_total'].profiles_1d[3].electrons.energy.d.values,
                 source('XKEMMM07')[3] * 1e-4)
@@ -197,6 +208,19 @@ class TestMMMWriter(unittest.TestCase):
                 models['mmm07_total'].profiles_1d[3].momentum_phi.v.values,
                 source('VPHIMMM07')[3] * 1e-2)
             self.assertNotIn('XKECDBM', str(models['mmm07_total'].comment))
+            for mname in ('mmm07_mtm', 'mmm07_etg', 'mmm07_dribm'):
+                component = models[mname]
+                for it, profile in enumerate(component.profiles_1d._items):
+                    np.testing.assert_allclose(profile.grid_d.rho_tor_norm.values,
+                                               source('XB')[it])
+                    np.testing.assert_allclose(profile.grid_flux.rho_tor_norm.values,
+                                               source('X')[it])
+                    self.assertAlmostEqual(profile.time, float(source('TIME3')[it]))
+                    self.assertNotIn('volume', profile.grid_flux.__dict__)
+            # Non-reduced components and total retain the original XB flux grid.
+            np.testing.assert_allclose(
+                models['mmm07_total'].profiles_1d[3].grid_flux.rho_tor_norm.values,
+                source('XB')[3])
             mtm = ET.fromstring(models['mmm07_mtm'].code.parameters)
             self.assertIn('GAMMAMTM',
                           [x.get('source') for x in mtm.findall('.//quantity')])

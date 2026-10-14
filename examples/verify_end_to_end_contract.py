@@ -176,6 +176,36 @@ class TestEndToEndContract(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'radial grid'):
             e2e.validate_readback('core_profiles', cp, times)
 
+    def test_core_transport_mmm_native_grid_readback(self):
+        times = np.array([0.1, 0.3])
+        x = np.array([[0.2, 0.5], [0.25, 0.55]])
+        xb = np.array([[0.3, 0.6], [0.35, 0.65]])
+        source = {'X': x, 'XB': xb, 'mode_models': {'mmm07_mtm'}}
+
+        def build_model(name, use_x):
+            profiles = []
+            for i, time in enumerate(times):
+                profiles.append(types.SimpleNamespace(
+                    time=float(time),
+                    grid_d=types.SimpleNamespace(rho_tor_norm=xb[i].copy()),
+                    grid_flux=types.SimpleNamespace(
+                        rho_tor_norm=(x[i] if use_x else xb[i]).copy())))
+            return types.SimpleNamespace(
+                identifier=types.SimpleNamespace(name=name),
+                profiles_1d=profiles)
+
+        ct = mock.Mock()
+        ct.time = times
+        ct.model = [build_model('combined', False),
+                    build_model('mmm07_total', False),
+                    build_model('mmm07_mtm', True)]
+        check = e2e.validate_readback('core_transport', ct, times, source)
+        self.assertEqual(check['mmm_native_coordinate_models'], 2)
+        self.assertEqual(check['native_TIME3_samples'], 2)
+        ct.model[-1].profiles_1d[0].grid_flux.rho_tor_norm = xb[0]
+        with self.assertRaisesRegex(AssertionError, 'grid_flux/X differs'):
+            e2e.validate_readback('core_transport', ct, times, source)
+
     def test_discovery_matches_every_present_case_including_nested(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
