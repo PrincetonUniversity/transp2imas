@@ -575,3 +575,17 @@ Input provenance is written before physics IDS conversion starts.
 
 See [docs/input-provenance.md](docs/input-provenance.md). Test using
 `make verify-inputs` (source-only) and `make verify-dd` (IMAS-Python).
+
+
+### Neoclassical transport and neutral populations
+
+The `core_transport` writer exports separate neoclassical particle/heat flux
+models reconstructed from CDF `GFLNC_*`, `QFLNC_*` and `QFLNCC_*` **flux
+divergences** using the finite-volume `DVOL` and `SURF` grids. The
+`core_profiles` writer exports distinct wall, volume and recombination neutral
+density/temperature populations, with corrected temperature units (already
+eV). Neutral toroidal rotation is preserved as supplementary XML in
+`core_profiles.code.parameters` for DD4.1.1, which has no typed neutral
+rotation node. The source CDF and solver methods are checked across every
+bundled example with `make verify-neoclassical-neutrals` and
+`make verify-all`. See [detailed semantics and limitations](docs/neoclassical-neutrals.md).

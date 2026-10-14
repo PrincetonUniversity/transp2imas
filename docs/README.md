@@ -11,6 +11,7 @@ policy, and release process in more detail.
   all-run reports, PF/waves coverage, and known input/current warnings.
 - [Plotting converted IDSs](plotting.md) -- real `plot_ids.py` commands and options.
 - [Input provenance](input-provenance.md) -- XML, source references, and model code libraries.
+- [Neoclassical transport and neutral state](neoclassical-neutrals.md) -- GFLNC/QFLNC divergences, SI flux reconstruction and neutral temperature/rotation provenance.
 
 - [Architecture](architecture.md) -- module layout, control flow, shared helper
   classes, and where to add new conversion logic.

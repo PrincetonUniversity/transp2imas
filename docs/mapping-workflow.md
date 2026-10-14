@@ -122,3 +122,13 @@ incompatible radial grid.
 
 "Unmapped" is not equivalent to "forgotten". The technical reference should
 record important deferred quantities and the reason for deferral.
+
+### Neoclassical and neutral-state extension
+
+`core_transport` neoclassical model sources are reconstructed from native
+TRANSP flux divergences, never directly copied as transport flux.
+`core_profiles` neutral state is mapped per wall/volume/recombination
+population with verified density/temperature units and separate code XML for
+rotation on DD4. See [neoclassical-neutrals.md](neoclassical-neutrals.md).
+Regression: `make verify-neoclassical-neutrals`, then `make verify-all`.
+

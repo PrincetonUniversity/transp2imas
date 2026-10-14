@@ -6,6 +6,25 @@ messages.
 
 ## Unreleased
 
+- Fix real IMAS-Python DD4 `core_profiles.code.parameters` handling when
+  appending neutral rotation XML: read the `IDSString0D.value` text before
+  parsing, and always return a Python string even if no rotation channels
+  are present. Preserve existing XML input-provenance nodes and add a mock
+  `IDSString0D` regression reproducing the runtime `TypeError`.
+
+- Extend `core_transport` with dedicated, species-resolved neoclassical
+  particle/energy fluxes from `GFLNC_*` and `QFLNC_*`, plus a distinct
+  `QFLNCC_*` model. Reconstruct boundary flux from source divergence using
+  actual `DVOL`, `SURF`, and unit conversion. Do not invent aggregate species
+  or derive undocumented effective diffusivities.
+- Expand `core_profiles` neutral populations (wall, volume, recombination),
+  correct neutral temperature eV scaling, and preserve `OM0*` toroidal neutral
+  rotation with source/time-grid provenance in DD4 code XML (and DD3 typed
+  velocity where available).
+- Verify source units, native TIME3/X dimensions and flux closure on all
+  bundled cases. Add `make verify-neoclassical-neutrals` and a source regression
+  to each case in `make verify-all`.
+
 - Fix end-to-end conversion journals failing *after* otherwise successful IMAS
   writes when NetCDF supplies NumPy `int32`/`int64` machine metadata. Normalize
   shot/run/occurrence IDs to native Python integers, serialize other NumPy

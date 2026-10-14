@@ -49,6 +49,16 @@ for profile data. The `core_profiles` writer must interpolate `TE0` before
 forming `t_e_peaking`; the fast source check enforces that contract and the
 full CDF check is also part of `make verify-all`.
 
+`make verify-neoclassical-neutrals` verifies every bundled CDF for
+`GFLNC_*`, `QFLNC_*`, `QFLNCC_*` native units/time-grid consistency and
+independent finite-volume flux reconstruction, as well as separate wall,
+volume and recombination neutral density, temperature (eV) and toroidal
+rotation (rad/s). The quick portion runs real writer logic with an IMAS-shaped
+mock and is included in `make check`; every source CDF is also audited in
+`make verify-all`. Result files are in `build/neoclassical-neutrals/`. An
+actual IMAS DD4.1.1 write/readback still requires `make verify-end-to-end`.
+See [neoclassical/neutral mapping notes](neoclassical-neutrals.md).
+
 `make verify-waves` runs the RF-specific source regressions against every bundled CDF, including the
 DIII-D TORAY/TORBEAM/GENRAY EC, ITER EC+IC, and C-Mod IC cases. It validates component sums, finite-volume power
 integrals, absorbed-power traces, and EC driven-current closure without
