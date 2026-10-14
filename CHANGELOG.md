@@ -32,6 +32,13 @@ messages.
   This prevents all-example false failures from `json.dumps` and restores real
   IMAS readback to the end-to-end verification sequence.
 
+## [0.9.2](https://github.com/PrincetonUniversity/transp2imas/compare/v0.9.1...v0.9.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* adding neutrals to code_profiles and code_transport IDSs ([#104](https://github.com/PrincetonUniversity/transp2imas/issues/104)) ([2accc1c](https://github.com/PrincetonUniversity/transp2imas/commit/2accc1ca3c9ef891d3027401f4ea014d2c021e42))
+
 ## 0.9.0 - 2026-09-28
 
 Initial public pre-1.0 baseline of the IMAS-Python converter.
