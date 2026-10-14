@@ -23,6 +23,12 @@ wave deposition (including the new TORAY case), and
 `make verify-dd` inspects the installed Data Dictionary layouts.
 `make verify-equilibrium` checks native CDF TIME/TIME3 coordinates and LCFS
 boundaries for every bundled example; see [time-grid guide](docs/time-grids.md).
+`make verify-end-to-end PYTHON=python3 DD_VERSION=4.1.1 BACKEND=HDF5`
+runs **real** IMAS conversion and readback for every available CDF on machines
+with IMAS-Python. It records per-IDS write/skip/failure and checks native
+`TIME3` coordinates against stored `equilibrium`/`core_profiles`. See
+[real IMAS readback testing](docs/end-to-end.md). This is deliberately separate
+from GitHub's source-only CI.
 `make verify-pf-active` validates the PF coil/supply mapping and the synthetic
 DD3/DD4 machine geometry, without requiring IMAS. `make verify-isolver`
 validates the two real ITER/NSTX ISolver current datasets (local large fixtures).
@@ -60,6 +66,7 @@ Start with [docs/README.md](docs/README.md). The main references are:
 - [all-example verification](docs/examples-verification.md);
 - [TIME/TIME3 coordinate mapping](docs/time-grids.md);
 - [plotting converted IMAS IDSs](docs/plotting.md);
+- [real IMAS end-to-end conversion/readback](docs/end-to-end.md);
 - [input XML and code provenance](docs/input-provenance.md);
 - [architecture](docs/architecture.md);
 - [development guide](docs/development.md);

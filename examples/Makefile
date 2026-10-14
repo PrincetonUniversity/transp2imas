@@ -22,7 +22,7 @@ LDLIBS += -L$(IMAS_PREFIX)/lib -limas-gfortran -limas
 
 .DEFAULT_GOAL := help
 
-.PHONY: help quick verify verify-all verify-deep verify-waves verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd audit inspect plot-ids fortran clean
+.PHONY: help quick verify verify-all verify-deep verify-waves verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
 
 help:
 	@echo "Diagnostic and example commands"
@@ -54,6 +54,7 @@ quick:
 	$(PYTHON) verify_plot_ids.py
 	$(PYTHON) verify_core_profiles_timegrids.py --quick
 	$(PYTHON) verify_equilibrium_timegrids.py --quick
+	$(PYTHON) verify_end_to_end_contract.py
 
 verify: quick
 	@test -f "$(CDF)" || { echo "CDF not found: $(CDF)" >&2; exit 1; }
@@ -97,6 +98,10 @@ verify-isolver:
 
 verify-dd:
 	$(PYTHON) verify_dd_compat.py 3.39.0 4.1.1
+
+verify-end-to-end:
+	$(PYTHON) verify_end_to_end.py --python "$(PYTHON)" --dd-version "$(if $(filter auto,$(DD_VERSION)),4.1.1,$(DD_VERSION))" \
+		--report-dir "$(ROOT)/build/end-to-end"
 
 audit:
 	@test -f "$(CDF)" || { echo "CDF not found: $(CDF)" >&2; exit 1; }
