@@ -3,6 +3,9 @@
 
 import numpy as np
 from nc2imas import *
+from neoclassical_neutral_mapping import (
+    discover_neoclassical_channels, validate_profile, divergence_to_surface_flux,
+)
 
 
 class imas_core_transport:
@@ -222,6 +225,85 @@ class imas_core_transport:
 
         return True,present
 
+    def _neoclassical_flux(self, source, kind):
+        """Integrate the explicitly labelled NC divergence on its native grid.
+
+        Never treat ``GFLNC_*`` or ``QFLNC*`` as a flux density directly:
+        the CDF metadata describes them as *divergences* on X.  Their
+        volume integrals are fluxes on the XB grid in IMAS SI units.
+        """
+        raw = validate_profile(self.im.nc, source, kind, required_shape=self.dvol.shape)
+        volume_cm3 = np.asarray(self.dvol, dtype=np.float64) / self.im.vconv
+        surf_cm2 = np.asarray(self.surf, dtype=np.float64) / self.im.aconv
+        return divergence_to_surface_flux(raw, volume_cm3, surf_cm2, kind)
+
+    def _fill_neoclassical_model(self, model, channels, classical=False):
+        """Dedicated neoclassical vs NC+classical *heat* flux contributions.
+
+        The source contains separate aggregate ion ('I'), impurity ('X'),
+        and species channels.  'I' is used for total_ion_energy only; it is
+        never invented as an actual species.  'X'/'TOK' are aggregate and
+        therefore never counted as additional ions alongside real elements.
+        """
+        particle_names = {} if classical else channels['particles']
+        heat_names = channels['heat_nc_classical' if classical else 'heat']
+        particle_names = {key: name for key, name in particle_names.items()
+                          if key not in ('I', 'X', 'TOK')}
+        heat_names = {key: name for key, name in heat_names.items()
+                      if key not in ('X', 'TOK')}
+        if not particle_names and not heat_names:
+            return False, []
+        species = sorted((set(particle_names) | set(heat_names)) - {'E', 'I', 'X', 'TOK'})
+        known_species = []
+        for token in species:
+            atom = atom_base(token)
+            if float(atom.a) <= 0 or float(atom.z_n) <= 0:
+                self.logger.warning('core_transport: unidentified neoclassical species %s: skipped', token)
+            else:
+                known_species.append(token)
+        used = list(particle_names.values()) + list(heat_names.values())
+        notes = ('TRANSP NC-classical heat-flux divergence QFLNCC_* (kept separate from QFLNC_*); '
+                 'not summed with QFLNC_* to avoid double counting.' if classical else
+                 'Neoclassical particle (GFLNC_*) and heat (QFLNC_*) flux divergences.')
+        notes += (' Source channels: ' + ', '.join(sorted(used)) + '. '
+                  'Each is integrated with TRANSP DVOL and divided by SURF. '
+                  'The *_I heat channel represents the aggregate thermal-ion energy, '
+                  'whereas *_X, *_TOK, and the aggregate *_I particle channel '
+                  'are not represented as fictitious ion species.')
+        self._prepare_model(
+            model, 'neoclassical_classical_heat' if classical else 'neoclassical',
+            4 if classical else 3,
+            'TRANSP NC-classical heat flux (QFLNCC)' if classical else
+            'TRANSP neoclassical particle and heat transport', notes)
+
+        particle_flux = {name: self._neoclassical_flux(name, 'particles')
+                         for name in particle_names.values()}
+        heat_kind = 'heat_nc_classical' if classical else 'heat'
+        energy_flux = {name: self._neoclassical_flux(name, heat_kind)
+                       for name in heat_names.values()}
+        for it in range(self.nt):
+            p = model.profiles_1d[it]
+            if 'E' in particle_names:
+                self.im.fill_data(p.electrons.particles.flux,
+                                  particle_flux[particle_names['E']], ind=it, chk=self.nx)
+            if 'E' in heat_names:
+                self.im.fill_data(p.electrons.energy.flux,
+                                  energy_flux[heat_names['E']], ind=it, chk=self.nx)
+            if 'I' in heat_names:
+                self.im.fill_data(p.total_ion_energy.flux,
+                                  energy_flux[heat_names['I']], ind=it, chk=self.nx)
+            p.ion.resize(len(known_species))
+            for j, sp in enumerate(known_species):
+                ion = p.ion[j]
+                self._fill_ion_identity(ion, sp)
+                if sp in particle_names:
+                    self.im.fill_data(ion.particles.flux,
+                                      particle_flux[particle_names[sp]], ind=it, chk=self.nx)
+                if sp in heat_names:
+                    self.im.fill_data(ion.energy.flux,
+                                      energy_flux[heat_names[sp]], ind=it, chk=self.nx)
+        return True, used
+
     def create_ids(self):
         ct=self.im.new_ids('core_transport')
         ct=self.im.fill_properties(ct)
@@ -231,18 +313,35 @@ class imas_core_transport:
         ct.time=np.asarray(self.time,dtype=np.float64)
         self.im.fill_vac_tor_field(ct)
 
-        # Allocate both model slots, then shrink if no predictive/model channels exist.
-        ct.model.resize(2)
+        # Reserve space for observed, predictive, NC and NC+classical models.
+        # Omit unavailable models instead of exporting empty placeholder slots.
+        ct.model.resize(4)
         nobs=self._fill_combined_model(ct.model[0])
-        has_solver,present=self._fill_transport_solver_model(ct.model[1])
-        if not has_solver:
-            ct.model.resize(1)
+        next_model=1
+        has_solver,present=self._fill_transport_solver_model(ct.model[next_model])
+        if has_solver:
+            next_model+=1
+
+        channels=discover_neoclassical_channels(self.im.vars_)
+        has_nc, nc_present=self._fill_neoclassical_model(
+            ct.model[next_model], channels, classical=False)
+        if has_nc:
+            next_model+=1
+        has_classical, cl_present=self._fill_neoclassical_model(
+            ct.model[next_model], channels, classical=True)
+        if has_classical:
+            next_model+=1
+        ct.model.resize(next_model)
 
         if self.im.check_var_name('IPTR_MOD'):
             self.logger.info('core_transport: IPTR_MOD present but aggregate total-ion particle flux has no IMAS core_transport node')
         self.logger.info(f'core_transport: combined model, {nobs} observed ion particle species')
         if has_solver:
             self.logger.info('core_transport: transport_solver model channels: '+', '.join(present))
+        if has_nc:
+            self.logger.info('core_transport: neoclassical channels: '+', '.join(nc_present))
+        if has_classical:
+            self.logger.info('core_transport: NC+classical heat channels: '+', '.join(cl_present))
         self.im.putdb_imas(ct)
 
 

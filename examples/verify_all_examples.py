@@ -39,6 +39,7 @@ from verify_pf_passive_mapping import ids_node as passive_ids_node
 import verify_waves_mapping as waves
 from verify_core_profiles_timegrids import verify_case as verify_core_profiles_case, verify_writer_contract
 from verify_equilibrium_timegrids import verify_case as verify_equilibrium_case, writer_contract as equilibrium_writer_contract, synthetic as equilibrium_synthetic
+from verify_neoclassical_neutrals import verify_case as verify_nc_neutral_case
 
 
 DEEP_SOURCE_CHECKS = (
@@ -95,7 +96,7 @@ def process_case(cdf, report_dir, python, deep, strict_inputs, strict_current):
     trdat = cdf.with_name(f'{runid}TR.DAT')
     result = {'case':runid, 'cdf':str(rel), 'trdat':trdat.exists(),
               'status':'PASS', 'checks':{}, 'warnings':[], 'failures':[],
-              'wave_status':'N/A', 'models':[], 'input_files':[],
+              'wave_status':'N/A', 'models':[], 'input_files':[], 'neoclassical_neutrals':{},
               'pf_active_coils':0, 'pf_passive_loops':0}
     run_log = report_dir / (runid + '.log')
     lines = [f'Case {runid}', f'CDF: {cdf}', f'TR.DAT: {trdat if trdat.exists() else "MISSING"}']
@@ -149,6 +150,17 @@ def process_case(cdf, report_dir, python, deep, strict_inputs, strict_current):
         return True
 
     check('equilibrium-time-grid', equilibrium_time_check)
+
+    def neoclassical_neutrals_check():
+        with netcdf_file(str(cdf), 'r', mmap=False) as nc:
+            result['neoclassical_neutrals'] = verify_nc_neutral_case(nc, cdf.name)
+        summary = result['neoclassical_neutrals']
+        lines.append(
+            f"NC transport: {sum(map(len, summary['neoclassical'].values()))} channels; "
+            f"neutral populations: {len(summary['neutral_populations'])}")
+        return True
+
+    check('neoclassical-neutral-source', neoclassical_neutrals_check)
 
     def inputs():
         inv = InputInventory(trdat, runid)
@@ -269,12 +281,14 @@ def main(argv=None):
     (ns.report_dir / 'summary.json').write_text(json.dumps(report, indent=2) + '\n')
     markdown = ["# TRANSP source-verification inventory", '',
                 f"Checked {len(results)} of {len(cdfs)} discovered CDFs.", '',
-                '| CDF | Inputs | Waves | PF active | PF passive | Result |',
-                '|---|---|---|---:|---:|---|']
+                '| CDF | Inputs | Waves | NC channels | Neutral populations | PF active | PF passive | Result |',
+                '|---|---|---|---:|---:|---:|---:|---|']
     for r in results:
         markdown.append(f"| `{r['cdf']}` | {'present' if r['trdat'] else '**missing**'} "
-                        f"| {r['wave_status']} | {r['pf_active_coils']} "
-                        f"| {r['pf_passive_loops']} | **{r['status']}** |")
+                        f"| {r['wave_status']} "
+                        f"| {sum(map(len,r['neoclassical_neutrals'].get('neoclassical',{}).values()))} "
+                        f"| {len(r['neoclassical_neutrals'].get('neutral_populations',[]))} "
+                        f"| {r['pf_active_coils']} | {r['pf_passive_loops']} | **{r['status']}** |")
     markdown.extend(['', '## Outstanding issues', ''])
     for r in results:
         for issue in r['warnings'] + r['failures']:

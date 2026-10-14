@@ -107,6 +107,10 @@ def inspect_version(version):
         "ion_name": hasattr(prof.ion[0], "name"),
         "neutral_label": hasattr(prof.neutral[0], "label"),
         "neutral_name": hasattr(prof.neutral[0], "name"),
+        "neutral_density": hasattr(prof.neutral[0], "density"),
+        "neutral_temperature": hasattr(prof.neutral[0], "temperature"),
+        "neutral_toroidal_velocity": (hasattr(prof.neutral[0], "velocity")
+                                      and hasattr(prof.neutral[0].velocity, "toroidal")),
         "j_tor": hasattr(prof, "j_tor"),
         "j_phi": hasattr(prof, "j_phi"),
         "pressure_thermal": hasattr(prof, "pressure_thermal"),
@@ -133,6 +137,12 @@ def inspect_version(version):
         check(cp_fields["ion_name"] and cp_fields["neutral_name"],
               "late-DD3/DD4 core_profiles species names missing", errors)
         check(cp_fields["j_phi"], "late-DD3/DD4 core_profiles lacks j_phi", errors)
+    for field in ("neutral_density", "neutral_temperature"):
+        check(cp_fields[field], f"core_profiles lacks {field}", errors)
+    if vt[0] >= 4:
+        print("  DD4 neutral rotation: supplementary core_profiles.code.parameters XML")
+    elif not cp_fields["neutral_toroidal_velocity"]:
+        print("  WARNING: DD3 neutral velocity.toroidal unavailable; rotation retained as XML")
     for field in ("pressure_thermal", "pressure_perpendicular", "pressure_parallel",
                   "n_i_thermal_total", "t_i_average", "magnetic_shear",
                   "conductivity_parallel", "phi_potential", "e_field_parallel",
@@ -314,13 +324,16 @@ def inspect_version(version):
         "electron_energy_flux": hasattr(ctp.electrons.energy, "flux"),
         "total_ion_energy_flux": hasattr(ctp.total_ion_energy, "flux"),
         "ion_particle_flux": hasattr(ctp.ion[0].particles, "flux"),
+        "ion_energy_flux": hasattr(ctp.ion[0].energy, "flux"),
+        "model_comment": hasattr(ctm, "comment"),
         "aggregate_total_ion_particles": hasattr(ctp, "total_ion_particles"),
     }
     print("core_transport:")
     for key, value in ct_fields.items():
         print(f"  {key:32s} {yn(value)}")
-    for field in ("model_identifier", "flux_multiplier", "electron_particle_flux",
-                  "electron_energy_flux", "total_ion_energy_flux", "ion_particle_flux"):
+    for field in ("model_identifier", "flux_multiplier", "model_comment", "electron_particle_flux",
+                  "electron_energy_flux", "total_ion_energy_flux", "ion_particle_flux",
+                  "ion_energy_flux"):
         check(ct_fields[field], f"core_transport lacks {field}", errors)
     # The v8.5.2 mapper intentionally relies on there being no aggregate ion
     # particle-flux node; IPTR_MOD must not be forced into ion[0].

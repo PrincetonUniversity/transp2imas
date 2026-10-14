@@ -1336,3 +1336,20 @@ TORIC/GENRAY/TORBEAM/CQL3D/FPP/LSC model input sets, including hashes and
 explicit missing-file records. Transport and NUBEAM model input sets are
 associated with their respective IDS code libraries. See
 `docs/input-provenance.md` for resolution rules and safety limits.
+
+## Neoclassical and neutral state mapping (2026-10)
+
+The new CDF-to-IMAS mapping explicitly treats neoclassical particle/energy
+quantities as **divergences** on TRANSP `TIME3, X`, and volume-integrates
+them to boundary fluxes in SI. `QFLNCC_*` is kept separate from `QFLNC_*`
+so no neoclassical/classical double counting is introduced. Aggregate `_X`
+and `_TOK` channels are not treated as physical ions; `_I` thermal-ion heat
+is represented as `total_ion_energy.flux`.
+
+Neutral `DN0W*`, `DN0V*` and `N0V0_*` represent distinct origins rather than
+a single density. `T0*` is already eV and is no longer incorrectly scaled by
+1e6. `OM0*` is in rad/s; DD4.1.1 lacks a typed neutral rotation field, so
+that information is preserved in supplementary `core_profiles.code.parameters`
+XML with source channel, grid and physical sign. See
+[the detailed mapping specification](neoclassical-neutrals.md).
+

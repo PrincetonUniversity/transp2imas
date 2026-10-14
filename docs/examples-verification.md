@@ -67,3 +67,12 @@ sample times.  The new `equilibrium-time-grid` check runs within `make
 verify-all` and appears in each run's JSON verification report.
 
 See [TIME/TIME3 mapping](time-grids.md).
+
+## Neoclassical and neutral source verification
+
+The per-run `verify-all` report includes `neoclassical_neutrals` with source
+channel names, explicit wall/volume/recombination neutral populations and
+units/native TIME3 grid checks. The stand-alone target
+`make verify-neoclassical-neutrals` produces a focused JSON/Markdown report
+for all CDFs. It also executes actual writer methods against IMAS-shaped
+objects, and does not imply a completed IMAS DD4.1.1 write/readback.

@@ -2,7 +2,11 @@
 """Populate the IMAS core_profiles IDS from TRANSP profiles and metadata."""
 
 from typing import List
+import numpy as np
 from nc2imas import *
+from neoclassical_neutral_mapping import (
+    discover_neutral_channels, validate_profile, attach_rotation_xml,
+)
 
 class ion_states:
     def __init__(self, sdens, label=''):
@@ -44,20 +48,25 @@ class ion_data(atom_base):
         return valid
 
 class neutrals_data(atom_base):
-     def __init__(self, symb):
+    """Separate wall, volume or recombination neutral population on TIME3/X."""
+
+    def __init__(self, symb, label, origin):
         super().__init__(symb)
-        #arrays for times
-        self.dens = []
-        self.temp = []
-        self.pres = []
-     def is_valid(self, logger=None):
-        check1 = self.a>0 and self.z_n>0 and self.z_ion>0
-        check2 = self.atoms_n>0 and len(self.dens)>0
-        valid = check1 and check2
-        if logger:
-            if not valid:
-               logger.info(f'\t invalid neutral: {self.label} : a {self.a}'
-                           f' z_n {self.z_n} z_ion {self.z_ion}')
+        self.label = label
+        self.origin = origin
+        self.dens = np.array([])
+        self.temp = np.array([])
+        self.omega = np.array([])
+        self.rotation_source = ''
+        self.rotation_sign = 1.0
+        self.density_source = ''
+        self.temperature_source = ''
+
+    def is_valid(self, logger=None):
+        valid = self.a > 0 and self.z_n > 0 and self.atoms_n > 0 \
+            and isinstance(self.dens, np.ndarray) and self.dens.ndim == 2 and self.dens.size > 0
+        if not valid and logger is not None:
+            logger.info('invalid neutral: %s (a=%g, z_n=%g)', self.label, self.a, self.z_n)
         return valid
 
 
@@ -255,41 +264,65 @@ class imas_core_profiles:
         return res
 
 
-    #volume/wall neutral density
     def get_neutral_data_type(self, atomsDef, cat) -> List:
-        dstr, tstr = '',''
-        if cat=='wall':
-            dstr = 'DN0W'
-            tstr = 'T0W'
-            neutDict = atomsDef.neutrals_wall
-        elif cat=='volume':
-            dstr = 'DN0V'
-            tstr = 'T0V'
-            neutDict = atomsDef.neutrals_volume
-        neuts = []
-        self.logger.info(f' {cat}-neutrals::')
-        for symb, label in neutDict.items():
-            dens = self.im.get_ncvar(f'{dstr}{symb}', 1.0e6)
-            if len(dens)==0:
-                continue
-            self.logger.info(f'\tneutral: {symb} => {label}')
-            neut = neutrals_data(label)
-            neut.dens = dens
-            neut.temp = self.im.get_ncvar(f'{tstr}{symb}', 1.0e6)
-            self.logger.info(f'\t{symb}, dens {len(neut.dens)} temp {len(neut.temp)}')
-            if neut.is_valid(self.logger):
-               neuts.append(neut)
-        return neuts
+        """Load independent neutral populations with verified units and grids.
 
+        Wall DN0W*, volume DN0V*, and recombination N0V0_* densities are
+        distinct CDF populations.  Temperatures are ALREADY eV (the legacy
+        1e6 temperature factor was incorrect).  OM0* are signed toroidal
+        angular frequencies in rad/s, not temperatures or particle fluxes.
+        """
+        names = discover_neutral_channels(self.im.vars_)
+        result = []
+        shape = np.asarray(self.im.get_ncvar('X')).shape
+        for spec in names:
+            if spec['origin'] != cat:
+                continue
+            symb = spec['species']
+            # atom_base knows real element/isotope masses and nuclear charges,
+            # even when the neutral originated in the recombination solver.
+            atom = atom_base(symb)
+            if atom.a <= 0 or atom.z_n <= 0:
+                self.logger.warning('skipping unknown TRANSP neutral %s', symb)
+                continue
+            label = f'{symb}_{spec["origin"].upper()}'
+            neut = neutrals_data(symb, label, spec['origin'])
+            neut.density_source = spec['density']
+            neut.dens = validate_profile(self.im.nc, spec['density'], 'density', shape)*1.0e6
+            if spec['temperature']:
+                neut.temperature_source = spec['temperature']
+                neut.temp = validate_profile(
+                    self.im.nc, spec['temperature'], 'temperature', shape)
+            if spec['rotation']:
+                neut.rotation_source = spec['rotation']
+                neut.rotation_sign = float(self.im.toroidal_rotation_sign)
+                neut.omega = neut.rotation_sign * validate_profile(
+                    self.im.nc, spec['rotation'], 'rotation', shape)
+            if neut.is_valid(self.logger):
+                result.append(neut)
+        return result
 
     def get_neutral_data(self):
         atomsDef = atom_base('')
-        neuts = self.get_neutral_data_type(atomsDef, cat='wall')
-        vneuts = self.get_neutral_data_type(atomsDef, cat='volume')
-        if len(vneuts)>0:
-            for neut in vneuts:
-               neuts.append(neut)
-        return neuts
+        return [n for origin in ('wall', 'volume', 'recombination')
+                for n in self.get_neutral_data_type(atomsDef, origin)]
+
+    def _neutral_midplane_radius(self):
+        """Outboard R (m) on neutral X grid, if provided by TRANSP.
+
+        Needed only for the pre-DD4 neutral toroidal *velocity* field:
+        v_phi = omega_tor * R_midplane.  If no consistent R exists, do not
+        invent a neutral velocity profile.
+        """
+        rmj = self.im.get_ncvar('RMJMP', self.im.cm2m)
+        xb = self.im.get_ncvar('XB')
+        x = self.im.get_ncvar('X')
+        if not self.im.is_valid(rmj, xb, x):
+            return np.array([])
+        if rmj.shape != xb.shape or x.ndim != 2 or x.shape[0] != rmj.shape[0]:
+            return np.array([])
+        radius = self.im.interp_radial_profiles(rmj, xb, x)
+        return radius if radius.shape == x.shape and np.isfinite(radius).all() else np.array([])
 
 
     def create_ids(self): #, occur=0):
@@ -352,6 +385,12 @@ class imas_core_profiles:
 
         # neutrals for profile_id
         neutrals = self.get_neutral_data()
+        if hasattr(cp, 'code') and hasattr(cp.code, 'parameters'):
+            cp.code.parameters = attach_rotation_xml(
+                cp.code.parameters, neutrals, np.asarray(self.im.timep, dtype=np.float64))
+        radius_for_neutral_velocity = (self._neutral_midplane_radius()
+                                       if not self.im.dd_at_least(4, 0, 0)
+                                       else np.array([]))
 
 
         #global_quantities
@@ -826,6 +865,16 @@ class imas_core_profiles:
 
               self.im.fill_data(cp.profiles_1d[i].neutral[j].temperature, neut.temp, ind=i, name='n0temp')
               self.im.fill_data(cp.profiles_1d[i].neutral[j].density, neut.dens, ind=i, name='n0dens')
+              # DD 3.39 has neutral.velocity/toroidal; DD 4.1.1 does not.
+              # The original (signed) angular frequency is preserved for
+              # both DD families in core_profiles.code.parameters XML.
+              node = cp.profiles_1d[i].neutral[j]
+              if (not self.im.dd_at_least(4, 0, 0) and
+                  hasattr(node, 'velocity') and hasattr(node.velocity, 'toroidal') and
+                  neut.omega.size and radius_for_neutral_velocity.size):
+                  self.im.fill_data(node.velocity.toroidal,
+                                    neut.omega * radius_for_neutral_velocity,
+                                    ind=i, name='neutral_v_tor')
 
           #
           self.im.fill_data_nc(cp.profiles_1d[i].t_i_average, 'TI', ind=i)

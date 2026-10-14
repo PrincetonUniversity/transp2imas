@@ -43,6 +43,16 @@ from typing import Iterable
 
 from scipy.io import netcdf_file
 
+# Dynamically generated NC/neutral channel names will not appear in the AST
+# as exact source strings. Keep the static inventory consistent with the
+# actual group-discovery logic, without implying a validated IMAS write.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+from neoclassical_neutral_mapping import (
+    discover_neoclassical_channels, discover_neutral_channels,
+)
+
 
 # CDF quantities that are intentionally used primarily to construct or
 # normalize other mapped quantities.  Keeping these explicit avoids presenting
@@ -76,6 +86,13 @@ DEFERRED_PATTERNS: dict[str, str] = {
     "PIEDG": "ion energy crossing the plasma boundary, not a volumetric source",
     "VPOLD_NC": "neoclassical poloidal velocity on the RMAJM grid; target/grid treatment deferred",
     "VTORD_NC": "neoclassical toroidal velocity on the RMAJM grid; target/grid treatment deferred",
+    "GFLNC_I": "aggregate ion particle divergence lacks typed total-ion particle-flux destination",
+    "GFLNC_X": "aggregate impurity particle divergence; do not invent an additional ion species",
+    "GFLNC_TOK": "aggregate summed particle divergence; not an individual ion species",
+    "QFLNC_X": "aggregate impurity heat divergence; not an additional ion species",
+    "QFLNC_TOK": "aggregate heat divergence; not an additional ion species",
+    "QFLNCC_X": "aggregate impurity NC-classical heat divergence; not an additional ion species",
+    "QFLNCC_TOK": "aggregate NC-classical heat divergence; not an additional ion species",
     "PIC_NPHI": "aggregate IC n_phi power spectrum is not frequency-resolved for multi-wave mapping",
     "PICF??N??": "frequency/n_phi-resolved IC profile family; component-index semantics need a dedicated spectral mapping audit",
 }
@@ -199,6 +216,28 @@ def _references_for_files(files: Iterable[Path], variable_names: list[str]) -> d
     return refs
 
 
+def _dynamic_source_references(variable_names: list[str]) -> dict[str, set[str]]:
+    """Recognize variable families explicitly enumerated by converter logic.
+
+    This tracks *source consumption* only, not a one-to-one typed IMAS
+    mapping. Aggregate particle/impurity channels intentionally remain
+    deferred (the writer does not fabricate aggregate ion species).
+    """
+    references: dict[str, set[str]] = defaultdict(set)
+    channels = discover_neoclassical_channels(variable_names)
+    for kind, found in channels.items():
+        for token, name in found.items():
+            if token in ("X", "TOK") or (kind == "particles" and token == "I"):
+                continue
+            references[name].add("imas_core_transport.py")
+    for population in discover_neutral_channels(variable_names):
+        for field in ("density", "temperature", "rotation"):
+            source = population[field]
+            if source:
+                references[source].add("imas_core_profiles.py")
+    return references
+
+
 def _deferred_reason(name: str) -> str:
     """Return the maintained deferral reason for a CDF variable, if any."""
 
@@ -251,7 +290,12 @@ def _build_rows(cdf: Path, repo_root: Path) -> list[CoverageRow]:
 
         root_python = sorted(path for path in repo_root.glob("*.py") if path.is_file())
         metadata_python = [path for path in root_python if path.name in METADATA_MODULES]
-        converter_python = root_python
+        # Source-only contract helper contains generic regex fragments such as
+        # "[A-Z0-9]+". Those are NOT CDF-name mappings and must not let the
+        # AST matcher classify every variable as consumed. The actual
+        # deliberately supported families are enumerated by dynamic_map.
+        converter_python = [path for path in root_python
+                            if path.name != 'neoclassical_neutral_mapping.py']
         validation_python = sorted(
             path
             for path in (repo_root / "examples").glob("*.py")
@@ -261,11 +305,12 @@ def _build_rows(cdf: Path, repo_root: Path) -> list[CoverageRow]:
         converter_map = _references_for_files(converter_python, variable_names)
         metadata_map = _references_for_files(metadata_python, variable_names)
         validation_map = _references_for_files(validation_python, variable_names)
+        dynamic_map = _dynamic_source_references(variable_names)
 
         rows: list[CoverageRow] = []
         for name in variable_names:
             variable = dataset.variables[name]
-            converter_refs = converter_map.get(name, set())
+            converter_refs = converter_map.get(name, set()) | dynamic_map.get(name, set())
             metadata_refs = metadata_map.get(name, set())
             validation_refs = validation_map.get(name, set())
             status, note = _classify(name, converter_refs, metadata_refs, validation_refs)

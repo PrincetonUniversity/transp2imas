@@ -22,7 +22,7 @@ LDLIBS += -L$(IMAS_PREFIX)/lib -limas-gfortran -limas
 
 .DEFAULT_GOAL := help
 
-.PHONY: help quick verify verify-all verify-deep verify-waves verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
+.PHONY: help quick verify verify-all verify-deep verify-waves verify-neoclassical-neutrals verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
 
 help:
 	@echo "Diagnostic and example commands"
@@ -34,6 +34,7 @@ help:
 	@echo "  make verify-waves Validate every bundled CDF for EC/IC wave deposition"
 	@echo "  make verify-core-profiles  Verify Te/Ti peaking on TIME/TIME3 for every CDF"
 	@echo "  make verify-equilibrium    Verify equilibrium TIME3 slices and interpolated TIME boundary moments"
+	@echo "  make verify-neoclassical-neutrals  Verify NC fluxes and neutral states for every CDF"
 	@echo "  make verify-inputs Validate embedded TR.DAT and model namelists"
 	@echo "  make verify-pf-passive Validate synthetic PS_n currents and DD3/DD4 passive geometries"
 	@echo "  make verify-pf-active  Validate PF coil/supply/circuit source mappings"
@@ -54,6 +55,7 @@ quick:
 	$(PYTHON) verify_plot_ids.py
 	$(PYTHON) verify_core_profiles_timegrids.py --quick
 	$(PYTHON) verify_equilibrium_timegrids.py --quick
+	$(PYTHON) verify_neoclassical_neutrals.py --quick
 	$(PYTHON) verify_end_to_end_contract.py
 
 verify: quick
@@ -92,6 +94,9 @@ verify-core-profiles:
 
 verify-equilibrium:
 	$(PYTHON) verify_equilibrium_timegrids.py --data-root data
+
+verify-neoclassical-neutrals:
+	$(PYTHON) verify_neoclassical_neutrals.py --data-root data --report-dir "$(ROOT)/build/neoclassical-neutrals"
 
 verify-isolver:
 	$(PYTHON) verify_isolver_mapping.py --report-dir "$(ROOT)/build/pf-isolver"
