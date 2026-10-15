@@ -1,49 +1,21 @@
 #!/usr/bin/python
-"""CDF source contracts for neoclassical fluxes and neutral state profiles.
+"""TRANSP neutral-state profiles for core_profiles, separate from transport theory.
 
-Keep these helpers independent of IMAS-Python so they can be checked against
-all bundled CDFs in lightweight CI.  The writer owns DD-specific field names.
+Wall, volume, and recombination neutral populations retain their individual
+origin labels. This module does not create any core_transport models.
 """
 
 import re
 import xml.etree.ElementTree as ET
-
 import numpy as np
 
-
-NEOCLASSICAL_CHANNELS = {
-    'particles': 'GFLNC_',
-    'heat': 'QFLNC_',
-    'heat_nc_classical': 'QFLNCC_',
-}
-# These are diagnostics averaged/summed over species, NOT physical ion names.
-AGGREGATE_TOKENS = frozenset(('I', 'X', 'TOK'))
 SPECIES_ALIASES = {'3': 'HE3', '4': 'HE4'}
 ORIGIN_ORDER = ('wall', 'volume', 'recombination')
 
 
 def canonical_species(token):
-    return SPECIES_ALIASES.get(str(token).strip().upper(), str(token).strip().upper())
-
-
-def discover_neoclassical_channels(names):
-    """Return available source channel names by quantity and species token.
-
-    Aggregate thermal-ion heat ``*_I`` and electron ``*_E`` channels remain
-    separate from actual named ions, and total impurities ``*_X`` / ``*_TOK``
-    must not be duplicated as invented species.
-    """
-    available = set(names)
-    result = {}
-    for kind, prefix in NEOCLASSICAL_CHANNELS.items():
-        result[kind] = {}
-        for name in sorted(available):
-            if not name.startswith(prefix):
-                continue
-            token = name[len(prefix):].upper()
-            if re.fullmatch(r'[A-Z0-9]+', token):
-                result[kind][canonical_species(token)] = name
-    return result
+    token = str(token).strip().upper()
+    return SPECIES_ALIASES.get(token, token)
 
 
 def discover_neutral_channels(names):
@@ -79,15 +51,11 @@ def discover_neutral_channels(names):
         profiles, key=lambda k: (ORIGIN_ORDER.index(k[0]), k[1]))]
 
 
-UNITS = {
+NEUTRAL_UNITS = {
     'density': ('N/CM3', '1/CM3', 'CM-3'),
     'temperature': ('EV',),
     'rotation': ('RAD/SEC', 'RAD/S'),
-    'particles': ('N/CM3/SEC', 'N/CM3/S'),
-    'heat': ('WATTS/CM3', 'W/CM3'),
-    'heat_nc_classical': ('WATTS/CM3', 'W/CM3'),
 }
-
 
 def _unit(value):
     if isinstance(value, bytes):
@@ -101,7 +69,7 @@ def validate_profile(nc, name, kind, required_shape=None):
     if tuple(var.dimensions) != ('TIME3', 'X'):
         raise ValueError(f'{name}: expected (TIME3, X), got {var.dimensions}')
     found = _unit(getattr(var, 'units', ''))
-    if found not in UNITS[kind]:
+    if found not in NEUTRAL_UNITS[kind]:
         raise ValueError(f'{name}: unexpected {kind} units {found!r}')
     arr = np.asarray(var[:], dtype=np.float64)
     if arr.ndim != 2 or (required_shape is not None and tuple(arr.shape) != tuple(required_shape)):
@@ -109,25 +77,6 @@ def validate_profile(nc, name, kind, required_shape=None):
     if not np.isfinite(arr).all():
         raise ValueError(f'{name}: non-finite CDF data')
     return arr
-
-
-def divergence_to_surface_flux(div, dvol_cm3, surf_cm2, kind):
-    """Map zone-centred div(F) into boundary-centred F in SI units.
-
-    CDF: particle divergence N cm^-3 s^-1; heat divergence W cm^-3.
-    Geometry: DVOL cm3 per zone, SURF cm2 per boundary.
-    Flux = cumsum(div * DVOL) / SURF with output per m2.
-    """
-    scale = 1.0e4  # flux in N/cm2/s or W/cm2 converted to SI /m2
-    div = np.asarray(div, dtype=np.float64)
-    dv = np.asarray(dvol_cm3, dtype=np.float64)
-    surf = np.asarray(surf_cm2, dtype=np.float64)
-    if kind not in NEOCLASSICAL_CHANNELS:
-        raise ValueError(f'unknown divergence quantity: {kind}')
-    if div.shape != dv.shape or div.shape != surf.shape or div.ndim != 2:
-        raise ValueError(f'incompatible flux integration shapes: {div.shape}, {dv.shape}, {surf.shape}')
-    accum = np.cumsum(div * dv, axis=1)
-    return np.divide(accum * scale, surf, out=np.zeros_like(accum), where=np.abs(surf)>0)
 
 
 def _xml_string(parameters_xml):

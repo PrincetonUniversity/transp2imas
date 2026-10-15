@@ -49,24 +49,26 @@ for profile data. The `core_profiles` writer must interpolate `TE0` before
 forming `t_e_peaking`; the fast source check enforces that contract and the
 full CDF check is also part of `make verify-all`.
 
-`make verify-neoclassical-neutrals` verifies every bundled CDF for
-`GFLNC_*`, `QFLNC_*`, `QFLNCC_*` native units/time-grid consistency and
-independent finite-volume flux reconstruction, as well as separate wall,
-volume and recombination neutral density, temperature (eV) and toroidal
-rotation (rad/s). The quick portion runs real writer logic with an IMAS-shaped
-mock and is included in `make check`; every source CDF is also audited in
-`make verify-all`. Result files are in `build/neoclassical-neutrals/`. An
-actual IMAS DD4.1.1 write/readback still requires `make verify-end-to-end`.
-See [neoclassical/neutral mapping notes](neoclassical-neutrals.md).
+`make verify-neoclassical` validates every CDF's `GFLNC_*`, `QFLNC_*`,
+`QFLNCC_*` source divergence, unit/time-grid checks and finite-volume
+reconstruction. It exercises the actual `core_transport` writer with IMAS-shaped
+mocks; results are stored under `build/neoclassical-transport/`.
 
-`make verify-mmm` checks the native `TIME3/XB` MMM07 transport coefficients,
-its Weiland, DRIBM/DRBM, ETG and MTM submodels, the total heat-diffusivity
-component closure, the model-specific reduced outputs on `TIME3/X`, and the
-actual `core_transport` writer logic (mock IDS). All bundled CDFs are checked,
-including MMM-inactive cases. Its per-run report is under `build/mmm-transport/`.
-It runs synthetic/writer checks in `make check`, and source checks in
-`make verify-all`. Real write/readback still requires IMAS-Python; see
-[MMM mapping notes](mmm-transport.md).
+`make verify-neutrals` independently checks wall, volume and recombination
+neutrals, their density SI conversion, already-eV temperature, and signed
+rotation. Results are stored under `build/neutral-profiles/`. None of these
+neutral quantities is treated as a turbulence-model coefficient.
+
+`make verify-theory` tests unified MMM07, GLF23 and TGLF registration, native
+`TIME3/XB` coefficient mapping, MMM07 model decomposition and reduced-model
+`TIME3/X` outputs, and the actual source-side core_transport writer. GLF23
+nonzero coefficients are tested on ITER 38530P94; DIII-D T16 validates MMM07;
+other GLF23/MMM07 placeholder channels do not create false models. TGLF is
+reported as awaiting a validated fixture. The per-case report is under
+`build/theory-transport/`. `make verify-mmm` is an alias for compatibility,
+but there is no separate MMM mapping module. The real IMAS DD4.1.1 write and
+readback require `make verify-end-to-end` in an IMAS-equipped environment.
+See [theory transport mapping notes](theory-transport.md).
 
 `make verify-waves` runs the RF-specific source regressions against every bundled CDF, including the
 DIII-D TORAY/TORBEAM/GENRAY EC, ITER EC+IC, and C-Mod IC cases. It validates component sums, finite-volume power
@@ -136,7 +138,7 @@ specific previously untestable mapping. Useful future cases include:
 - a run with full NUBEAM FBM phase-space output for `distributions`;
 - the ITER/NSTX ISolver runs now supplied for `pf_active` and `pf_passive`
   currents; full geometry validation still requires authoritative device files;
-- a sawtoothing run with explicit crash-event diagnostics for `sawteeth`.
+- event-trigger mechanism and verified post-crash profiles for enhanced `sawteeth` mapping; C-Mod 89846 now covers native crash-history export.
 
 Do not add large binary fixtures without confirming repository size and data
 redistribution constraints.
@@ -175,3 +177,15 @@ through a SciPy-backed adapter, requiring no IMAS installation.  The
 
 See [TIME and TIME3](time-grids.md).  An IMAS DD4.1.1 runtime check must
 still be performed on a workstation with IMAS-Python installed.
+
+
+## Sawtooth history
+
+`make verify-sawteeth` scans **every bundled CDF** for changes in the native
+`TLASTSAW(TIME)` history, checks the `TIME` shape independently of `TIME3`,
+retains only physically valid `XIQ1` values, and verifies the typed field
+contract with mock IDS objects. C-Mod 89846 contains 38 observed new updates;
+ITER has constant `TLASTSAW`, and the other cases have no crash history.
+`make verify-all` includes a per-case `sawteeth-source` check. Real validation
+requires `--ids sawteeth` with `verify_end_to_end.py` on an IMAS host.
+See [sawteeth mapping](sawteeth.md).

@@ -1,0 +1,57 @@
+&tglf_control
+ NLGRAD = .FALSE.          ! output flux gradients
+ ADIABATIC_ELEC = .FALSE.  ! adiabatic electrons selection
+ USE_BPER = .FALSE.        ! perpendicular B effects
+ USE_BPAR = .FALSE.        ! parallel B effects
+ USE_MHD_RULE = .TRUE.     ! MHD rules
+ USE_BISECTION = .TRUE.    ! use bisection
+ USE_INBOARD_DETRAPPED = .FALSE. ! inboard detrapped
+ USE_AVE_ION_GRID = .FALSE.      ! if true compute charge density weighted average of the kinetic ion gyro-radius
+ LFLUX = .TRUE.            ! IFLUX
+ FIND_WIDTH = .TRUE.       ! find width
+
+ TGLFMOD = 2           ! 1 for xptor version, 2 for tgyro version
+ IBRANCH = -1          ! model branch
+ GEOM_FLAG = 1         ! geometry flag
+ NMODES = 2            ! tglf modes
+ NSPEC = 3             ! tglf number of species
+ NBASIS_MAX = 4        ! maximum base function used in tglf
+ NBASIS_MIN = 2        ! minimum base function used in tglf
+ NXGRID = 16           ! nx grid
+ NWIDTH = 21           ! number of gaussian width
+ SAT_RULE = 0          ! saturation rule in tglf
+ KYGRID_MODEL = 1      ! model for kygrid
+ XNU_MODEL = 2         ! model selection for collisionality
+ VPAR_MODEL = 0        ! parallel velocity model
+ VPAR_SHEAR_MODEL = 0  ! parallel velocity shear model
+ KINETIC_FAST_ION = 0  ! fast ion species model in TGLF
+ PEVOLVING = 0         ! evolving temperature and its gradients
+
+ KY = 0.3            ! ky
+ THETA_TRAPPED = 0.7 ! trapped theta
+ WDIA_TRAPPED = 0.0  ! wdia trapped (bounce model)
+ WIDTH = 1.65        ! gaussian width
+ WIDTH_MIN = 0.3     ! minimum gaussian width
+ WD_ZERO = 0.1       ! zero width
+ PARK = 1.0          ! PARK in tglf
+ GHAT = 1.0          ! ghat in tglf
+ GCHAT = 1.0         ! gchat in tglf
+ LINSKER_FAC = 0.0   ! liksker factor in tglf
+ GRADB_FAC = 0.0     ! factor for gradB in tglf
+ FILTER = 2.0        ! filter in tglf
+ DAMP_PSI = 0.0      ! damping factor for psi
+ DAMP_SIG = 0.0      ! damping factor for sig
+ ALPHA_P = 1.0       ! parallel velocity shear factor
+ ALPHA_ZF = 1.0      ! factor for SAT_RULE 1 zonal flow
+ ALPHA_MACH = 0.0    ! factor for mach
+ ALPHA_N = 0.0       ! factor for vn shear
+ ALPHA_T = 0.0       ! factor for vt shear
+ ALPHA_QUENCH = 0.0  ! quench model factor
+ XNU_FAC = 1.0       ! factor for collisionality
+ DEBYE_FAC = 1.0     ! factor for debye length
+ ETG_FAC = 1.25      ! factor for the ETG model
+ CBETAE = 1.0        ! factor for plasma beta
+ CXNU = 1.0          ! scale factor for collisionality
+ EM_STAB = 0.0       ! EM factor for the ion temperature gradient
+ RLNP_CUTOFF = 18.0  ! Limits SAT2 factor of R/Lp < RLNP_CUTOFF
+/

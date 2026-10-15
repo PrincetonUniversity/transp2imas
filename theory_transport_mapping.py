@@ -1,14 +1,17 @@
 #!/usr/bin/python
-"""Source-grounded MMM07 component mapping for TRANSP core_transport.
+"""Unified model-output contracts for TRANSP core_transport (MMM07, GLF23, NC).
 
 MMM07 is a reduced anomalous-transport model.  Its Weiland, DRIBM/DRBM,
 ETG and MTM contributions are model *outputs*, not plasma diagnostics.
 CDF coefficients reside on TIME3/XB in cm^2/s (or cm/s), whereas the
 reduced-model stability/intermediate quantities reside on TIME3/X.
 
-This module deliberately has no IMAS dependency and is used by source tests.
+GLF23 and neoclassical output retain their own source semantics and units.
+TGLF is registered but deferred until suitable test fixtures establish mapping.
+This module has no IMAS dependency and is used by source tests.
 """
 
+import re
 import xml.etree.ElementTree as ET
 
 import numpy as np
@@ -277,3 +280,159 @@ def mmm_summary(plan):
                          (*model['coefficients'], *model['auxiliary']))]
     return {'active': plan['active'], 'models': models,
             'source_channels': list(plan['fields']), 'closure': plan['closure']}
+
+
+# Generic theory-model registry. "TGLF_DR" is not a TGLF diffusivity:
+# its CDF long_name describes a scalar instability location, not a typed
+# transport coefficient. Never fabricate a TGLF model from that channel.
+THEORY_FAMILIES = ('neoclassical', 'mmm07', 'glf23', 'tglf')
+GLF23_MODEL_SPEC = {
+    'name': 'glf23',
+    'index': -20,
+    'label': 'GLF23 anomalous transport',
+    'description': 'GLF23 predicted electron/ion heat and toroidal momentum diffusivities',
+    'coefficients': {
+        'XKEGLF23': ('electrons.energy.d', 'diffusivity'),
+        'XKIGLF23': ('total_ion_energy.d', 'diffusivity'),
+        'ETPHIGLF': ('momentum_phi.d', 'diffusivity'),
+    },
+    # GLF23 ion *particle* diffusivity is aggregate, not species-specific;
+    # keep it in model XML until a defensible species mapping is established.
+    'auxiliary': ('DIFFIGLF',),
+}
+GLF23_AUXILIARY_SPECS = {
+    'DIFFIGLF': ('glf23_aggregate_ion_particle_diffusivity', 'XB', 'CM**2/SEC', 1.0e-4),
+}
+# All coefficient-model families use the same IMAS core_transport writer.
+COEFFICIENT_MODEL_SPECS = {'mmm07': MODEL_SPECS, 'glf23': (GLF23_MODEL_SPEC,)}
+THEORY_AUXILIARY_SPECS = {**AUXILIARY_SPECS, **GLF23_AUXILIARY_SPECS}
+
+
+def build_glf23_plan(nc):
+    """Read GLF23 coefficient channels on TIME3/XB, rejecting placeholders.
+
+    The actual bundled ITER case has nonzero, independently described GLF23
+    coefficients. Other CDFs declare zero-filled GLF23 arrays as placeholders.
+    """
+    names = GLF23_MODEL_SPEC['coefficients'].keys() | GLF23_AUXILIARY_SPECS.keys()
+    fields = {}
+    for name in sorted(names & nc.variables.keys()):
+        fields[name] = _array(nc, name, 'XB', 'diffusivity')
+    time = np.asarray(nc.variables['TIME3'][:], dtype=np.float64)
+    xb = np.asarray(nc.variables['XB'][:], dtype=np.float64)
+    active = any(np.any(np.abs(v) > 0) for v in fields.values())
+    return {'active': bool(active), 'fields': fields, 'time3': time,
+            'xb': xb, 'closure': {}}
+
+
+def theory_model_xml(plan, spec, family):
+    """Serialize supplemental MODEL data only, referencing native IDS grids."""
+    if family == 'mmm07':
+        return mmm_model_xml(plan, spec)
+    if family != 'glf23':
+        raise ValueError(f'unsupported coefficient-model family: {family}')
+    root = ET.Element('transp2imas_theory_output', {
+        'family': 'glf23', 'model': spec['name'], 'classification': 'anomalous_transport_model_output',
+        'time_coordinate': 'core_transport/time',
+        'radial_coordinate': 'profiles_1d/grid_d/rho_tor_norm',
+    })
+    mapped = ET.SubElement(root, 'typed_coefficients')
+    for source, (destination, kind) in spec['coefficients'].items():
+        if source in plan['fields']:
+            ET.SubElement(mapped, 'coefficient', {
+                'source': source, 'destination': destination,
+                'source_units': 'cm^2/s', 'target_units': 'm^2/s',
+                'source_dimensions': 'TIME3,XB',
+            })
+    for source in spec['auxiliary']:
+        if source not in plan['fields']:
+            continue
+        arr = plan['fields'][source] * 1.0e-4
+        ET.SubElement(root, 'supplementary_quantity', {
+            'source': source, 'semantics': 'aggregate_ion_particle_diffusivity',
+            'units': 'm^2/s', 'source_dimensions': 'TIME3,XB',
+            'shape': ' '.join(map(str, arr.shape)),
+        }).text = _numbers(arr)
+    return ET.tostring(root, encoding='unicode')
+
+
+NEOCLASSICAL_CHANNELS = {
+    'particles': 'GFLNC_',
+    'heat': 'QFLNC_',
+    'heat_nc_classical': 'QFLNCC_',
+}
+NEO_AGGREGATE_TOKENS = frozenset(('I', 'X', 'TOK'))
+SPECIES_ALIASES = {'3': 'HE3', '4': 'HE4'}
+NEO_UNITS = {
+    'particles': ('N/CM3/SEC', 'N/CM3/S'),
+    'heat': ('WATTS/CM3', 'W/CM3'),
+    'heat_nc_classical': ('WATTS/CM3', 'W/CM3'),
+}
+
+
+def discover_neoclassical_channels(names):
+    """Separate real neoclassical species from total-ion/impurity aggregates."""
+    available = set(names)
+    result = {}
+    for kind, prefix in NEOCLASSICAL_CHANNELS.items():
+        channels = {}
+        for name in sorted(available):
+            if name.startswith(prefix):
+                token = name[len(prefix):].upper()
+                if re.fullmatch(r'[A-Z0-9]+', token):
+                    channels[SPECIES_ALIASES.get(token, token)] = name
+        result[kind] = channels
+    return result
+
+
+def _neoclassical_unit(value):
+    if isinstance(value, bytes):
+        value = value.decode('ISO-8859-1', 'replace')
+    return str(value).strip().upper().replace(' ', '').replace('**', '').replace('^', '')
+
+
+def validate_profile(nc, name, kind, required_shape=None):
+    """Verify NC divergence is a finite TIME3/X array with physical units."""
+    if kind not in NEO_UNITS:
+        raise ValueError(f'not a neoclassical divergence kind: {kind}')
+    var = nc.variables[name]
+    if tuple(var.dimensions) != ('TIME3', 'X'):
+        raise ValueError(f'{name}: expected (TIME3, X), got {var.dimensions}')
+    found = _neoclassical_unit(getattr(var, 'units', ''))
+    if found not in NEO_UNITS[kind]:
+        raise ValueError(f'{name}: unexpected {kind} units {found!r}')
+    arr = np.asarray(var[:], dtype=np.float64)
+    if arr.ndim != 2 or (required_shape is not None and arr.shape != tuple(required_shape)):
+        raise ValueError(f'{name}: unexpected shape {arr.shape}, expected {required_shape}')
+    if not np.isfinite(arr).all():
+        raise ValueError(f'{name}: non-finite CDF data')
+    return arr
+
+
+def divergence_to_surface_flux(div, dvol_cm3, surf_cm2, kind):
+    """Integrate div(F) * zone-volume / boundary-area; convert cm^-2 to m^-2."""
+    if kind not in NEOCLASSICAL_CHANNELS:
+        raise ValueError(f'unknown divergence quantity: {kind}')
+    div, dvol, surf = [np.asarray(a, dtype=np.float64)
+                       for a in (div, dvol_cm3, surf_cm2)]
+    if div.ndim != 2 or div.shape != dvol.shape or div.shape != surf.shape:
+        raise ValueError(f'incompatible flux integration shapes: {div.shape}, {dvol.shape}, {surf.shape}')
+    integrated = np.cumsum(div * dvol, axis=1)
+    return np.divide(integrated * 1.0e4, surf, out=np.zeros_like(integrated),
+                     where=np.abs(surf) > 0)
+
+
+def build_theory_plans(nc):
+    """Unified, testable family inventory for PT_SOLVER model outputs.
+
+    Neoclassical source quantities are available even in interpretive runs:
+    classification as *PT_SOLVER used* requires explicit input provenance
+    and must not be inferred merely from CDF channel existence.
+    """
+    return {
+        'neoclassical': discover_neoclassical_channels(nc.variables),
+        'mmm07': build_mmm_plan(nc),
+        'glf23': build_glf23_plan(nc),
+        'tglf': {'active': False, 'status': 'WAITING_FOR_VALIDATED_TGLF_CDF',
+                 'note': 'Do not infer TGLF transport from TGLF_DR or zero placeholders'},
+    }

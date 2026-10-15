@@ -22,7 +22,8 @@ from scipy.io import netcdf_file
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from mmm_transport_mapping import MODEL_SPECS, AUXILIARY_SPECS, build_mmm_plan
+from theory_transport_mapping import MODEL_SPECS, AUXILIARY_SPECS, build_mmm_plan
+from sawteeth_mapping import build_sawteeth_plan
 DEFAULT_DATA = ROOT / 'examples' / 'data'
 
 
@@ -142,23 +143,50 @@ def check_mmm_native_grids(ids, time3, source):
     return count
 
 
-def check_time_vector(name, actual, expected, count):
+def check_time_vector(name, actual, expected, count, coordinate='TIME3'):
     arr = np.asarray(actual, dtype=np.float64)
     if arr.ndim != 1 or len(arr) != len(expected) or count != len(expected):
         raise AssertionError(
             f'{name}: stored time={arr.shape}, slice count={count}; '
-            f'CDF TIME3={len(expected)}')
+            f'CDF {coordinate}={len(expected)}')
     if not np.all(np.isfinite(arr)):
         raise AssertionError(f'{name}: nonfinite stored time')
     # Exact CDF values are directly assigned as float64 by the converter;
     # allow only floating-point read/write roundoff, NOT grid interpolation.
     if not np.allclose(arr, expected, atol=1.0e-9, rtol=1.0e-9):
-        raise AssertionError(f'{name}: stored time differs from native CDF TIME3 '
+        raise AssertionError(f'{name}: stored time differs from native CDF {coordinate} '
                              f'(max residual {np.max(np.abs(arr-expected)):.3g} s)')
     return len(arr)
 
 
-def validate_readback(ids_name, ids, time3, mmm_source=None):
+def source_sawteeth(cdf):
+    """Build native TIME crash history from CDF, if there are actual updates."""
+    with netcdf_file(str(cdf), 'r', mmap=False) as nc:
+        return build_sawteeth_plan(nc)
+
+
+def check_sawteeth_readback(ids, plan):
+    """Fail when a saved native crash trace, q1 radius, or period is changed."""
+    if plan is None:
+        raise AssertionError('sawteeth was written despite no observed source events')
+    n = check_time_vector('sawteeth', ids.time, plan.time, len(plan.time), coordinate='TIME')
+    fields = [('previous_crash_time', plan.previous_crash_time)]
+    if plan.previous_period is not None:
+        fields.append(('previous_period', plan.previous_period))
+    if plan.rho_tor_norm_q1 is not None:
+        fields.append(('rho_tor_norm_q1', plan.rho_tor_norm_q1))
+    for name, expected in fields:
+        stored = np.asarray(getattr(ids.diagnostics, name), dtype=np.float64)
+        if stored.shape != expected.shape or not np.allclose(stored, expected,
+                                                                rtol=1.0e-9, atol=1.0e-9):
+            raise AssertionError(f'sawteeth.diagnostics.{name}: does not match native TIME source')
+    if np.asarray(ids.crash_trigger).size:
+        raise AssertionError('sawteeth.crash_trigger has an invented crash mechanism')
+    return {'native_TIME_samples': n, 'observed_new_crashes': plan.events,
+            'q1_valid_samples': plan.valid_q1_samples}
+
+
+def validate_readback(ids_name, ids, time3, mmm_source=None, sawteeth_source=None):
     """Validate schema and known time/radial coordinate invariants."""
     ids.validate()  # IMAS DD coordinate and mandatory-field validator.
     checks = {'schema': 'PASS'}
@@ -178,6 +206,8 @@ def validate_readback(ids_name, ids, time3, mmm_source=None):
             te = np.asarray(profile.electrons.temperature, dtype=np.float64)
             if rho.size and te.size and (rho.ndim != 1 or te.ndim != 1 or rho.size != te.size):
                 raise AssertionError(f'core_profiles[{i}]: Te does not match radial grid')
+    elif ids_name == 'sawteeth':
+        checks.update(check_sawteeth_readback(ids, sawteeth_source))
     elif ids_name == 'core_transport':
         if len(ids.model):
             n = check_time_vector('core_transport', ids.time, time3,
@@ -205,6 +235,9 @@ def readback_accepted_ids(imas, manifest, database_root, cdf):
     mmm_source = (source_mmm_coordinates(cdf)
                   if any(row['ids'] == 'core_transport' for row in accepted)
                   else None)
+    sawteeth_source = (source_sawteeth(cdf)
+                       if any(row['ids'] == 'sawteeth' for row in accepted)
+                       else None)
     opened = False
     try:
         db.open()
@@ -219,7 +252,7 @@ def readback_accepted_ids(imas, manifest, database_root, cdf):
             record = {'ids': name, 'occurrence': occurrence, 'status': 'PASS'}
             try:
                 ids = db.get(name, occurrence=occurrence)
-                record['checks'] = validate_readback(name, ids, t3, mmm_source)
+                record['checks'] = validate_readback(name, ids, t3, mmm_source, sawteeth_source)
             except Exception as exc:
                 record['status'] = 'FAIL'
                 record['error'] = f'{type(exc).__name__}: {exc}'

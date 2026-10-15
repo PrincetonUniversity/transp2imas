@@ -228,6 +228,24 @@ def inspect_version(version):
     if vt[0] >= 4:
         check(eq_fields["psi_norm"], "DD4 equilibrium profiles_1d lacks psi_norm", errors)
 
+    # Sawtooth history has a separate scalar TIME coordinate, and the trigger
+    # code is a PHYSICAL trigger mechanism (not a generic event counter).
+    saw = factory.new("sawteeth")
+    saw_fields = {
+        "time": hasattr(saw, "time"),
+        "homogeneous_time": hasattr(saw.ids_properties, "homogeneous_time"),
+        "previous_crash_time": hasattr(saw.diagnostics, "previous_crash_time"),
+        "previous_period": hasattr(saw.diagnostics, "previous_period"),
+        "rho_tor_norm_q1": hasattr(saw.diagnostics, "rho_tor_norm_q1"),
+        "rho_tor_norm_mixing": hasattr(saw.diagnostics, "rho_tor_norm_mixing"),
+        "crash_trigger": hasattr(saw, "crash_trigger"),
+        "code_parameters": hasattr(saw, "code") and hasattr(saw.code, "parameters"),
+    }
+    print("sawteeth:")
+    for key, value in saw_fields.items():
+        print(f"  {key:24s} {yn(value)}")
+        check(value, f"sawteeth lacks {key}", errors)
+
     summary = factory.new("summary")
     sgq = summary.global_quantities
     summary_fields = {

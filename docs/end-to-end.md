@@ -132,3 +132,17 @@ Data Dictionary, and is opt-in; it must not be labeled PASS on GitHub-hosted
 source-only runners. After DD 4.1.1 is green, repeat using
 `DD_VERSION=3.39.0` (if installed), and audit DD-specific unsupported IDSs
 separately. An absent optional IDS is SKIP only if no write was attempted.
+
+
+## Sawtooth readback
+
+The `sawteeth` writer (C-Mod `89846`) uses the native CDF `TIME` grid, not
+`TIME3`. The end-to-end verifier compares stored `sawteeth.time`,
+`diagnostics.previous_crash_time`, any inferred `previous_period`, and valid
+`rho_tor_norm_q1` against the original source, and asserts that no trigger
+mechanism was fabricated. To focus on the new IDS:
+
+```bash
+python3 examples/verify_end_to_end.py --case 89846 --ids sawteeth \
+  --dd-version 4.1.1 --report-dir build/e2e-sawteeth
+```

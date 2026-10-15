@@ -1111,9 +1111,9 @@ grid description (typically the generated `*_fi_*.cdf` product).
 
 `NLSAW=.false.`.  `TESAW` is a scalar sawtooth parameter and `XIQ1(TIME)` is q=1
 surface context, but there are no crash times or mixing-radius/pre/post-crash arrays.
-The sawteeth IDS remains disabled rather than writing an empty or inferred event.
-A sawtooth-enabled run with actual crash output (and, if prescribed, the PRESAW/
-EXTSAW event input) is required for validation.
+The sawteeth writer skips this run (no observed crash-history updates).
+A sawtooth-enabled run with actual crash output is required to write a
+nonempty IDS. C-Mod 89846 now provides a suitable regression; see [sawteeth](sawteeth.md).
 
 ### pf_passive: implemented with explicit machine-data provenance
 
@@ -1351,11 +1351,11 @@ a single density. `T0*` is already eV and is no longer incorrectly scaled by
 1e6. `OM0*` is in rad/s; DD4.1.1 lacks a typed neutral rotation field, so
 that information is preserved in supplementary `core_profiles.code.parameters`
 XML with source channel, grid and physical sign. See
-[the detailed mapping specification](neoclassical-neutrals.md).
+[the detailed mapping specification](neoclassical-transport.md).
 
 
 
-## MMM07 anomalous-transport decomposition (October 2026)
+## MMM07 and GLF23 theory transport (October 2026)
 
 TRANSP's MMM07 `core_transport` outputs are *reduced turbulence-model
 predictions*: the combined `XKEMMM07`/`XKIMMM07` coefficients and individual
@@ -1365,5 +1365,18 @@ Weiland `XKEW19`/`XKIW19`, DRIBM `XKEDRBM`/`XKIDRBM`, ETG `XKEETG`, and MTM
 `GAMMAETG`, `GAMMAMTM`, `OMEGA*`, `KYRS*`, `XDBMTM` and untyped aggregate
 momentum/impurity coefficients are preserved in the corresponding model's
 `code.parameters` XML at native coordinates. See [the precise mapping and
-closure tests](mmm-transport.md). No MMM model is fabricated from all-zero
+closure tests](theory-transport.md). No MMM model is fabricated from all-zero
 placeholder arrays.
+
+
+### Native IMAS sawteeth history (new)
+
+The standalone `imas_sawteeth.py` writer now supports `sawteeth` on runs
+with **changed** `TLASTSAW(TIME)` values, notably C-Mod 89846. It writes
+`sawteeth.time=TIME` (never `TIME3`),
+`sawteeth.diagnostics.previous_crash_time=TLASTSAW`, derived last verified
+periods, and valid `XIQ1(TIME)` into `rho_tor_norm_q1`. Invalid source
+q=1 markers become IMAS missing-value sentinels, not zero radii.
+`XSAWBOUND` is labeled an *ad hoc* boundary and is NOT automatically a
+physical mixing or inversion radius. Crash mechanism codes and post-crash
+profiles are left unset. Details: [sawteeth mapping](sawteeth.md).

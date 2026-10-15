@@ -39,8 +39,10 @@ from verify_pf_passive_mapping import ids_node as passive_ids_node
 import verify_waves_mapping as waves
 from verify_core_profiles_timegrids import verify_case as verify_core_profiles_case, verify_writer_contract
 from verify_equilibrium_timegrids import verify_case as verify_equilibrium_case, writer_contract as equilibrium_writer_contract, synthetic as equilibrium_synthetic
-from verify_neoclassical_neutrals import verify_case as verify_nc_neutral_case
-from verify_mmm_transport import verify_case as verify_mmm_case
+from verify_neoclassical_transport import verify_case as verify_nc_case
+from verify_neutral_profiles import verify_case as verify_neutral_case
+from verify_theory_transport import verify_case as verify_theory_case
+from sawteeth_mapping import build_sawteeth_plan
 
 
 DEEP_SOURCE_CHECKS = (
@@ -97,8 +99,8 @@ def process_case(cdf, report_dir, python, deep, strict_inputs, strict_current):
     trdat = cdf.with_name(f'{runid}TR.DAT')
     result = {'case':runid, 'cdf':str(rel), 'trdat':trdat.exists(),
               'status':'PASS', 'checks':{}, 'warnings':[], 'failures':[],
-              'wave_status':'N/A', 'models':[], 'input_files':[], 'neoclassical_neutrals':{}, 'mmm_transport':{},
-              'pf_active_coils':0, 'pf_passive_loops':0}
+              'wave_status':'N/A', 'models':[], 'input_files':[], 'neoclassical_transport':{}, 'neutral_profiles':{}, 'theory_transport':{},
+              'pf_active_coils':0, 'pf_passive_loops':0, 'sawteeth':{'events':0}}
     run_log = report_dir / (runid + '.log')
     lines = [f'Case {runid}', f'CDF: {cdf}', f'TR.DAT: {trdat if trdat.exists() else "MISSING"}']
 
@@ -152,27 +154,47 @@ def process_case(cdf, report_dir, python, deep, strict_inputs, strict_current):
 
     check('equilibrium-time-grid', equilibrium_time_check)
 
-    def neoclassical_neutrals_check():
+    def neoclassical_check():
         with netcdf_file(str(cdf), 'r', mmap=False) as nc:
-            result['neoclassical_neutrals'] = verify_nc_neutral_case(nc, cdf.name)
-        summary = result['neoclassical_neutrals']
-        lines.append(
-            f"NC transport: {sum(map(len, summary['neoclassical'].values()))} channels; "
-            f"neutral populations: {len(summary['neutral_populations'])}")
+            result['neoclassical_transport'] = verify_nc_case(nc, cdf.name)
+        item = result['neoclassical_transport']
+        lines.append(f"NC theory transport: {sum(map(len, item['channels'].values()))} channels")
         return True
 
-    check('neoclassical-neutral-source', neoclassical_neutrals_check)
+    check('neoclassical-transport-source', neoclassical_check)
 
-    def mmm_check():
+    def neutral_check():
         with netcdf_file(str(cdf), 'r', mmap=False) as nc:
-            result['mmm_transport'] = verify_mmm_case(nc, cdf.name)
-        item = result['mmm_transport']
-        lines.append(f"MMM07: {'active' if item['active'] else 'inactive'}; "
-                     f"components={len(item['models'])}; "
-                     f"source quantities={len(item['source_channels'])}")
+            result['neutral_profiles'] = verify_neutral_case(nc, cdf.name)
+        item = result['neutral_profiles']
+        lines.append(f"Neutral states: {len(item['neutral_populations'])} populations")
         return True
 
-    check('mmm-reduced-transport-source', mmm_check)
+    check('neutral-profiles-source', neutral_check)
+
+    def theory_check():
+        with netcdf_file(str(cdf), 'r', mmap=False) as nc:
+            result['theory_transport'] = verify_theory_case(nc, cdf.name)
+        item = result['theory_transport']
+        lines.append(f"Theory: MMM07 {'active' if item['active'] else 'inactive'}; "
+                     f"GLF23 {'active' if item['glf23']['active'] else 'inactive'}; "
+                     f"TGLF {item['tglf']}; MMM components={len(item['models'])}")
+        return True
+
+    check('theory-model-source', theory_check)
+
+    def sawteeth_check():
+        with netcdf_file(str(cdf), 'r', mmap=False) as nc:
+            plan = build_sawteeth_plan(nc)
+        result['sawteeth'] = {
+            'events': plan.events if plan is not None else 0,
+            'q1_valid_samples': plan.valid_q1_samples if plan is not None else 0,
+        }
+        lines.append(f"Sawteeth: {result['sawteeth']['events']} observed crash updates; "
+                     f"valid q=1 samples={result['sawteeth']['q1_valid_samples']}")
+        return True
+
+    check('sawteeth-source', sawteeth_check)
 
     def inputs():
         inv = InputInventory(trdat, runid)
@@ -285,6 +307,7 @@ def main(argv=None):
         print(r['status'], f"(waves={r['wave_status']}, "
                            f"PF coils={r['pf_active_coils']}, "
                            f"passive loops={r['pf_passive_loops']}, "
+                           f"saw events={r['sawteeth']['events']}, "
                            f"warnings={len(r['warnings'])})", flush=True)
     report = {'cases_total':len(cdfs),'cases_checked':len(results),
               'failures':sum(r['status']=='FAIL' for r in results),
@@ -293,14 +316,16 @@ def main(argv=None):
     (ns.report_dir / 'summary.json').write_text(json.dumps(report, indent=2) + '\n')
     markdown = ["# TRANSP source-verification inventory", '',
                 f"Checked {len(results)} of {len(cdfs)} discovered CDFs.", '',
-                '| CDF | Inputs | Waves | NC channels | Neutral populations | PF active | PF passive | Result |',
-                '|---|---|---|---:|---:|---:|---:|---|']
+                '| CDF | Inputs | Waves | NC channels | Neutral populations | PF active | PF passive | Saw events | Result |',
+                '|---|---|---|---:|---:|---|---|---:|---:|---:|---|']
     for r in results:
         markdown.append(f"| `{r['cdf']}` | {'present' if r['trdat'] else '**missing**'} "
                         f"| {r['wave_status']} "
-                        f"| {sum(map(len,r['neoclassical_neutrals'].get('neoclassical',{}).values()))} "
-                        f"| {len(r['neoclassical_neutrals'].get('neutral_populations',[]))} "
-                        f"| {r['pf_active_coils']} | {r['pf_passive_loops']} | **{r['status']}** |")
+                        f"| {sum(map(len,r['neoclassical_transport'].get('channels',{}).values()))} "
+                        f"| {len(r['neutral_profiles'].get('neutral_populations',[]))} "
+                        f"| {'active' if r['theory_transport'].get('active') else 'inactive'} "
+                        f"| {'active' if r['theory_transport'].get('glf23',{}).get('active') else 'inactive'} "
+                        f"| {r['pf_active_coils']} | {r['pf_passive_loops']} | {r['sawteeth']['events']} | **{r['status']}** |")
     markdown.extend(['', '## Outstanding issues', ''])
     for r in results:
         for issue in r['warnings'] + r['failures']:

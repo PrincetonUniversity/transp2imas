@@ -54,6 +54,46 @@ Release Please derives the next version from conventional commit/PR semantics:
 Documentation/test/chore-only commits normally do not force a user-facing
 version bump by themselves.
 
+## `feat:` troubleshooting and pre-1.0 release semantics
+
+The repository explicitly configures the `default` versioning strategy and
+`bump-patch-for-minor-pre-major: false`. Accordingly a properly parsed
+`feat:` commit requests a **minor** bump even on `0.x`, while `fix:` requests
+a patch bump. Both prefixes have visible changelog sections; `perf`, `docs`,
+`test`, `refactor` and `chore` are classified separately. Only qualifying
+releasable changes cause a version bump; `docs:` and `chore:` alone normally
+do not. These settings are verified by `python examples/verify_release_config.py`.
+
+Release Please acts on **commits actually merged into `main`**, not on a PR's
+internal commits if they were replaced by a squash merge subject. Set the PR
+**title/squash commit subject** to the intended Conventional Commit syntax:
+
+```text
+feat(theory): support GLF23 and MMM07 in core_transport
+fix(imas): correct TIME3 dimensions
+perf: reduce CDF rereads
+```
+
+Do not use `Feature: ...`, `Feat: ...`, or only a generic
+`Merge pull request #...` subject; they are not Conventional Commit headers.
+If `fix:` creates a release PR but `feat:` does not, inspect **the actual
+merged commit subject**, Release Please action log, current release PR and
+manifest/tag alignment, instead of assuming that adding `feat` to a changelog
+section corrects GitHub history:
+
+```bash
+git log --first-parent -n 15 --format='%h %s' main
+git tag --list 'v*' --sort=-v:refname | head
+cat .release-please-manifest.json
+```
+
+`bootstrap-sha` applies to the **first** manifest release window; if the
+repository has since released through Release Please, the last merged release
+PR determines the subsequent commit range. Do not reset `bootstrap-sha`,
+manifest or tags to force unrecognized feature commits without reviewing
+that history. No local file-only test can prove how your remote release job
+handled a past merge; inspect the live workflow log if symptoms persist.
+
 ## Required GitHub repository settings
 
 On GitHub, open:

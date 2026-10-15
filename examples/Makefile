@@ -22,7 +22,7 @@ LDLIBS += -L$(IMAS_PREFIX)/lib -limas-gfortran -limas
 
 .DEFAULT_GOAL := help
 
-.PHONY: help quick verify verify-all verify-deep verify-waves verify-neoclassical-neutrals verify-mmm verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
+.PHONY: help quick verify verify-all verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-sawteeth verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
 
 help:
 	@echo "Diagnostic and example commands"
@@ -34,8 +34,11 @@ help:
 	@echo "  make verify-waves Validate every bundled CDF for EC/IC wave deposition"
 	@echo "  make verify-core-profiles  Verify Te/Ti peaking on TIME/TIME3 for every CDF"
 	@echo "  make verify-equilibrium    Verify equilibrium TIME3 slices and interpolated TIME boundary moments"
-	@echo "  make verify-neoclassical-neutrals  Verify NC fluxes and neutral states for every CDF"
-	@echo "  make verify-mmm  Verify MMM07 model components and reduced outputs for every CDF"
+	@echo "  make verify-neoclassical  Check neoclassical fluxes separately on every CDF"
+	@echo "  make verify-neutrals  Check neutral profiles only, separately on every CDF"
+	@echo "  make verify-theory  Check MMM07, GLF23 and TGLF family status for every CDF"
+	@echo "  make verify-mmm  Alias for theory transport verifier"
+	@echo "  make verify-sawteeth  Verify TLASTSAW crash histories and q=1 native TIME diagnostics"
 	@echo "  make verify-inputs Validate embedded TR.DAT and model namelists"
 	@echo "  make verify-pf-passive Validate synthetic PS_n currents and DD3/DD4 passive geometries"
 	@echo "  make verify-pf-active  Validate PF coil/supply/circuit source mappings"
@@ -56,8 +59,11 @@ quick:
 	$(PYTHON) verify_plot_ids.py
 	$(PYTHON) verify_core_profiles_timegrids.py --quick
 	$(PYTHON) verify_equilibrium_timegrids.py --quick
-	$(PYTHON) verify_neoclassical_neutrals.py --quick
-	$(PYTHON) verify_mmm_transport.py --quick
+	$(PYTHON) verify_neoclassical_transport.py --quick
+	$(PYTHON) verify_neutral_profiles.py --quick
+	$(PYTHON) verify_theory_transport.py --quick
+	$(PYTHON) verify_release_config.py
+	$(PYTHON) verify_sawteeth_mapping.py --quick
 	$(PYTHON) verify_end_to_end_contract.py
 
 verify: quick
@@ -97,11 +103,17 @@ verify-core-profiles:
 verify-equilibrium:
 	$(PYTHON) verify_equilibrium_timegrids.py --data-root data
 
-verify-neoclassical-neutrals:
-	$(PYTHON) verify_neoclassical_neutrals.py --data-root data --report-dir "$(ROOT)/build/neoclassical-neutrals"
+verify-neoclassical:
+	$(PYTHON) verify_neoclassical_transport.py --data-root data --report-dir "$(ROOT)/build/neoclassical-transport"
 
-verify-mmm:
-	$(PYTHON) verify_mmm_transport.py --data-root data --report-dir "$(ROOT)/build/mmm-transport"
+verify-neutrals:
+	$(PYTHON) verify_neutral_profiles.py --data-root data --report-dir "$(ROOT)/build/neutral-profiles"
+
+verify-theory verify-mmm:
+	$(PYTHON) verify_theory_transport.py --data-root data --report-dir "$(ROOT)/build/theory-transport"
+
+verify-sawteeth:
+	$(PYTHON) verify_sawteeth_mapping.py --data-root data --report-dir "$(ROOT)/build/sawteeth"
 
 verify-isolver:
 	$(PYTHON) verify_isolver_mapping.py --report-dir "$(ROOT)/build/pf-isolver"

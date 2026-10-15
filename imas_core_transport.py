@@ -3,10 +3,10 @@
 
 import numpy as np
 from nc2imas import *
-from neoclassical_neutral_mapping import (
-    discover_neoclassical_channels, validate_profile, divergence_to_surface_flux,
+from theory_transport_mapping import (
+    COEFFICIENT_MODEL_SPECS, THEORY_AUXILIARY_SPECS, build_theory_plans,
+    theory_model_xml, validate_profile, divergence_to_surface_flux,
 )
-from mmm_transport_mapping import MODEL_SPECS, AUXILIARY_SPECS, build_mmm_plan, mmm_model_xml
 
 
 class imas_core_transport:
@@ -314,8 +314,8 @@ class imas_core_transport:
                                       energy_flux[heat_names[sp]], ind=it, chk=self.nx)
         return True, used
 
-    def _fill_mmm_model(self, model, spec, plan):
-        """Populate one MMM07 total/component *model*, never an observation.
+    def _fill_theory_coefficient_model(self, model, family, spec, plan):
+        """Populate one physical theory-model result, never an observation.
 
         Model coefficients are already flux-surface-boundary (XB) profiles;
         unlike TRANSP flux *divergences*, they must NOT be volume-integrated.
@@ -328,28 +328,28 @@ class imas_core_transport:
             return False
         is_total = spec['name'] == 'mmm07_total'
         comment = (
-            spec['label'] + '. TRANSP MMM07 reduced anomalous transport MODEL OUTPUT. '
-            + ('This is the total MMM07 result; its Weiland, DRIBM/DRBM, ETG and MTM '
-               'model entries are a decomposition and must NOT be added again. '
-               if is_total else
-               'This is a component of MMM07, not an independent experimental diagnostic '
-               'or an additional contribution to the stored MMM07 total. ')
-            + 'Native CDF coefficients on TIME3/XB are in cm^2/s or cm/s; '
-              'typed IMAS fields are in SI. Reduced-mode output values are '
-              'preserved in code.parameters XML, with TIME3 in core_transport.time '
-              'and their native X grid in profiles_1d.grid_flux.rho_tor_norm. '
+            spec['label'] + '. TRANSP theory transport MODEL OUTPUT. '
+            + ('MMM07 total is decomposed by child models and must NOT be '
+               'summed with its components. ' if is_total else
+               'MMM07 component of the total; do NOT double count. '
+               if family == 'mmm07' else
+               'Independent GLF23 model: do NOT add to MMM07 unless '
+               'PT_SOLVER input explicitly specifies that combination. ')
+            + 'CDF coefficients on TIME3/XB are in cm^2/s or cm/s; '
+              'typed IMAS coefficients are SI. Supplemental reduced-model '
+              'outputs reference native IMAS time/radial coordinates. '
             + 'Sources: ' + ', '.join(sources) + '.'
         )
         use_native_x = any(
-            source in fields and AUXILIARY_SPECS[source][1] == 'X'
+            source in fields and THEORY_AUXILIARY_SPECS[source][1] == 'X'
             for source in spec['auxiliary']
         )
         self._prepare_model(model, spec['name'], spec['index'],
                             spec['description'], comment,
                             flux_grid='X' if use_native_x else 'XB')
-        model.code.name = 'TRANSP/MMM07'
+        model.code.name = 'TRANSP/' + family.upper()
         model.code.description = spec['label']
-        model.code.parameters = mmm_model_xml(plan, spec)
+        model.code.parameters = theory_model_xml(plan, spec, family)
         converted = {}
         for source, (destination, kind) in spec['coefficients'].items():
             if source not in fields:
@@ -376,17 +376,17 @@ class imas_core_transport:
         ct.time=np.asarray(self.time,dtype=np.float64)
         self.im.fill_vac_tor_field(ct)
 
-        # Reserve space for existing models and the maximum five MMM07 entries.
-        # Resize down after filling so zero-filled inactive MMM placeholders
-        # never appear as artificial active transport models.
-        ct.model.resize(4 + len(MODEL_SPECS))
+        # Allocate registered coefficient families, resize after filling so
+        # zero-filled source placeholders do not create artificial models.
+        ct.model.resize(4 + sum(len(v) for v in COEFFICIENT_MODEL_SPECS.values()))
         nobs=self._fill_combined_model(ct.model[0])
         next_model=1
         has_solver,present=self._fill_transport_solver_model(ct.model[next_model])
         if has_solver:
             next_model+=1
 
-        channels=discover_neoclassical_channels(self.im.vars_)
+        plans=build_theory_plans(self.im.nc)
+        channels=plans['neoclassical']
         has_nc, nc_present=self._fill_neoclassical_model(
             ct.model[next_model], channels, classical=False)
         if has_nc:
@@ -395,19 +395,24 @@ class imas_core_transport:
             ct.model[next_model], channels, classical=True)
         if has_classical:
             next_model+=1
-        mmm_plan = build_mmm_plan(self.im.nc)
-        if mmm_plan['active']:
-            for quantity, check in mmm_plan['closure'].items():
+        for family, specs in COEFFICIENT_MODEL_SPECS.items():
+            plan = plans[family]
+            if not plan['active']:
+                continue
+            for quantity, check in plan['closure'].items():
                 if check['status'] == 'FAIL':
                     self.logger.warning(
-                        'core_transport: MMM07 %s component sum differs from '
-                        'CDF total (normalized discrepancy %.4g); exporting '
-                        'source values unchanged',
-                        quantity, check['max_normalized_difference'])
-            for spec in MODEL_SPECS:
-                if self._fill_mmm_model(ct.model[next_model], spec, mmm_plan):
+                        'core_transport: %s %s component closure mismatch '
+                        '(normalized discrepancy %.4g); preserving source data',
+                        family, quantity, check['max_normalized_difference'])
+            for spec in specs:
+                if self._fill_theory_coefficient_model(ct.model[next_model],
+                                                       family, spec, plan):
                     next_model += 1
-                    self.logger.info('core_transport: MMM07 model: %s', spec['name'])
+                    self.logger.info('core_transport: %s model: %s',
+                                     family, spec['name'])
+        # TGLF is registered but must await validated coefficient channels;
+        # TGLF_DR alone is NOT evidence of a transport model output.
         ct.model.resize(next_model)
 
         if self.im.check_var_name('IPTR_MOD'):

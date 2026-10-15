@@ -176,6 +176,31 @@ class TestEndToEndContract(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'radial grid'):
             e2e.validate_readback('core_profiles', cp, times)
 
+    def test_sawteeth_native_time_and_crash_readback(self):
+        from sawteeth_mapping import build_sawteeth_plan, IMAS_MISSING_FLOAT
+        from verify_sawteeth_mapping import FakeCDF
+        plan = build_sawteeth_plan(FakeCDF([.1,.2,.3,.4], [.05,.15,.15,.35],
+                                                time3=[.1,.15,.2,.25,.3,.35,.4],
+                                                xiq1=[-.1,.2,.3,-.2]))
+        self.assertEqual(plan.events, 2)
+        ids = mock.Mock()
+        ids.time = plan.time.copy()
+        ids.diagnostics.previous_crash_time = plan.previous_crash_time.copy()
+        ids.diagnostics.previous_period = plan.previous_period.copy()
+        ids.diagnostics.rho_tor_norm_q1 = plan.rho_tor_norm_q1.copy()
+        ids.crash_trigger = np.array([], dtype=int)
+        checks = e2e.validate_readback('sawteeth', ids, np.arange(7), sawteeth_source=plan)
+        self.assertEqual(checks['observed_new_crashes'], 2)
+        self.assertEqual(checks['native_TIME_samples'], 4)
+        self.assertEqual(ids.diagnostics.rho_tor_norm_q1[0], IMAS_MISSING_FLOAT)
+        ids.diagnostics.previous_crash_time[2] = .14
+        with self.assertRaisesRegex(AssertionError, 'previous_crash_time'):
+            e2e.validate_readback('sawteeth', ids, np.arange(7), sawteeth_source=plan)
+        ids.diagnostics.previous_crash_time = plan.previous_crash_time.copy()
+        ids.crash_trigger = np.array([1, 1])
+        with self.assertRaisesRegex(AssertionError, 'invented crash mechanism'):
+            e2e.validate_readback('sawteeth', ids, np.arange(7), sawteeth_source=plan)
+
     def test_core_transport_mmm_native_grid_readback(self):
         times = np.array([0.1, 0.3])
         x = np.array([[0.2, 0.5], [0.25, 0.55]])
