@@ -17,6 +17,15 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - name: Check out merge history for release diagnostics
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+      - name: Show commit subjects used for release detection
+        run: |
+          echo "Conventional Commit subjects on main (first-parent history):"
+          git log --first-parent -n 15 --pretty=format:'%h %s'
+          echo
       - name: Create or update release PR
         uses: googleapis/release-please-action@v4
         with:

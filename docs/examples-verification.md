@@ -68,21 +68,33 @@ verify-all` and appears in each run's JSON verification report.
 
 See [TIME/TIME3 mapping](time-grids.md).
 
-## Neoclassical and neutral source verification
+## Independent neoclassical transport and neutral-profile verification
 
-The per-run `verify-all` report includes `neoclassical_neutrals` with source
+The per-run `verify-all` report includes separate `neoclassical_transport` and
+`neutral_profiles` fields with source
 channel names, explicit wall/volume/recombination neutral populations and
 units/native TIME3 grid checks. The stand-alone target
-`make verify-neoclassical-neutrals` produces a focused JSON/Markdown report
+`make verify-neoclassical` and `make verify-neutrals` produce independent JSON reports
 for all CDFs. It also executes actual writer methods against IMAS-shaped
 objects, and does not imply a completed IMAS DD4.1.1 write/readback.
 
 
-### MMM07 reduced anomalous transport
+### Generic theory-model transport (MMM07, GLF23 and future TGLF)
 
-`make verify-mmm` inspects every available example. Of the ten current cases,
+`make verify-theory` inspects every available example. Of the ten current cases,
 DIII-D `147634T16` has nonzero MMM07 (Weiland, DRIBM/DRBM, ETG, MTM)
-outputs; other declared MMM source arrays are zero-filled placeholders.
+outputs; ITER 38530P94 has nonzero GLF23 heat/momentum diffusivities.
+Other declared MMM/GLF23 source arrays are zero-filled placeholders.
 Source component closure and model code XML are checked, but these source
 checks are not a substitute for an actual IMAS write/readback.
-See [MMM mapping](mmm-transport.md).
+See [generic theory transport mapping](theory-transport.md).
+
+
+## Sawteeth coverage
+
+`make verify-sawteeth` validates the native `TIME`-based `TLASTSAW` history
+and optional `XIQ1` q=1 radius on **all ten** supplied CDFs. C-Mod 89846
+contains 38 newly observed crash updates and 184 valid q=1 samples. ITER
+38530P94 has only an initial constant last-crash value; no new crash is
+inferred. The `sawteeth` IDS is skipped for the other eight cases without
+crash-history data. See [sawteeth guide](sawteeth.md).

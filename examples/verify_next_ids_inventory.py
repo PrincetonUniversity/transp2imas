@@ -13,6 +13,9 @@ import re
 from pathlib import Path
 
 from scipy.io import netcdf_file
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from sawteeth_mapping import build_sawteeth_plan
 
 
 def _decode(value):
@@ -114,7 +117,8 @@ def main():
         # Full FBM output needs a phase-space distribution plus its geometric
         # and energy/pitch descriptors.  BDENS2/BMVOL alone are reduced moments.
         distribution_complete = bool(fbm and bmvol and eba2pl and eba2pp)
-        saw_events_available = bool(crash_names) and nlsaw is not False
+        saw_plan = build_sawteeth_plan(nc)
+        saw_events_available = bool(saw_plan is not None and saw_plan.events > 0)
 
         rad_generic = [n for n in ("PRLS_TOK", "PRLX_SINGL") if n in names]
         passive_currents = _matches(names, r"PS_\d+")
@@ -162,6 +166,7 @@ def main():
         print(f"  Sawtooth-named variables: {saw_names or 'none'}")
         print(f"  q=1 context:              {saw_context or 'none'}")
         print(f"  Crash/mixing variables:   {crash_names or 'none'}")
+        print(f"  TLASTSAW new updates:     {saw_plan.events if saw_plan else 0}")
         print(f"  Exportable crash events:  {'YES' if saw_events_available else 'NO'}")
         for line in _describe(nc, saw_names + saw_context + crash_names):
             print(line)
@@ -200,7 +205,7 @@ def main():
         if not saw_events_available:
             print("RESULT sawteeth: no crash-event payload to export for this run.")
         else:
-            print("RESULT sawteeth: candidate event payload present; audit crash semantics before export.")
+            print("RESULT sawteeth: native TLASTSAW crash history is exportable; trigger mechanism and mixing/inversion radii remain unavailable.")
         if rad_generic:
             print("RESULT radiation detail: generic TOK/SINGL aliases present; resolve species from AIMP/XZIMP before mapping.")
         if not passive_currents:

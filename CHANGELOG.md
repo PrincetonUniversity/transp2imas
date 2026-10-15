@@ -6,6 +6,26 @@ messages.
 
 ## Unreleased
 
+- Refactor theory transport mapping into `theory_transport_mapping.py`:
+  MMM07, GLF23 and neoclassical sources share one model-family registry;
+  future TGLF requires validated source examples. Add source-verified GLF23
+  electron/ion heat and toroidal momentum diffusivities from ITER 38530P94,
+  preserving aggregate `DIFFIGLF` without inventing a species assignment.
+  Separate neutral profiles into `neutral_profiles_mapping.py` with their own
+  validation target, and split neoclassical and neutral verification workflows.
+- Explicitly configure Release Please for conventional `feat:` minor and
+  `fix:` patch bumps during 0.x releases, add release-config tests and explain
+  squash-merge subjects and limits of source-only release verification.
+
+
+- Implement source-validated `sawteeth` IDS with native `TIME` and typed
+  `diagnostics.previous_crash_time`, `previous_period`, and
+  `rho_tor_norm_q1`. Detect newly observed changes in C-Mod 89846
+  `TLASTSAW` without inventing the initial event, crash-trigger mechanism,
+  post-crash profiles or ad-hoc mixing-radius physics. Register `--ids sawteeth`,
+  add `make verify-sawteeth`, all-case regressions and real-IMAS readback checks.
+
+
 - Keep MMM07 `TIME3`, `X`, and `XB` coordinates in native `core_transport`
   fields instead of serializing them repeatedly in model XML. For MMM reduced
   DRIBM/ETG/MTM component outputs, store `X` in the otherwise-unused

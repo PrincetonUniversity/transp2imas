@@ -22,7 +22,7 @@ PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not 
 
 .DEFAULT_GOAL := help
 
-.PHONY: help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical-neutrals verify-mmm verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
+.PHONY: help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-sawteeth verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
 
 help:
 	@echo "TRANSP-to-IMAS developer commands"
@@ -37,10 +37,13 @@ help:
 	@echo "  make verify-examples  Alias for verify-all (10 current CDF examples)"
 	@echo "  make verify-deep  Run additional legacy numeric diagnostics for every CDF"
 	@echo "  make verify-waves Validate EC/IC waves mappings on ALL bundled CDF files"
-	@echo "  make verify-mmm Validate MMM07 Weiland/DRIBM/ETG/MTM on ALL bundled CDF files"
+	@echo "  make verify-theory Verify MMM07, GLF23, and TGLF status on ALL bundled CDFs"
+	@echo "  make verify-mmm Alias for verify-theory"
+	@echo "  make verify-sawteeth Validate crash-history and q=1 sawteeth source mapping on ALL CDFs"
 	@echo "  make verify-core-profiles Check temperature peaking/time grids in ALL CDF files"
 	@echo "  make verify-equilibrium   Check equilibrium TIME/TIME3, Fourier LCFS boundaries in ALL CDFs"
-	@echo "  make verify-neoclassical-neutrals  Check NC transport and neutral profiles in ALL CDFs"
+	@echo "  make verify-neoclassical  Check NC transport separately on ALL CDFs"
+	@echo "  make verify-neutrals  Check neutral profiles separately on ALL CDFs"
 	@echo "  make verify-inputs Validate TR.DAT/model namelist provenance and XML"
 	@echo "  make export-inputs Preview TR.DAT and model XML in build/input-xml"
 	@echo "  make verify-pf-passive Test PS_n/geometry mapping without an IMAS runtime"
@@ -132,11 +135,17 @@ verify-core-profiles:
 verify-equilibrium:
 	$(MAKE) -C examples verify-equilibrium PYTHON="$(PYTHON)"
 
-verify-neoclassical-neutrals:
-	$(MAKE) -C examples verify-neoclassical-neutrals PYTHON="$(PYTHON)"
+verify-neoclassical:
+	$(MAKE) -C examples verify-neoclassical PYTHON="$(PYTHON)"
 
-verify-mmm:
-	$(MAKE) -C examples verify-mmm PYTHON="$(PYTHON)"
+verify-neutrals:
+	$(MAKE) -C examples verify-neutrals PYTHON="$(PYTHON)"
+
+verify-theory verify-mmm:
+	$(MAKE) -C examples verify-theory PYTHON="$(PYTHON)"
+
+verify-sawteeth:
+	$(MAKE) -C examples verify-sawteeth PYTHON="$(PYTHON)"
 
 verify-dd:
 	$(MAKE) -C examples verify-dd PYTHON="$(PYTHON)"

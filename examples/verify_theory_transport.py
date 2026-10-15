@@ -1,5 +1,5 @@
 #!/usr/bin/python
-"""Verify MMM07 reduced transport outputs on EVERY bundled TRANSP example.
+"""Verify theory transport outputs (MMM07/GLF23/TGLF) on EVERY CDF.
 
 MMM (Weiland, DRIBM/DRBM, ETG, MTM) produces predicted anomalous
 transport coefficients, NOT measured experimental diagnostics.  Check typed
@@ -22,8 +22,10 @@ from scipy.io import netcdf_file
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from mmm_transport_mapping import (
-    MODEL_SPECS, build_mmm_plan, check_mmm_closure, mmm_model_xml, mmm_summary,
+from theory_transport_mapping import (
+    MODEL_SPECS, GLF23_MODEL_SPEC, THEORY_FAMILIES, build_theory_plans,
+    build_mmm_plan, build_glf23_plan, check_mmm_closure, mmm_model_xml,
+    theory_model_xml, mmm_summary,
 )
 
 
@@ -144,8 +146,8 @@ class TestMMMContracts(unittest.TestCase):
         self.assertEqual(total.find('source_component_closure/check').get('status'), 'PASS')
 
     def test_no_implicit_mixing_with_standalone_models(self):
-        source = (ROOT / 'mmm_transport_mapping.py').read_text()
-        for name in ('XKECDBM', 'XKEGLF23', 'XKEPALEO', 'XKINC'):
+        source = (ROOT / 'theory_transport_mapping.py').read_text()
+        for name in ('XKECDBM', 'XKEPALEO', 'XKINC'):
             self.assertNotIn("'" + name + "': (", source)
 
 
@@ -158,7 +160,7 @@ class TestMMMWriter(unittest.TestCase):
         }):
             sys.modules['netCDF4'].Dataset = object
             from imas_core_transport import imas_core_transport
-            from verify_neoclassical_neutrals import FakeConverter
+            from transport_test_support import FakeConverter
         cls.Writer = imas_core_transport
         cls.FakeConverter = FakeConverter
 
@@ -238,23 +240,98 @@ class TestMMMWriter(unittest.TestCase):
                 self.assertTrue(all(not name.startswith('mmm07') for name in models))
 
 
+
+class TestGenericTheory(unittest.TestCase):
+    def test_registry_and_tglf_not_fabricated(self):
+        self.assertEqual(THEORY_FAMILIES, ('neoclassical','mmm07','glf23','tglf'))
+        plans=build_theory_plans(FakeCDF())
+        self.assertTrue(plans['mmm07']['active'])
+        self.assertFalse(plans['glf23']['active'])
+        self.assertFalse(plans['tglf']['active'])
+        # A standalone scalar instability-location channel does not establish
+        # TGLF diffusivity/model execution.
+        cdf=FakeCDF()
+        cdf.variables['TGLF_DR']=FakeVar([0.2, 0.3], ('TIME',), '-')
+        self.assertFalse(build_theory_plans(cdf)['tglf']['active'])
+
+    def test_glf23_real_iter_and_writer_si(self):
+        path=ROOT/'examples/data/iter/38530P94.CDF'
+        if not path.exists():
+            self.skipTest('ITER GLF23 fixture missing')
+        with netcdf_file(path,mmap=False) as nc:
+            plans=build_theory_plans(nc)
+            self.assertTrue(plans['glf23']['active'])
+            self.assertFalse(plans['mmm07']['active'])
+            self.assertEqual(set(GLF23_MODEL_SPEC['coefficients']),
+                             {'XKEGLF23','XKIGLF23','ETPHIGLF'})
+            models=TestMMMWriter()._write(nc)
+            self.assertIn('glf23',models)
+            self.assertNotIn('mmm07_total',models)
+            profile=models['glf23'].profiles_1d[0]
+            np.testing.assert_allclose(profile.electrons.energy.d.values,
+                np.asarray(nc.variables['XKEGLF23'][:])[0]*1e-4)
+            np.testing.assert_allclose(profile.total_ion_energy.d.values,
+                np.asarray(nc.variables['XKIGLF23'][:])[0]*1e-4)
+            np.testing.assert_allclose(profile.momentum_phi.d.values,
+                np.asarray(nc.variables['ETPHIGLF'][:])[0]*1e-4)
+            xml=ET.fromstring(models['glf23'].code.parameters)
+            self.assertEqual(xml.get('family'),'glf23')
+            self.assertEqual(xml.find('supplementary_quantity').get('source'),'DIFFIGLF')
+            self.assertEqual(xml.find('supplementary_quantity').get('radial_coordinate'),None)
+
+    def test_mmm_and_glf23_can_coexist_without_double_counting(self):
+        case=ROOT/'examples/data/d3d/147634T16/147634T16.CDF'
+        if not case.is_file():
+            self.skipTest('T16 fixture missing')
+        with netcdf_file(case,mmap=False) as nc:
+            # Synthetic composite, deliberately preserve all real MMM T16 data.
+            variables=dict(nc.variables)
+            shape=np.asarray(nc.variables['XB'][:]).shape
+            variables['XKEGLF23']=FakeVar(np.ones(shape)*1234,('TIME3','XB'),'CM**2/SEC')
+            variables['XKIGLF23']=FakeVar(np.ones(shape)*250,('TIME3','XB'),'CM**2/SEC')
+            composite=types.SimpleNamespace(variables=variables)
+            models=TestMMMWriter()._write(composite)
+            self.assertIn('glf23',models)
+            self.assertTrue(all(spec['name'] in models for spec in MODEL_SPECS))
+            self.assertEqual(sum(name.startswith('mmm07_') for name in models),5)
+            self.assertAlmostEqual(models['glf23'].profiles_1d[0].electrons.energy.d.values[0], .1234)
+            self.assertEqual(models['mmm07_total'].code.name,'TRANSP/MMM07')
+            self.assertEqual(models['glf23'].code.name,'TRANSP/GLF23')
+
+    def test_glf23_invalid_grid_and_units_fail(self):
+        cdf=FakeCDF()
+        cdf.variables['XKEGLF23']=FakeVar(np.ones((2,3)),('TIME3','XB'),'EV')
+        with self.assertRaisesRegex(ValueError,'unexpected units'):
+            build_glf23_plan(cdf)
+        cdf.variables['XKEGLF23'].units='CM**2/SEC'
+        cdf.variables['XKEGLF23'].dimensions=('TIME3','X')
+        with self.assertRaisesRegex(ValueError,'expected'):
+            build_glf23_plan(cdf)
+
+
 def verify_case(nc, case):
-    plan = build_mmm_plan(nc)
-    report = mmm_summary(plan)
+    plans = build_theory_plans(nc)
+    mmm = plans['mmm07']
+    report = mmm_summary(mmm)
     report['case'] = str(case)
-    if plan['active']:
-        for name, result in plan['closure'].items():
+    if mmm['active']:
+        for name, result in mmm['closure'].items():
             if result['status'] == 'FAIL':
-                raise AssertionError(f'{case}: MMM {name} failed source component closure: '
+                raise AssertionError(f'{case}: MMM {name} failed closure: '
                                      f'{result["max_normalized_difference"]:.4g}')
         if not report['models']:
-            raise AssertionError(f'{case}: detected MMM outputs but no supported model')
+            raise AssertionError(f'{case}: active MMM, but no supported model')
+    glf = plans['glf23']
+    report['glf23'] = {'active': glf['active'],
+                       'source_channels': list(glf['fields']) if glf['active'] else []}
+    report['tglf'] = plans['tglf']['status']
     return report
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--quick', action='store_true', help='run fast synthetic/writer tests only')
+    parser.add_argument('--family', choices=('all','mmm07','glf23'), default='all')
     parser.add_argument('--data-root', type=Path, default=ROOT / 'examples/data')
     parser.add_argument('--report-dir', type=Path, default=ROOT / 'build/mmm-transport')
     ns = parser.parse_args(argv)
@@ -262,6 +339,7 @@ def main(argv=None):
         unittest.defaultTestLoader.loadTestsFromTestCase(TestMMMContracts),
         unittest.defaultTestLoader.loadTestsFromTestCase(TestMMMWriter),
     ])
+    tests.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(TestGenericTheory))
     result = unittest.TextTestRunner(verbosity=1).run(tests)
     if not result.wasSuccessful():
         return 1
@@ -278,9 +356,9 @@ def main(argv=None):
                 item = verify_case(nc, path.relative_to(ns.data_root))
             results.append(item)
             status = 'ACTIVE' if item['active'] else 'INACTIVE'
-            print(f'{path.relative_to(ns.data_root)}: PASS ({status}, '
-                  f'MMM models={len(item["models"])}, '
-                  f'source variables={len(item["source_channels"])})')
+            print(f'{path.relative_to(ns.data_root)}: PASS (MMM={status}, '
+                  f'GLF23={"ACTIVE" if item["glf23"]["active"] else "inactive"}, '
+                  f'MMM components={len(item["models"])})')
         except Exception as exc:
             failed.append(f'{path}: {type(exc).__name__}: {exc}')
             print('FAIL', failed[-1])
@@ -288,10 +366,10 @@ def main(argv=None):
     summary = {'cases_checked': len(paths), 'passed': len(results),
                'failed': len(failed), 'cases': results, 'errors': failed}
     (ns.report_dir / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
-    lines = ['# MMM07 reduced anomalous transport source verification', '',
+    lines = ['# Unified theory anomalous transport source verification', '',
              f'Checked {len(paths)} CDFs; passed {len(results)}, failed {len(failed)}.', '',
-             '| CDF | MMM result | Models | Electron closure | Ion closure |',
-             '|---|---|---:|---|---|']
+             '| CDF | MMM result | Models | GLF23 | Electron closure | Ion closure |',
+             '|---|---|---:|---|---|---|']
     for item in results:
         closure = item['closure']
         def show(name):
@@ -299,7 +377,7 @@ def main(argv=None):
             return (f'{c["status"]} ({c["max_normalized_difference"]:.2g})'
                     if 'max_normalized_difference' in c else 'N/A')
         lines.append(f'| {item["case"]} | {"active" if item["active"] else "inactive"} | '
-                     f'{len(item["models"])} | {show("electron_heat")} | {show("ion_heat")} |')
+                     f'{len(item["models"])} | {"active" if item["glf23"]["active"] else "inactive"} | {show("electron_heat")} | {show("ion_heat")} |')
     if failed:
         lines.extend(['', '## Errors', ''] + ['- ' + x for x in failed])
     (ns.report_dir / 'summary.md').write_text('\n'.join(lines) + '\n')

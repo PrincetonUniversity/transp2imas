@@ -29,6 +29,9 @@ with IMAS-Python. It records per-IDS write/skip/failure and checks native
 `TIME3` coordinates against stored `equilibrium`/`core_profiles`. See
 [real IMAS readback testing](docs/end-to-end.md). This is deliberately separate
 from GitHub's source-only CI.
+`make verify-sawteeth` checks native `TIME` crash history and q=1 radii
+on **all 10 CDFs**; only C-Mod 89846 has observed new crashes. See
+[sawteeth mapping](docs/sawteeth.md).
 `make verify-pf-active` validates the PF coil/supply mapping and the synthetic
 DD3/DD4 machine geometry, without requiring IMAS. `make verify-isolver`
 validates the two real ITER/NSTX ISolver current datasets (local large fixtures).
@@ -67,6 +70,7 @@ Start with [docs/README.md](docs/README.md). The main references are:
 - [TIME/TIME3 coordinate mapping](docs/time-grids.md);
 - [plotting converted IMAS IDSs](docs/plotting.md);
 - [real IMAS end-to-end conversion/readback](docs/end-to-end.md);
+- [sawteeth crash history and q=1 mapping](docs/sawteeth.md);
 - [input XML and code provenance](docs/input-provenance.md);
 - [architecture](docs/architecture.md);
 - [development guide](docs/development.md);
@@ -577,7 +581,7 @@ See [docs/input-provenance.md](docs/input-provenance.md). Test using
 `make verify-inputs` (source-only) and `make verify-dd` (IMAS-Python).
 
 
-### Reduced anomalous transport from MMM07
+### Unified anomalous theory transport: MMM07 and GLF23
 
 `core_transport.model[]` now preserves the combined MMM07 transport coefficients
 and separate Weiland (source `W19`), DRIBM/DRBM, ETG and reduced-MTM
@@ -588,21 +592,41 @@ remain in model-specific XML, but their `TIME3` and `X` coordinates are now
 stored only in the native `core_transport.time` and
 `model[].profiles_1d[].grid_flux.rho_tor_norm` fields. The transport
 coefficient grid remains `model[].profiles_1d[].grid_d.rho_tor_norm` (`XB`). The combined result and its
-components must not be added together. Only nonzero MMM source families are
-instantiated; other example CDFs contain zero-filled placeholders.
+components must not be added together. Only physically nonzero model families are instantiated; most examples
+contain inactive, zero-filled placeholders. ITER `38530P94` has nonzero
+GLF23 `XKEGLF23`, `XKIGLF23` and `ETPHIGLF` on `TIME3/XB` and is now
+converted into its own `core_transport.model[glf23]`. The aggregate
+`DIFFIGLF` remains supplementary rather than assigned to an invented species.
+TGLF awaits a validated output example.
 
-Verify with `make verify-mmm`, followed by `make verify-all` and (where IMAS
-is installed) `make verify-dd`. See [MMM mapping details](docs/mmm-transport.md).
+Verify with `make verify-theory`, followed by `make verify-all` and (where IMAS
+is installed) `make verify-dd`. See [unified theory mapping details](docs/theory-transport.md).
 
-### Neoclassical transport and neutral populations
+### Separate neoclassical theory transport and neutral-state profiles
 
-The `core_transport` writer exports separate neoclassical particle/heat flux
-models reconstructed from CDF `GFLNC_*`, `QFLNC_*` and `QFLNCC_*` **flux
-divergences** using the finite-volume `DVOL` and `SURF` grids. The
-`core_profiles` writer exports distinct wall, volume and recombination neutral
-density/temperature populations, with corrected temperature units (already
-eV). Neutral toroidal rotation is preserved as supplementary XML in
-`core_profiles.code.parameters` for DD4.1.1, which has no typed neutral
-rotation node. The source CDF and solver methods are checked across every
-bundled example with `make verify-neoclassical-neutrals` and
-`make verify-all`. See [detailed semantics and limitations](docs/neoclassical-neutrals.md).
+`core_transport.model[]` preserves neoclassical particle and heat fluxes from
+`GFLNC_*`, `QFLNC_*`, and `QFLNCC_*` divergences with finite-volume
+reconstruction. The same generic theory interface also exports nonzero
+GLF23 heat and momentum transport from ITER 38530P94, and the MMM07 models
+from DIII-D T16. TGLF requires a validated example. Neoclassical presence
+alone does not prove that PT_SOLVER enabled it.
+
+Independently, `core_profiles.neutral[]` contains wall, volume, and
+recombination neutral densities and eV temperatures; DD4 toroidal neutral
+rotation remains supplemental XML. These are not theory transport models.
+
+Verify separately using `make verify-theory`, `make verify-neoclassical`,
+`make verify-neutrals` and `make verify-all`. See the
+[theory transport](docs/theory-transport.md),
+[neoclassical](docs/neoclassical-transport.md), and
+[neutral profiles](docs/neutral-profiles.md) guides.
+
+### Sawtooth history
+
+The `sawteeth` writer exports `TLASTSAW(TIME)` into the native IMAS
+`diagnostics.previous_crash_time` history. C-Mod 89846 has 38 observed
+updates; valid `XIQ1(TIME)` samples are mapped to the native `q=1` radius.
+Trigger mechanisms, mixing/inversion radii, and post-crash profiles are **not**
+inferred. The first recorded `TLASTSAW` value is not counted as a newly
+observed crash. Run `make verify-sawteeth` or convert C-Mod with
+`--ids sawteeth`. See [details](docs/sawteeth.md).

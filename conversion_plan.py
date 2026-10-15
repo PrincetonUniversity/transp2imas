@@ -32,7 +32,7 @@ WRITER_ORDER = (
     'workflow', 'wall', 'tf', 'lh_antennas', 'ic_antennas', 'ec_launchers',
     'nbi', 'distribution_sources', 'pf_active', 'core_profiles',
     'pf_passive', 'radiation', 'equilibrium', 'summary', 'core_sources',
-    'waves', 'core_transport', 'edge_sources', 'dataset_fair',
+    'waves', 'core_transport', 'sawteeth', 'edge_sources', 'dataset_fair',
 )
 
 

@@ -128,13 +128,24 @@ record important deferred quantities and the reason for deferral.
 `core_transport` MMM07 model outputs are kept as five separate total/component
 entries (combined, Weiland, DRIBM/DRBM, ETG, MTM). MMM coefficients are on
 `TIME3/XB`, not flux divergences; reduced-model growth/frequency results are
-preserved separately on `TIME3/X`. See [MMM mapping](mmm-transport.md) and
-run `make verify-mmm` on every CDF before merging.
+preserved separately on `TIME3/X`. See [MMM mapping](theory-transport.md) and
+run `make verify-theory` on every CDF before merging.
 
 `core_transport` neoclassical model sources are reconstructed from native
 TRANSP flux divergences, never directly copied as transport flux.
 `core_profiles` neutral state is mapped per wall/volume/recombination
 population with verified density/temperature units and separate code XML for
-rotation on DD4. See [neoclassical-neutrals.md](neoclassical-neutrals.md).
-Regression: `make verify-neoclassical-neutrals`, then `make verify-all`.
+rotation on DD4. See [neoclassical theory transport](neoclassical-transport.md) and
+[neutral profile mapping](neutral-profiles.md).
+Regression: `make verify-neoclassical` and `make verify-neutrals`, then `make verify-all`.
 
+
+
+### Sawtooth history mapping
+
+`sawteeth` now supports source-observed `TLASTSAW(TIME)` crash updates and
+valid `XIQ1(TIME)` q=1 radius. Remaining sawtooth coverage requires source
+evidence for the crash trigger mechanism, inversion/mixing radii, and
+crash-aligned pre/post profiles. Do not assign the *ad hoc* `XSAWBOUND`
+boundary to typed mixing-radius fields without validating its semantics.
+See [sawteeth mapping](sawteeth.md).

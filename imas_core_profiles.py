@@ -4,7 +4,7 @@
 from typing import List
 import numpy as np
 from nc2imas import *
-from neoclassical_neutral_mapping import (
+from neutral_profiles_mapping import (
     discover_neutral_channels, validate_profile, attach_rotation_xml,
 )
 

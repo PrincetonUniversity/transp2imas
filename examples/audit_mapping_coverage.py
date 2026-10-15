@@ -49,9 +49,11 @@ from scipy.io import netcdf_file
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
-from neoclassical_neutral_mapping import (
-    discover_neoclassical_channels, discover_neutral_channels,
+from theory_transport_mapping import (
+    discover_neoclassical_channels, TYPED_FIELDS, AUXILIARY_SPECS,
+    GLF23_MODEL_SPEC, GLF23_AUXILIARY_SPECS,
 )
+from neutral_profiles_mapping import discover_neutral_channels
 
 
 # CDF quantities that are intentionally used primarily to construct or
@@ -235,6 +237,11 @@ def _dynamic_source_references(variable_names: list[str]) -> dict[str, set[str]]
             source = population[field]
             if source:
                 references[source].add("imas_core_profiles.py")
+    theory_names = (set(TYPED_FIELDS) | set(AUXILIARY_SPECS)
+                    | set(GLF23_MODEL_SPEC['coefficients'])
+                    | set(GLF23_AUXILIARY_SPECS))
+    for name in theory_names & set(variable_names):
+        references[name].add('imas_core_transport.py')
     return references
 
 
@@ -295,7 +302,7 @@ def _build_rows(cdf: Path, repo_root: Path) -> list[CoverageRow]:
         # AST matcher classify every variable as consumed. The actual
         # deliberately supported families are enumerated by dynamic_map.
         converter_python = [path for path in root_python
-                            if path.name != 'neoclassical_neutral_mapping.py']
+                            if path.name not in ('theory_transport_mapping.py', 'neutral_profiles_mapping.py')]
         validation_python = sorted(
             path
             for path in (repo_root / "examples").glob("*.py")

@@ -27,6 +27,7 @@ from imas_workflow import imas_workflow
 from imas_dataset_fair import imas_dataset_fair
 from imas_distribution_sources import imas_distribution_sources
 from imas_core_transport import imas_core_transport
+from imas_sawteeth import imas_sawteeth
 
 TRANSP2IMAS_DD4_PATCHLEVEL = TRANSP2IMAS_VERSION
 
@@ -52,6 +53,7 @@ def make_writers(nci, moments, nzones, ec_nml_launch, pf_passive_geometry,
         'core_sources': lambda: imas_core_sources(nci),
         'waves': lambda: imas_waves(nci),
         'core_transport': lambda: imas_core_transport(nci),
+        'sawteeth': lambda: imas_sawteeth(nci),
         'edge_sources': lambda: imas_edge_sources(nci),
         'dataset_fair': lambda: imas_dataset_fair(nci),
     }
