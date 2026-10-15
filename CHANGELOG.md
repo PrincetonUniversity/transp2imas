@@ -71,6 +71,13 @@ messages.
   This prevents all-example false failures from `json.dumps` and restores real
   IMAS readback to the end-to-end verification sequence.
 
+## [0.10.0](https://github.com/PrincetonUniversity/transp2imas/compare/v0.9.2...v0.10.0) (2026-10-15)
+
+
+### Features
+
+* IDS for Sawteeth  ([#108](https://github.com/PrincetonUniversity/transp2imas/issues/108)) ([7dc4c73](https://github.com/PrincetonUniversity/transp2imas/commit/7dc4c73d3570ccc54821cc978503c26a082a2784))
+
 ## 0.9.0 - 2026-09-28
 
 Initial public pre-1.0 baseline of the IMAS-Python converter.
