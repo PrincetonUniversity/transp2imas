@@ -14,6 +14,7 @@ policy, and release process in more detail.
 - [Neoclassical theory transport](neoclassical-transport.md) -- GFLNC/QFLNC divergences and SI flux reconstruction.
 - [Neutral profiles](neutral-profiles.md) -- independent wall/volume/recombination density, temperature and rotation.
 - [Sawtooth crash history](sawteeth.md) -- C-Mod `TLASTSAW` events, typed q=1 radius, native `TIME` and model/event limitations.
+- [PT_SOLVER regional model selection and boundaries](pt-solver-regions.md) -- axial/confinement/edge regions, per-equation X*BOUND settings, TR.DAT update times, and the single-solution IMAS representation.
 - [Unified theory transport](theory-transport.md) -- MMM07 and GLF23 outputs, TGLF-ready registry, source coefficient closures, and model-specific output XML.
 
 - [Architecture](architecture.md) -- module layout, control flow, shared helper

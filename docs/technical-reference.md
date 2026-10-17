@@ -1380,3 +1380,15 @@ q=1 markers become IMAS missing-value sentinels, not zero radii.
 `XSAWBOUND` is labeled an *ad hoc* boundary and is NOT automatically a
 physical mixing or inversion radius. Crash mechanism codes and post-crash
 profiles are left unset. Details: [sawteeth mapping](sawteeth.md).
+
+
+### PT_SOLVER multi-region input provenance
+
+The native `core_transport.time`/`profiles_1d` grids contain the source
+`TIME3`/`X`/`XB` coordinates. Regional control scalars from `TR.DAT`
+(`XIMIN_CONF`, `XIMAX_CONF`, `XIBOUND`, `XNBOUND`, `XPHIBOUND`, `LPREDICT_*`)
+and regional selections in referenced `PT_TEMPLATE` files are stored in
+`core_transport.code.parameters/pt_solver_regions`. These are *input settings*
+for one assembled PT_SOLVER solution, not additional occurrences.
+Model records reference explicitly configured regions without duplicating
+CDF coefficient arrays. See [pt-solver-regions.md](pt-solver-regions.md).

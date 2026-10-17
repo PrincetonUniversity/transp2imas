@@ -3,6 +3,10 @@
 
 import numpy as np
 from nc2imas import *
+from pt_solver_regions import (
+    build_pt_region_plan, append_pt_regions_xml, annotate_theory_model_xml,
+    append_pt_regions_reference,
+)
 from theory_transport_mapping import (
     COEFFICIENT_MODEL_SPECS, THEORY_AUXILIARY_SPECS, build_theory_plans,
     theory_model_xml, validate_profile, divergence_to_surface_flux,
@@ -115,6 +119,10 @@ class imas_core_transport:
             model.code.name='TRANSP'
             if hasattr(model.code,'description'):
                 model.code.description=description
+            if hasattr(model.code, 'parameters'):
+                # A valid XML root also makes regional configuration references
+                # safe when no earlier model-specific parameters were set.
+                model.code.parameters = '<transp2imas_model_output/>'
         model.profiles_1d.resize(self.nt)
         for it in range(self.nt):
             p=model.profiles_1d[it]
@@ -221,6 +229,11 @@ class imas_core_transport:
             'integration divided by SURF. No effective D/v coefficients are inferred from these '
             'modeled divergences.'+iptr_note
         )
+        # This is the single assembled predictive-flux model, not three
+        # independent radial-region model outputs or IDS occurrences.
+        if self._pt_region_plan is not None:
+            model.code.parameters = append_pt_regions_reference(
+                model.code.parameters, self._pt_region_plan)
 
         for it in range(self.nt):
             p=model.profiles_1d[it]
@@ -286,6 +299,10 @@ class imas_core_transport:
             'TRANSP NC-classical heat flux (QFLNCC)' if classical else
             'TRANSP neoclassical particle and heat transport', notes)
 
+        if not classical and self._pt_region_plan is not None:
+            model.code.parameters = annotate_theory_model_xml(
+                model.code.parameters, self._pt_region_plan, 'neoclassical')
+
         particle_flux = {name: self._neoclassical_flux(name, 'particles')
                          for name in particle_names.values()}
         heat_kind = 'heat_nc_classical' if classical else 'heat'
@@ -349,7 +366,9 @@ class imas_core_transport:
                             flux_grid='X' if use_native_x else 'XB')
         model.code.name = 'TRANSP/' + family.upper()
         model.code.description = spec['label']
-        model.code.parameters = theory_model_xml(plan, spec, family)
+        model.code.parameters = annotate_theory_model_xml(
+            theory_model_xml(plan, spec, family), self._pt_region_plan,
+            spec['name'])
         converted = {}
         for source, (destination, kind) in spec['coefficients'].items():
             if source not in fields:
@@ -372,6 +391,14 @@ class imas_core_transport:
         ct=self.im.fill_properties(ct)
         self.im.fill_code_properties(ct)
         self.im.fill_external_model_inputs(ct, 'core_transport')
+        # PT_SOLVER region settings and TR.DAT boundaries are input metadata.
+        # Store them once in the assembled core_transport code record, while
+        # leaving the native TIME3/X/XB output grids in the typed model nodes.
+        self._pt_region_plan = (build_pt_region_plan(self.im.input_inventory())
+                                if hasattr(self.im, 'input_inventory') else None)
+        if self._pt_region_plan is not None:
+            ct.code.parameters = append_pt_regions_xml(ct.code.parameters,
+                                                       self._pt_region_plan)
         ct.ids_properties.homogeneous_time=1
         ct.time=np.asarray(self.time,dtype=np.float64)
         self.im.fill_vac_tor_field(ct)

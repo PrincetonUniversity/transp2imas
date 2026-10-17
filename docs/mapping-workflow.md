@@ -149,3 +149,9 @@ evidence for the crash trigger mechanism, inversion/mixing radii, and
 crash-aligned pre/post profiles. Do not assign the *ad hoc* `XSAWBOUND`
 boundary to typed mixing-radius fields without validating its semantics.
 See [sawteeth mapping](sawteeth.md).
+
+
+PT_SOLVER multi-region option mapping is documented in
+[pt-solver-regions.md](pt-solver-regions.md). A single assembled solution is
+written to one core_transport occurrence; regional selections and radial
+input limits are preserved without fabricating per-region coefficient data.

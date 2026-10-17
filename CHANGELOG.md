@@ -6,6 +6,16 @@ messages.
 
 ## Unreleased
 
+- Preserve PT_SOLVER axial, confinement and edge model selection as
+  input-provenance metadata within a single core_transport occurrence.
+  Include TR.DAT XIMIN_CONF/XIMAX_CONF, equation-specific XIBOUND/XNBOUND/
+  XPHIBOUND, LPREDICT flags and ~update_time history; preserve referenced
+  PT_TEMPLATE %active/%xanom/ExB options and model update blocks. Treat
+  missing T16 TR.DAT and adjacent templates as unverified, not authoritative.
+  Link configured model records without copying radial grids or fabricating
+  region-specific profiles. Add verify-pt-solver on all bundled inputs and
+  docs/pt-solver-regions.md.
+
 - Refactor theory transport mapping into `theory_transport_mapping.py`:
   MMM07, GLF23 and neoclassical sources share one model-family registry;
   future TGLF requires validated source examples. Add source-verified GLF23
@@ -70,13 +80,6 @@ messages.
   scalars/lists safely, and test successful and partially failed write journals.
   This prevents all-example false failures from `json.dumps` and restores real
   IMAS readback to the end-to-end verification sequence.
-
-## [0.10.0](https://github.com/PrincetonUniversity/transp2imas/compare/v0.9.2...v0.10.0) (2026-10-15)
-
-
-### Features
-
-* IDS for Sawteeth  ([#108](https://github.com/PrincetonUniversity/transp2imas/issues/108)) ([7dc4c73](https://github.com/PrincetonUniversity/transp2imas/commit/7dc4c73d3570ccc54821cc978503c26a082a2784))
 
 ## 0.9.0 - 2026-09-28
 

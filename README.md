@@ -32,6 +32,9 @@ from GitHub's source-only CI.
 `make verify-sawteeth` checks native `TIME` crash history and q=1 radii
 on **all 10 CDFs**; only C-Mod 89846 has observed new crashes. See
 [sawteeth mapping](docs/sawteeth.md).
+`make verify-pt-solver` checks PT_SOLVER axial/confinement/edge model selections,
+TR.DAT XIMIN_CONF/XIMAX_CONF and equation-specific X*BOUND histories for
+every bundled run; see [PT_SOLVER region mapping](docs/pt-solver-regions.md).
 `make verify-pf-active` validates the PF coil/supply mapping and the synthetic
 DD3/DD4 machine geometry, without requiring IMAS. `make verify-isolver`
 validates the two real ITER/NSTX ISolver current datasets (local large fixtures).
@@ -71,6 +74,7 @@ Start with [docs/README.md](docs/README.md). The main references are:
 - [plotting converted IMAS IDSs](docs/plotting.md);
 - [real IMAS end-to-end conversion/readback](docs/end-to-end.md);
 - [sawteeth crash history and q=1 mapping](docs/sawteeth.md);
+- [PT_SOLVER radial regions, model usage and update times](docs/pt-solver-regions.md);
 - [input XML and code provenance](docs/input-provenance.md);
 - [architecture](docs/architecture.md);
 - [development guide](docs/development.md);

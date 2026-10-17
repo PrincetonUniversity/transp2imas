@@ -1,5 +1,10 @@
 # Unified theory transport: MMM07, GLF23, neoclassical, and TGLF
 
+PT_SOLVER axial/confinement/edge model-selection and radial-boundary inputs
+are represented as **configuration for one assembled core_transport solution**,
+not as separate IDS occurrences or duplicate regional coefficient arrays.
+See [PT_SOLVER multi-region mapping](pt-solver-regions.md).
+
 The common `theory_transport_mapping.py` source contract supplies a registry
 for four theory families. `imas_core_transport.py` creates separate model
 records and never double-counts the total MMM07 and its submodels.
