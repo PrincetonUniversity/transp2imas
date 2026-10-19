@@ -4,7 +4,12 @@ Notable changes to transp2imas are recorded here. Future entries and GitHub
 releases are managed automatically by Release Please from Conventional Commit
 messages.
 
-## Unreleased
+- Trace the equilibrium LCFS from `PSIRZ` and the enclosed boundary flux by
+  default; reserve Fourier moment reconstruction for explicit `--moments yes`
+  requests. Populate equilibrium geometric-axis coordinates from boundary and
+  flux-surface zeroth moments, with an outline-centroid fallback. Use matching
+  `TIME3` zone volumes for core-profile volume averages and preserve each
+  impurity charge state's own charge label.
 
 - Preserve PT_SOLVER axial, confinement and edge model selection as
   input-provenance metadata within a single core_transport occurrence.
