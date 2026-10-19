@@ -171,13 +171,26 @@ pt_confinement%glf23%active=.false.
                                      for x in first.findall('region[@quantity="temperature"]')), 1)
                 self.assertEqual(len(root.findall('.//configuration/model[@name="CDBM"]')), 1)
             else:
-                self.assertFalse(plan['trdat_present'])
-                self.assertFalse(plan['trusted_model_assignment'])
-                self.assertEqual(plan['model_source'], 'adjacent_unreferenced_candidate')
-                self.assertEqual(root.find('boundary_and_equation_timeline').get('status'),
-                                 'unavailable_without_TR.DAT')
-                self.assertNotIn('pt_solver_region_application',
-                                 annotate_theory_model_xml('<mmm/>', plan, 'mmm07_total'))
+                # The bundled T16 fixture may include its actual TR.DAT.
+                # Presence must be detected, not hardcoded from an older fixture set.
+                self.assertEqual(plan['trdat_present'], tr.is_file())
+                if plan['trdat_present']:
+                    self.assertTrue(plan['boundary_states'])
+                    self.assertNotEqual(root.find('boundary_and_equation_timeline').get('status'),
+                                        'unavailable_without_TR.DAT')
+                    if plan['trusted_model_assignment']:
+                        self.assertEqual(plan['model_source'], 'explicit_PT_TEMPLATE')
+                    else:
+                        self.assertNotEqual(plan['model_source'], 'explicit_PT_TEMPLATE')
+                        self.assertNotIn('pt_solver_region_application',
+                                         annotate_theory_model_xml('<mmm/>', plan, 'mmm07_total'))
+                else:
+                    self.assertFalse(plan['trusted_model_assignment'])
+                    self.assertEqual(plan['model_source'], 'adjacent_unreferenced_candidate')
+                    self.assertEqual(root.find('boundary_and_equation_timeline').get('status'),
+                                     'unavailable_without_TR.DAT')
+                    self.assertNotIn('pt_solver_region_application',
+                                     annotate_theory_model_xml('<mmm/>', plan, 'mmm07_total'))
 
     def test_integration_with_actual_transport_writer(self):
         # A small mock CDF avoids opening all large physical CDFs in quick CI.

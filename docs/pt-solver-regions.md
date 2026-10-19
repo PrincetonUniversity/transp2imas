@@ -1,5 +1,8 @@
 # PT_SOLVER multi-region conversion and provenance
 
+**October 2026 update:** The occurrence-0-only policy described in the older sections below has been superseded by the experimental regional occurrences described at the end of this document.
+
+
 ## Why axial / confinement / edge are **not separate IMAS occurrences**
 
 A TRANSP PT_SOLVER execution advances **one coupled, assembled plasma-profile
@@ -200,3 +203,27 @@ arrays if TRANSP saved only a globally assembled effective coefficient.
 A future CDF with independently saved region/model contributions will be
 necessary before separate regional output model records can be implemented
 without inventing physical information.
+
+## Experimental regional occurrence export (October 2026 extension)
+
+The exporter now additionally writes `core_transport` occurrence 0 for the
+assembled result, and successive occurrences 1..N for radial regions with
+positive extent and a verified PT_TEMPLATE activation. Region order is axial,
+confinement, edge, with no gap for unused regions. Each region occurrence has
+exactly two `model` entries: anomalous and neoclassical. Configuration and
+boundaries, including time updates, are XML in the regional occurrence's
+`code.parameters`; original PT_TEMPLATE Fortran source is embedded in a
+`namelist` XML element. Original unmodified external model settings remain in
+the existing input provenance library on occurrence 0.
+
+**Important limitation:** The available CDF may contain whole-grid GLF23,
+MMM07, or neoclassical output but not a genuinely separated evaluation per
+region. When such a model is selected, the occurrence retains its *native
+whole-grid output*, labeled `output_scope=native_whole_CDF_profile_not_region_clipped`.
+It is not valid to interpret values outside the region as a regional model
+prediction. When a selected model has no validated mapped CDF channel,
+`cdf_model_output_available=false` and the occurrence is settings-only.
+No array is manufactured or zero-padded to make output appear present.
+This is additive provenance, not independent regional simulations. In
+particular, GLF23 coefficients need not already include final PT_SOLVER
+stabilization or compositing; the latter belong exclusively to occurrence 0.

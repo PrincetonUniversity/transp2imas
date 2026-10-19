@@ -201,7 +201,7 @@ def build_pt_region_plan(inventory):
         'trusted_model_assignment': bool(referenced),
         'templates': [
             {'path': str(r.path), 'sha256': r.sha256,
-             'source_role': r.role, 'blocks': _pt_controls(r.text)}
+             'source_role': r.role, 'blocks': _pt_controls(r.text), 'text': r.text}
             for r in templates
         ],
     }
@@ -221,6 +221,83 @@ def _range_limits(region, values, quantity):
     else:
         low, high = high_conf, outer
     return low, high
+
+
+def numerical_settings_xml(plan):
+    """Preserve numeric PT_SOLVER controls as structured, timed input metadata.
+
+    All &pt_controls non-model assignments are kept (not a fragile whitelist),
+    including NEWTON_ITERATES, THETA_IMPLICIT and pt_residual%*.
+    These are INPUT SETTINGS, not measured Newton convergence histories.
+    """
+    root = ET.Element('pt_solver_numerics', {
+        'scope': 'combined_solver_shared_by_all_regions',
+        'kind': 'input_settings',
+        'runtime_diagnostics': 'not_available_from_PT_TEMPLATE',
+    })
+    for source in plan['templates']:
+        inp = ET.SubElement(root, 'input_file', {
+            'path': source['path'], 'sha256': source['sha256'],
+            'trusted': str(plan['trusted_model_assignment']).lower(),
+        })
+        for index, block in enumerate(source['blocks']):
+            at = block['start_time']
+            phase = ET.SubElement(inp, 'settings', {
+                'index': str(index),
+                'effective_from': 'initial' if at is None or at < 0 else _fmt(at),
+                'semantics': 'explicit_namelist_assignments',
+            })
+            for name, raw in sorted(block['options'].items()):
+                attrs = {'name': name, 'raw': raw}
+                parsed = _number(raw)
+                flag = _boolean(raw)
+                if parsed is not None:
+                    attrs['parsed_scalar'] = _fmt(parsed)
+                elif flag is not None:
+                    attrs['parsed_boolean'] = str(flag).lower()
+                ET.SubElement(phase, 'control', attrs)
+            # Model-specific options, including E x B shear versions, are
+            # numerical controls for a particular region and model.
+            for region in REGIONS:
+                for model, options in sorted(block['regions'].get(region, {}).items()):
+                    for name, raw in sorted(options.items()):
+                        ET.SubElement(phase, 'regional_model_control', {
+                            'region': region, 'model': model.upper(),
+                            'name': name, 'raw': raw,
+                        })
+    if not plan['templates']:
+        root.set('status', 'no_PT_TEMPLATE')
+    return root
+
+
+def region_validity_xml(plan, region):
+    """Exact time-varying radial validity of each un-clipped regional profile.
+
+    Each predicted channel can have a different outer boundary.  Do not
+    simplify the model's validity to one fixed [xi_min,xi_max] interval.
+    """
+    root = ET.Element('regional_validity', {
+        'region': 'pt_' + region,
+        'radial_coordinate': 'xi=sqrt(Phi_tor/Phi_tor_boundary)',
+        'full_profile_storage': 'true',
+        'outside_validity': 'stored_values_not_selected_by_this_region',
+        'time_semantics': 'piecewise_constant_from_effective_from',
+    })
+    for state in plan['boundary_states']:
+        at = state['start_time']
+        phase = ET.SubElement(root, 'state', {
+            'effective_from': 'initial' if at is None else _fmt(at),
+        })
+        for quantity in BOUNDARIES:
+            low, high = _range_limits(region, state['values'], quantity)
+            ET.SubElement(phase, 'domain', {
+                'quantity': quantity, 'xi_min': _fmt(low),
+                'xi_max': _fmt(high), 'has_extent': str(high > low).lower(),
+                'outer_boundary_control': BOUNDARIES[quantity],
+            })
+    if not plan['boundary_states']:
+        root.set('status', 'unknown_without_TR_DAT')
+    return root
 
 
 def region_plan_xml(plan):
@@ -274,6 +351,7 @@ def region_plan_xml(plan):
                     'has_extent': str(high > low).lower(),
                     'outer_boundary_control': BOUNDARIES[quantity],
                 })
+    root.append(numerical_settings_xml(plan))
     configs = ET.SubElement(root, 'model_configuration_timeline')
     if not plan['templates']:
         configs.set('status', 'no_readable_PT_TEMPLATE')
@@ -283,6 +361,7 @@ def region_plan_xml(plan):
             'association': ('explicit_TRDAT_PT_TEMPLATE' if plan['trusted_model_assignment']
                             else 'adjacent_unreferenced_candidate'),
         })
+        ET.SubElement(inp, 'namelist', {'format': 'Fortran', 'encoding': 'UTF-8'}).text = source.get('text', '')
         for i, block in enumerate(source['blocks']):
             at = block['start_time']
             phase = ET.SubElement(inp, 'configuration', {
@@ -343,6 +422,8 @@ def append_pt_regions_xml(parameters, plan):
         return ET.tostring(root, encoding='unicode')
     for prior in root.findall('pt_solver_regions'):
         root.remove(prior)
+    # Whole-run occurrence has no single region; timed regional bounds and
+    # numerical settings are included by region_plan_xml(plan).
     root.append(region_plan_xml(plan))
     return ET.tostring(root, encoding='unicode')
 
@@ -400,4 +481,65 @@ def append_pt_regions_reference(parameters, plan):
             'model_assignment_verified_by_reference': str(plan['trusted_model_assignment']).lower(),
             'note': 'assembled predictive fluxes; no per-region coefficient arrays available',
         })
+    return ET.tostring(root, encoding='unicode')
+
+
+ANOMALOUS_MODELS = frozenset(('glf23', 'tglf', 'mmm', 'rlw', 'coppi',
+                              'cdbm', 'user', 'paleo'))
+NEOCLASSICAL_MODELS = frozenset(('neoch', 'neogk', 'nclass', 'gtcneo'))
+
+
+def occurrence_region_models(plan):
+    """One occurrence per used region, ordered axial/confinement/edge.
+
+    Only an explicit, readable PT_TEMPLATE can establish the active model.
+    A missing TR.DAT cannot establish radial extent.  Carry cumulative
+    %active choices across updates; a replacement model supersedes the prior
+    one within its category. Never invent omitted region configurations.
+    """
+    if not plan or not plan['trusted_model_assignment'] or not plan['boundary_states']:
+        return []
+    selections = {region: {'anomalous': None, 'neoclassical': None}
+                  for region in REGIONS}
+    for source in plan['templates']:
+        for block in source['blocks']:
+            for region, models in block['regions'].items():
+                for name, options in models.items():
+                    category = ('anomalous' if name in ANOMALOUS_MODELS else
+                                'neoclassical' if name in NEOCLASSICAL_MODELS else None)
+                    if category is None or 'active' not in options:
+                        continue
+                    active = _boolean(options['active'])
+                    if active is True:
+                        selections[region][category] = name
+                    elif active is False and selections[region][category] == name:
+                        selections[region][category] = None
+    result = []
+    for region in REGIONS:
+        extent = any(_range_limits(region, state['values'], quantity)[1] >
+                     _range_limits(region, state['values'], quantity)[0]
+                     for state in plan['boundary_states'] for quantity in BOUNDARIES)
+        if not extent:
+            continue
+        chosen = selections[region]
+        if any(chosen.values()):
+            result.append({'region': region, 'models': chosen})
+    return result
+
+
+def region_occurrence_xml(plan, item, occurrence):
+    """Self-describing configuration for one regional IDS occurrence."""
+    root = ET.Element('pt_solver_region_occurrence', {
+        'occurrence': str(occurrence), 'region': item['region'],
+        'radial_coordinate': 'rho_tor_norm',
+        'outputs_policy': 'write_only_verified_CDF_model_channels',
+    })
+    ET.SubElement(root, 'model_selection', {'category': 'anomalous',
+                  'name': (item['models']['anomalous'] or 'none').upper()})
+    ET.SubElement(root, 'model_selection', {'category': 'neoclassical',
+                  'name': (item['models']['neoclassical'] or 'none').upper()})
+    # This deliberately retains ALL regional boundary changes and the exact
+    # executed template, not just the final model names.
+    root.append(region_validity_xml(plan, item['region']))
+    root.append(region_plan_xml(plan))
     return ET.tostring(root, encoding='unicode')

@@ -22,7 +22,7 @@ LDLIBS += -L$(IMAS_PREFIX)/lib -limas-gfortran -limas
 
 .DEFAULT_GOAL := help
 
-.PHONY: help quick verify verify-all verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-sawteeth verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
+.PHONY: help quick verify verify-all verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
 
 help:
 	@echo "Diagnostic and example commands"
@@ -38,6 +38,7 @@ help:
 	@echo "  make verify-neutrals  Check neutral profiles only, separately on every CDF"
 	@echo "  make verify-theory  Check MMM07, GLF23 and TGLF family status for every CDF"
 	@echo "  make verify-mmm  Alias for theory transport verifier"
+	@echo "  make verify-pt-solver  Check PT_SOLVER regional model choices, equation limits and updates"
 	@echo "  make verify-sawteeth  Verify TLASTSAW crash histories and q=1 native TIME diagnostics"
 	@echo "  make verify-inputs Validate embedded TR.DAT and model namelists"
 	@echo "  make verify-pf-passive Validate synthetic PS_n currents and DD3/DD4 passive geometries"
@@ -62,6 +63,7 @@ quick:
 	$(PYTHON) verify_neoclassical_transport.py --quick
 	$(PYTHON) verify_neutral_profiles.py --quick
 	$(PYTHON) verify_theory_transport.py --quick
+	$(PYTHON) verify_pt_solver_regions.py --quick
 	$(PYTHON) verify_release_config.py
 	$(PYTHON) verify_sawteeth_mapping.py --quick
 	$(PYTHON) verify_end_to_end_contract.py
@@ -79,6 +81,7 @@ verify: quick
 
 verify-all: quick
 	$(PYTHON) verify_all_examples.py --quick --report-dir "$(ROOT)/build/verification" --python "$(PYTHON)"
+	$(PYTHON) verify_pt_solver_regions.py --data-root data --report-dir "$(ROOT)/build/pt-solver-regions"
 	$(PYTHON) verify_isolver_mapping.py --allow-missing --report-dir "$(ROOT)/build/pf-isolver"
 
 verify-deep: quick
@@ -111,6 +114,9 @@ verify-neutrals:
 
 verify-theory verify-mmm:
 	$(PYTHON) verify_theory_transport.py --data-root data --report-dir "$(ROOT)/build/theory-transport"
+
+verify-pt-solver:
+	$(PYTHON) verify_pt_solver_regions.py --data-root data --report-dir "$(ROOT)/build/pt-solver-regions"
 
 verify-sawteeth:
 	$(PYTHON) verify_sawteeth_mapping.py --data-root data --report-dir "$(ROOT)/build/sawteeth"

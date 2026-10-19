@@ -3,9 +3,11 @@
 
 import numpy as np
 from nc2imas import *
+from pt_solver_diagnostics import append_runtime_diagnostics_xml
 from pt_solver_regions import (
     build_pt_region_plan, append_pt_regions_xml, annotate_theory_model_xml,
-    append_pt_regions_reference,
+    append_pt_regions_reference, occurrence_region_models, region_occurrence_xml,
+    region_validity_xml,
 )
 from theory_transport_mapping import (
     COEFFICIENT_MODEL_SPECS, THEORY_AUXILIARY_SPECS, build_theory_plans,
@@ -399,29 +401,24 @@ class imas_core_transport:
         if self._pt_region_plan is not None:
             ct.code.parameters = append_pt_regions_xml(ct.code.parameters,
                                                        self._pt_region_plan)
+            ct.code.parameters = append_runtime_diagnostics_xml(
+                ct.code.parameters, getattr(self.im, 'nc', None))
         ct.ids_properties.homogeneous_time=1
         ct.time=np.asarray(self.time,dtype=np.float64)
         self.im.fill_vac_tor_field(ct)
 
-        # Allocate registered coefficient families, resize after filling so
-        # zero-filled source placeholders do not create artificial models.
-        ct.model.resize(4 + sum(len(v) for v in COEFFICIENT_MODEL_SPECS.values()))
-        nobs=self._fill_combined_model(ct.model[0])
-        next_model=1
-        has_solver,present=self._fill_transport_solver_model(ct.model[next_model])
-        if has_solver:
-            next_model+=1
-
-        plans=build_theory_plans(self.im.nc)
-        channels=plans['neoclassical']
-        has_nc, nc_present=self._fill_neoclassical_model(
-            ct.model[next_model], channels, classical=False)
-        if has_nc:
-            next_model+=1
-        has_classical, cl_present=self._fill_neoclassical_model(
-            ct.model[next_model], channels, classical=True)
-        if has_classical:
-            next_model+=1
+        # Important: resizing an IMAS array of structures after populating it
+        # can recreate *all* children, including the combined model. Allocate
+        # the FINAL number of slots once, BEFORE filling any model.
+        plans = build_theory_plans(self.im.nc)
+        channels = plans['neoclassical']
+        solver_present = any(self.im.check_var_name(n) for n in
+                             ('EPTR_MOD', 'EETR_MOD', 'IETR_MOD', 'PTRH_MOD',
+                              'PTRD_MOD', 'PTRT_MOD', 'PTRHE3_MOD', 'PTR3_MOD',
+                              'PTRHE4_MOD', 'PTR4_MOD'))
+        nc_present = bool(channels['particles'] or channels['heat'])
+        classical_present = bool(channels['heat_nc_classical'])
+        theory_slots = []
         for family, specs in COEFFICIENT_MODEL_SPECS.items():
             plan = plans[family]
             if not plan['active']:
@@ -433,25 +430,116 @@ class imas_core_transport:
                         '(normalized discrepancy %.4g); preserving source data',
                         family, quantity, check['max_normalized_difference'])
             for spec in specs:
-                if self._fill_theory_coefficient_model(ct.model[next_model],
-                                                       family, spec, plan):
-                    next_model += 1
-                    self.logger.info('core_transport: %s model: %s',
-                                     family, spec['name'])
-        # TGLF is registered but must await validated coefficient channels;
-        # TGLF_DR alone is NOT evidence of a transport model output.
-        ct.model.resize(next_model)
-
+                if any(name in plan['fields'] for name in
+                       (*spec['coefficients'], *spec['auxiliary'])):
+                    theory_slots.append((family, spec, plan))
+        expected_models = (1 + int(solver_present) + int(nc_present) +
+                           int(classical_present) + len(theory_slots))
+        ct.model.resize(expected_models)
+        nobs = self._fill_combined_model(ct.model[0])
+        next_model = 1
+        has_solver, present = False, []
+        if solver_present:
+            has_solver, present = self._fill_transport_solver_model(ct.model[next_model])
+            if not has_solver:
+                raise RuntimeError('Predictive flux model was expected but empty')
+            next_model += 1
+        has_nc, nc_outputs = False, []
+        if nc_present:
+            has_nc, nc_outputs = self._fill_neoclassical_model(
+                ct.model[next_model], channels, classical=False)
+            if not has_nc:
+                raise RuntimeError('Neoclassical model was expected but empty')
+            next_model += 1
+        has_classical, cl_present = False, []
+        if classical_present:
+            has_classical, cl_present = self._fill_neoclassical_model(
+                ct.model[next_model], channels, classical=True)
+            if not has_classical:
+                raise RuntimeError('Classical heat model was expected but empty')
+            next_model += 1
+        for family, spec, plan in theory_slots:
+            if not self._fill_theory_coefficient_model(
+                    ct.model[next_model], family, spec, plan):
+                raise RuntimeError('Registered transport model is empty: ' + spec['name'])
+            next_model += 1
+            self.logger.info('core_transport: %s model: %s', family, spec['name'])
+        if next_model != expected_models or len(ct.model) != expected_models:
+            raise RuntimeError('core_transport model allocation mismatch')
+        if len(ct.model[0].profiles_1d) != self.nt:
+            raise RuntimeError('Combined core_transport model lost its time profiles')
+        if ct.model[0].identifier.name != 'combined':
+            raise RuntimeError('Combined core_transport model identifier was lost')
         if self.im.check_var_name('IPTR_MOD'):
             self.logger.info('core_transport: IPTR_MOD present but aggregate total-ion particle flux has no IMAS core_transport node')
         self.logger.info(f'core_transport: combined model, {nobs} observed ion particle species')
         if has_solver:
             self.logger.info('core_transport: transport_solver model channels: '+', '.join(present))
         if has_nc:
-            self.logger.info('core_transport: neoclassical channels: '+', '.join(nc_present))
+            self.logger.info('core_transport: neoclassical channels: '+', '.join(nc_outputs))
         if has_classical:
             self.logger.info('core_transport: NC+classical heat channels: '+', '.join(cl_present))
-        self.im.putdb_imas(ct)
+        # Occurrence 0 is the complete assembled/effective TRANSP result.
+        # Region occurrences are additional views with two *model slots*,
+        # populated only when matching native CDF output channels exist.
+        if hasattr(self.im, 'putdb_imas_profile'):
+            self.im.putdb_imas_profile(ct, 0)
+            self._write_region_occurrences(plans)
+        else:
+            self.im.putdb_imas(ct)
+
+    def _write_region_occurrences(self, plans):
+        for occurrence, item in enumerate(occurrence_region_models(self._pt_region_plan), 1):
+            regional = self.im.new_ids('core_transport')
+            regional = self.im.fill_properties(regional)
+            self.im.fill_code_properties(regional)
+            regional.code.parameters = region_occurrence_xml(
+                self._pt_region_plan, item, occurrence)
+            regional.ids_properties.homogeneous_time = 1
+            regional.time = np.asarray(self.time, dtype=np.float64)
+            self.im.fill_vac_tor_field(regional)
+            regional.model.resize(2)
+            for i, category in enumerate(('anomalous', 'neoclassical')):
+                selected = item['models'][category]
+                slot = regional.model[i]
+                # Always preserve the two model identities and their inputs,
+                # even if the CDF did not publish separate coefficient arrays.
+                self._prepare_model(slot, selected or category + '_not_selected',
+                                    i + 1, category + ' model for pt_' + item['region'],
+                                    'PT_SOLVER regional selection; outputs present only '
+                                    'where separately available in TRANSP CDF')
+                populated = False
+                if category == 'neoclassical' and selected:
+                    populated, _ = self._fill_neoclassical_model(
+                        slot, plans['neoclassical'], classical=False)
+                elif selected in ('glf23', 'mmm'):
+                    family = 'glf23' if selected == 'glf23' else 'mmm07'
+                    matching = [spec for spec in COEFFICIENT_MODEL_SPECS[family]
+                                if selected != 'mmm' or spec['name'] == 'mmm07_total']
+                    for spec in matching[:1]:
+                        populated = self._fill_theory_coefficient_model(
+                            slot, family, spec, plans[family])
+                if not populated:
+                    # No physical CDF arrays: keep an explicit settings-only
+                    # model, not a misleading populated time/radius grid.
+                    slot.profiles_1d.resize(0)
+                if selected:
+                    slot.identifier.name = selected.upper()
+                    slot.identifier.description = (category + ' transport model ' +
+                                                   selected.upper() + ' in pt_' + item['region'])
+                import xml.etree.ElementTree as ET
+                original = getattr(slot.code.parameters, 'value', slot.code.parameters)
+                root = ET.fromstring(original) if str(original).strip() else ET.Element('model')
+                if self._pt_region_plan is not None:
+                    root.append(region_validity_xml(self._pt_region_plan, item['region']))
+                ET.SubElement(root, 'pt_solver_occurrence', {
+                    'region': item['region'], 'model': (selected or 'none').upper(),
+                    'category': category, 'cdf_model_output_available': str(bool(populated)).lower(),
+                    'output_scope': 'native_whole_CDF_profile_not_region_clipped'
+                                    if populated else 'settings_only',
+                })
+                slot.code.parameters = ET.tostring(root, encoding='unicode')
+            self.im.putdb_imas_profile(regional, occurrence)
 
 
 if __name__ == '__main__':
