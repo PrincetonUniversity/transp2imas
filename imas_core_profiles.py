@@ -163,8 +163,7 @@ class imas_core_profiles:
             self.logger.info(f'\t{symb}: {ai}, {zn}, {dens} {ion.dens.shape}')
             self.logger.info(f'\t{symb}: charges: {ncs} NIMP_ {dnames} ZIMPS_{symb} {zprof.shape}')
             #charge states. eg:NIMP_BE_4
-            for dname in dnames:
-               ncharge = ncs[0]
+            for dname, ncharge in zip(dnames, ncs):
                self.logger.info(f'\t{symb}: {dname} ch: {ncharge}')
                sdens = self.im.get_ncvar(dname, scale=1.0e6)
                istate = ion_states(sdens, f'{symb}+{ncharge}')
@@ -497,27 +496,30 @@ class imas_core_profiles:
             edia = self.im.np_multiply_sum(pplas, gvol, axis=1, scale=1.5)
             self.im.fill_data(cp.global_quantities.energy_diamagnetic, edia)
 
+        # Use the sum of the TIME3 zone volumes as the averaging denominator.
+        # PVOL is a separate TIME history and can be out of sync with DVOL, or
+        # differ slightly from its sum; the profiles and denominator must use
+        # the same time samples and geometry.
+        volume_profile = np.sum(gvol, axis=1) if self.im.is_valid(gvol) else []
+
         #t_e_peaking
         # TE0 is sampled on scalar TIME, while TE and DVOL use profile TIME3.
         # Interpolate the axis temperature before computing the peaking factor.
         te0 = self.im.get_ncvar('TE0', interp=True)  # magnetic axis, TIME3
         tel = self.im.get_ncvar('TE')  #TE(TIME3,X) eV
         tev = []
-        #volume PVOL(TIME) CM^3 : PLASMA VOLUME
-        pvol_pt = self.im.get_ncvar('PVOL', vconv)
-        #interpolate pvol from scalar time onto profile times
-        if not np.array_equal(self.im.timep, self.im.timesc):
-            pvol_pt = self.im.interp1d_time(self.im.timep, self.im.timesc, pvol_pt)
+        # DVOL and TE are both sampled on TIME3; their summed zone volume is
+        # the consistent denominator for the volume average.
 
         te0_tev = []
-        if self.im.is_valid(tel, gvol, pvol_pt, te0):
+        if self.im.is_valid(tel, gvol, volume_profile, te0):
             with np.errstate(divide='ignore', invalid='ignore', over='raise'):
                 thermal_energy = np.sum(np.multiply(tel, gvol), axis=1)
                 tev = np.divide(
                     thermal_energy,
-                    pvol_pt,
+                    volume_profile,
                     out=np.zeros_like(thermal_energy, dtype=float),
-                    where=np.asarray(pvol_pt) != 0,
+                    where=np.asarray(volume_profile) != 0,
                 )
                 te0_tev = np.divide(
                     te0,
@@ -533,9 +535,9 @@ class imas_core_profiles:
         tion = self.im.get_ncvar('TI')  #TE(TIME3,X)EV
         tiv = []
 
-        if self.im.is_valid(ti0, tion, pvol_pt):
+        if self.im.is_valid(ti0, tion, volume_profile):
             ti_ = self.im.np_multiply_sum(tion, gvol, axis=1)
-            tiv = self.im.operate_arrays(ti_, '/', pvol_pt)
+            tiv = self.im.operate_arrays(ti_, '/', volume_profile)
             if not np.array_equal(self.im.timep, self.im.timesc):
                ti0_pt = self.im.interp1d_time(self.im.timep, self.im.timesc, ti0)
             else:
@@ -554,9 +556,9 @@ class imas_core_profiles:
         #n_e_volume_average
         #NE(TIME3, X) N/CM3
         nel = self.im.get_ncvar('NE', self.im.vol_inv)
-        if self.im.is_valid(nel, gvol, pvol_pt):
+        if self.im.is_valid(nel, gvol, volume_profile):
             ne_ = self.im.np_multiply_sum(nel, gvol, axis=1)
-            ne_ = self.im.operate_arrays(ne_, '/', pvol_pt)
+            ne_ = self.im.operate_arrays(ne_, '/', volume_profile)
             self.im.fill_data(cp.global_quantities.n_e_volume_average, ne_)
 
         #IONS
@@ -568,9 +570,9 @@ class imas_core_profiles:
         if len(tiv) >0:
             self.im.fill_data(cp.global_quantities.ion[0].t_i_volume_average, tiv, name='tiv')
 
-        if self.im.is_valid(nion, gvol, pvol_pt):
+        if self.im.is_valid(nion, gvol, volume_profile):
             ni_ = self.im.np_multiply_sum(nion, gvol, axis=1)
-            ni_ = self.im.operate_arrays( ni_, '/', pvol_pt)
+            ni_ = self.im.operate_arrays(ni_, '/', volume_profile)
             self.im.fill_data(cp.global_quantities.ion[0].n_i_volume_average, ni_, name='niv')
 
         #ion_time_slice

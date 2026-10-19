@@ -84,6 +84,10 @@ class imas_equilibrium:
 
     def convert_moments(self, ncoord_xb, ntheta:int, time:int):
          nmoments = self.im.get_var_names_re('RMC?', nd1=1, nd2=2, length=True)
+         if nmoments < 2:
+            self.logger.warning(
+                'equilibrium: moment conversion requested but fewer than two RMC harmonics are available')
+            return [], [], []
          rcos = np.zeros(shape=(nmoments, ncoord_xb))
          rsin = np.zeros(shape=(nmoments, ncoord_xb))
          ycos = np.zeros(shape=(nmoments, ncoord_xb))
@@ -220,58 +224,79 @@ class imas_equilibrium:
 
     #rgrid, zgrid are for all times (time, grid)
     def trace_boundary(self, psirz, rgrid, zgrid, time, nr, nz):
-         #If this function is used, this import should be moved to common for efficiency
-         from matplotlib import path
-         import matplotlib.pyplot as plt
+         if nr < 2 or nz < 2 or time < 0 or len(psirz) != nr*nz:
+            return [], []
+         psib_all = self.im.get_ncvar_on_time(
+             'PLFLXA', scale=self.im.psi_sign*2.*self.im.pi)
+         if not self.im.is_valid(psib_all):
+            psib_all = self.im.get_ncvar_on_time(
+                'PBPMHD', scale=self.im.psi_sign*2.*self.im.pi)
+         raxis_all = self.im.get_ncvar_on_time('RAXIS', scale=0.01)
+         yaxis_all = self.im.get_ncvar_on_time('YAXIS', scale=0.01)
+         if any(len(values) <= time for values in (psib_all, raxis_all, yaxis_all)):
+            return [], []
 
-         #psirz is 1D, to be reshaped
-         if nr==0 or nz==0 or time<0 or time>=len(rgrid) or time>=len(zgrid) or len(psirz)==0:
-            return [],[]
-         rbdy = []
-         zbdy = []
-         plt.figure()
-         #PBPMHD , PLCFSMHD
-         psib = self.im.get_ncvar_on_time('PLFLXA', scale=2.*self.im.pi)[time]
-         if np.isscalar(psib):
-            psib = 0.99*psib
+         def at_time(values):
+            values = np.asarray(values, dtype=float)
+            return values[time] if values.ndim > 1 else values
 
-         psi2d = np.reshape(psirz, (nz, nr)) #.T
-         #psi2d = np.reshape(psirz, (nr, nz))
+         r = at_time(rgrid)
+         z = at_time(zgrid)
+         if r.ndim != 1 or z.ndim != 1 or len(r) != nr or len(z) != nz:
+            return [], []
+         psi2d = np.asarray(psirz, dtype=float).reshape((nz, nr))
+         psib = float(psib_all[time])
+         if not np.isfinite(psib):
+            return [], []
 
-         # RAXIS/YAXIS are scalar TIME histories, but the Fourier surfaces
-         # RMCxx/YMCxx belong to profile TIME3.  Use the TIME3 sample time.
-         raxis = self.im.get_ncvar_on_time('RAXIS', scale=0.01)[time]
-         yaxis = self.im.get_ncvar_on_time('YAXIS', scale=0.01)[time]
-
-         eps = 0.01
+         # Multiple segments can occur near X-points.  Keep the largest closed
+         # contour at the LCFS flux that encloses the magnetic axis.
+         from matplotlib.path import Path
+         fig, ax = plt.subplots()
          try:
-            contour = plt.contour(rgrid[time], zgrid[time], psi2d, levels=[psib])
-            for cont in contour.allsegs[0]:
-               #check if axis is included in this bounded contour
-               p = path.Path(cont)
-               has_axis = p.contains_point((raxis,yaxis))
-               closed = abs(cont[:,0][0]-cont[:,0][-1])<eps and abs(cont[:,1][0]-cont[:,1][-1])<eps
-               if has_axis and closed:
-                  rbdy, zbdy = cont[:,0], cont[:,1]
-                  rbdy[0] = rbdy[-1]
-                  zbdy[0] = zbdy[-1]
-                  break
-         except (ValueError, TypeError, IndexError, AttributeError):
-            if time ==0:
-               print(f'Error tracing boundary for PSI= {psib}')
+            contours = ax.contour(r, z, psi2d, levels=[psib])
+            candidates = []
+            axis = (float(raxis_all[time]), float(yaxis_all[time]))
+            for contour in contours.allsegs[0]:
+               points = np.asarray(contour, dtype=float)
+               if points.ndim != 2 or points.shape[0] < 4 or points.shape[1] != 2:
+                  continue
+               scale = max(float(np.ptp(points[:, 0])), float(np.ptp(points[:, 1])), 1.0)
+               closed = np.linalg.norm(points[0] - points[-1]) <= max(0.01, 1.e-3*scale)
+               if not closed:
+                  continue
+               points[-1] = points[0]
+               if not Path(points).contains_point(axis):
+                  continue
+               area = 0.5*abs(np.sum(points[:-1, 0]*points[1:, 1]
+                                      - points[1:, 0]*points[:-1, 1]))
+               candidates.append((area, points))
+            if not candidates:
+               self.logger.warning('equilibrium: could not trace LCFS from PSIRZ at time index %d', time)
+               return [], []
+            points = max(candidates, key=lambda item: item[0])[1]
+            return points[:, 0].copy(), points[:, 1].copy()
+         except (ValueError, TypeError, IndexError, AttributeError) as exc:
+            self.logger.warning('equilibrium: LCFS contour failed at time index %d: %s', time, exc)
+            return [], []
+         finally:
+            plt.close(fig)
 
-         #to debug, change to True
-         if False and (time<2 or time%100==0):
-            cts = plt.contour(rgrid[time], zgrid[time], psi2d, levels=30)
-            plt.clabel(cts, inline=1, fontsize=10)
-            plt.plot(rbdy, zbdy, 'r-')
-            limitr = self.im.get_ncvar('RLIM', scale=0.01, ind=time)
-            limitz = self.im.get_ncvar('YLIM', scale=0.01, ind=time)
-            plt.plot(limitr, limitz)
-            plt.show()
-
-         plt.close('all')
-         return rbdy, zbdy
+    @staticmethod
+    def _outline_centroid(r, z):
+         """Return the area centroid of a closed R/Z outline, or None."""
+         points = np.column_stack((np.asarray(r, dtype=float), np.asarray(z, dtype=float)))
+         if points.ndim != 2 or points.shape[0] < 4 or not np.isfinite(points).all():
+            return None
+         if not np.allclose(points[0], points[-1]):
+            points = np.vstack((points, points[0]))
+         cross = points[:-1, 0]*points[1:, 1] - points[1:, 0]*points[:-1, 1]
+         twice_area = np.sum(cross)
+         if not np.isfinite(twice_area) or abs(twice_area) < 1.e-12:
+            return None
+         rcent = np.sum((points[:-1, 0] + points[1:, 0])*cross)/(3.0*twice_area)
+         zcent = np.sum((points[:-1, 1] + points[1:, 1])*cross)/(3.0*twice_area)
+         return (float(rcent), float(zcent)) if np.isfinite([rcent, zcent]).all() else None
 
 
     def boundary_minor(self, rsurf, time):
@@ -422,9 +447,12 @@ class imas_equilibrium:
         bzxR = self.im.get_ncvar('BZXR', cm2m, interp=True)
         b_field_tor = bt_sign * self.im.operate_arrays(bzxR, '/', raxis)
 
-        #RMJMP flux surface centers
-        geom_axisr = self.im.get_ncvar('RMJMP', cm2m)
-        geom_axisz = []
+        # Zeroth Fourier coefficients are the geometric centers of the flux
+        # surfaces.  RMJMP remains a radial fallback for CDFs without moments.
+        geom_axisr = self.im.get_ncvar('RMC00', cm2m)
+        if not self.im.is_valid(geom_axisr):
+            geom_axisr = self.im.get_ncvar('RMJMP', cm2m)
+        geom_axisz = self.im.get_ncvar('YMC00', cm2m)
 
         #f
         fprof = []
@@ -621,8 +649,20 @@ class imas_equilibrium:
             #2D psi
             psirz = psi_sign * self.im.get_ncvar('PSIRZ', 2.*pi, ind=it)
 
-            rbound, ybound = self.convert_moments_bdry(nthetab, it)
-            #rbound, ybound = self.trace_boundary(psirz, rgrid, zgrid, it, nr, nz)
+            has_2d_slice = (self.im.is_valid(rgrid, zgrid, ind=it, name='grid')
+                            and self.im.is_valid(psirz, name='prirz'))
+            if has_2d_slice:
+                rbound, ybound = self.trace_boundary(psirz, rgrid, zgrid, it, nr, nz)
+            else:
+                rbound, ybound = [], []
+            # Moment-derived boundary surfaces are an explicit opt-in.  The
+            # default uses PSIRZ when available and warns if it cannot trace it.
+            if not self.im.is_valid(rbound, ybound) and self.conv_moments:
+                rbound, ybound = self.convert_moments_bdry(nthetab, it)
+            if not self.im.is_valid(rbound, ybound) and not self.conv_moments:
+                self.logger.warning(
+                    'equilibrium: no LCFS outline at time index %d; enable --moments yes '
+                    'to use TRANSP boundary moments', it)
             self.im.fill_data(eqm.time_slice[it].boundary.outline.r, rbound, name='rbound')
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
@@ -630,11 +670,27 @@ class imas_equilibrium:
             if minor > 0:
                eqm.time_slice[it].boundary.minor_radius = minor
 
-            # what is being written here is not the geometric axis
-            geom_rz = []    #TODO
-            if len(geom_rz)>1 and geom_rz[0]>0:
-               eqm.time_slice[it].boundary.geometric_axis.r = geom_rz[0]
-               eqm.time_slice[it].boundary.geometric_axis.z = geom_rz[1]
+            geom_rz = None
+            # RMCB0/YMCB0 are the boundary's geometric center and can be used
+            # without reconstructing every Fourier harmonic.
+            rmc_b0 = self.im.get_ncvar_on_time('RMCB0', scale=cm2m)
+            ymc_b0 = self.im.get_ncvar_on_time('YMCB0', scale=cm2m)
+            if (len(rmc_b0) > it and len(ymc_b0) > it
+                    and np.isfinite([rmc_b0[it], ymc_b0[it]]).all()):
+               geom_rz = (float(rmc_b0[it]), float(ymc_b0[it]))
+            if geom_rz is None and self.im.is_valid(rbound, ybound):
+               geom_rz = self._outline_centroid(rbound, ybound)
+            if geom_rz is None and self.im.is_valid(geom_axisr, geom_axisz, ind=it):
+               geom_rz = (float(geom_axisr[it, -1]), float(geom_axisz[it, -1]))
+            if geom_rz is not None:
+               boundary = eqm.time_slice[it].boundary
+               if hasattr(boundary, 'geometric_axis'):
+                  boundary.geometric_axis.r = geom_rz[0]
+                  boundary.geometric_axis.z = geom_rz[1]
+               gq = eqm.time_slice[it].global_quantities
+               if hasattr(gq, 'geometric_axis'):
+                  gq.geometric_axis.r = geom_rz[0]
+                  gq.geometric_axis.z = geom_rz[1]
 
             if len(bdry_sepx_psi) > it:
                 # In DD4 the legacy boundary_separatrix structure is removed;
@@ -750,7 +806,7 @@ class imas_equilibrium:
             coord = eqm.time_slice[it].coordinate_system
 
             #inverse coordinates
-            if (not has2d_eq) or hasattr(self, 'conv_moments') and self.conv_moments is True:
+            if self.conv_moments:
                rsurf, ysurf, inv_theta = self.convert_moments(ncoord_xb, ntheta, it)
 
                #fill data
