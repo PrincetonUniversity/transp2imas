@@ -81,6 +81,13 @@ messages.
   This prevents all-example false failures from `json.dumps` and restores real
   IMAS readback to the end-to-end verification sequence.
 
+## [0.11.0](https://github.com/PrincetonUniversity/transp2imas/compare/v0.10.0...v0.11.0) (2026-10-19)
+
+
+### Features
+
+* Pt multi region ([#110](https://github.com/PrincetonUniversity/transp2imas/issues/110)) ([88f61d4](https://github.com/PrincetonUniversity/transp2imas/commit/88f61d420ce12fe711ce91a132d145125e1d9f19))
+
 ## 0.9.0 - 2026-09-28
 
 Initial public pre-1.0 baseline of the IMAS-Python converter.
