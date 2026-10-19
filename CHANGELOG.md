@@ -86,6 +86,13 @@ messages.
   This prevents all-example false failures from `json.dumps` and restores real
   IMAS readback to the end-to-end verification sequence.
 
+## [0.11.1](https://github.com/PrincetonUniversity/transp2imas/compare/v0.11.0...v0.11.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* misc fixes for equilibrium and core profile IDSs ([#112](https://github.com/PrincetonUniversity/transp2imas/issues/112)) ([0e8ae1b](https://github.com/PrincetonUniversity/transp2imas/commit/0e8ae1b43141054defdf2f181d53a72b2d7abc33))
+
 ## [0.11.0](https://github.com/PrincetonUniversity/transp2imas/compare/v0.10.0...v0.11.0) (2026-10-19)
 
 
