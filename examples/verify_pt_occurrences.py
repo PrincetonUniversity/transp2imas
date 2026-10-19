@@ -1,3 +1,4 @@
+#!/usr/bin/python
 """Source-level occurrence contract tests; no installed IMAS required."""
 import sys
 from pathlib import Path

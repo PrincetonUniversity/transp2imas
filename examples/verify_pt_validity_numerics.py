@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import unittest,sys,xml.etree.ElementTree as ET
 sys.path.insert(0,'/mnt/data/pt_latest')
 import types

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python
 """Read back actual core_transport occurrence 0 and active PT_SOLVER regions.
 
 Run from checkout: python3 examples/check_pt_imas_occurrences.py --machine ITER \

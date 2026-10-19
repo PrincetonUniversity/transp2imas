@@ -1,3 +1,4 @@
+#!/usr/bin/python
 """Verify PT_SOLVER runtime numerical diagnostics in an actual TRANSP CDF.
 Usage: PYTHONPATH=. python examples/verify_pt_runtime_actual_cdf.py examples/data/iter/38530P94.CDF
 Requires scipy and numpy. No IMAS installation required.

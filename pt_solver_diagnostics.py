@@ -1,3 +1,4 @@
+#!/usr/bin/python
 """Lossless, opt-in discovery of TRANSP PT_SOLVER runtime diagnostic CDF arrays.
 
 This records raw native CDF numbers, not standardized IMAS transport coefficients.

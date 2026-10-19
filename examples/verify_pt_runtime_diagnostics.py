@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import unittest
 import xml.etree.ElementTree as ET
 import numpy as np
