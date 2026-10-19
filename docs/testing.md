@@ -189,3 +189,10 @@ ITER has constant `TLASTSAW`, and the other cases have no crash history.
 `make verify-all` includes a per-case `sawteeth-source` check. Real validation
 requires `--ids sawteeth` with `verify_end_to_end.py` on an IMAS host.
 See [sawteeth mapping](sawteeth.md).
+
+
+PT_SOLVER multi-region inputs: `make verify-pt-solver` verifies all bundled
+TR.DAT and PT_TEMPLATE inventories, per-equation X*BOUND ranges, scheduled
+namelist updates and references to the single assembled core_transport IDS.
+It is independent of IMAS-Python; use a real DD 4.1.1 conversion/readback for
+final schema validation. See [pt-solver-regions.md](pt-solver-regions.md).

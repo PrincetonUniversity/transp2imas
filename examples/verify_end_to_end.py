@@ -24,6 +24,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from theory_transport_mapping import MODEL_SPECS, AUXILIARY_SPECS, build_mmm_plan
 from sawteeth_mapping import build_sawteeth_plan
+from input_provenance import InputInventory
+from pt_solver_regions import build_pt_region_plan, region_plan_xml
+import xml.etree.ElementTree as ET
 DEFAULT_DATA = ROOT / 'examples' / 'data'
 
 
@@ -186,7 +189,37 @@ def check_sawteeth_readback(ids, plan):
             'q1_valid_samples': plan.valid_q1_samples}
 
 
-def validate_readback(ids_name, ids, time3, mmm_source=None, sawteeth_source=None):
+def source_pt_solver_regions(cdf):
+    trdat = cdf.with_name(cdf.stem + 'TR.DAT')
+    return build_pt_region_plan(InputInventory(trdat, cdf.stem))
+
+
+def check_pt_solver_region_readback(ids, expected_plan):
+    """Check regional *inputs* after actual DD4 IDS write and readback."""
+    wrapped = ids.code.parameters
+    stored = getattr(wrapped, 'value', wrapped)
+    if not isinstance(stored, str) or not stored.strip():
+        if expected_plan is None:
+            return {'pt_solver_region_configuration': 'NOT_APPLICABLE'}
+        raise AssertionError('core_transport.code.parameters lacks PT_SOLVER input XML')
+    root = ET.fromstring(stored)
+    actual = root.find('pt_solver_regions')
+    if expected_plan is None:
+        if actual is not None:
+            raise AssertionError('unexpected PT_SOLVER region metadata')
+        return {'pt_solver_region_configuration': 'NOT_APPLICABLE'}
+    if actual is None:
+        raise AssertionError('PT_SOLVER region configuration missing after IMAS readback')
+    expected = region_plan_xml(expected_plan)
+    if ET.tostring(actual, encoding='unicode') != ET.tostring(expected, encoding='unicode'):
+        raise AssertionError('PT_SOLVER regional inputs changed after IMAS readback')
+    return {'pt_solver_region_configuration': 'PASS',
+            'pt_solver_boundary_states': len(expected_plan['boundary_states']),
+            'pt_solver_model_configs': sum(len(x['blocks']) for x in expected_plan['templates'])}
+
+
+def validate_readback(ids_name, ids, time3, mmm_source=None,
+                      sawteeth_source=None, pt_solver_source=None):
     """Validate schema and known time/radial coordinate invariants."""
     ids.validate()  # IMAS DD coordinate and mandatory-field validator.
     checks = {'schema': 'PASS'}
@@ -209,6 +242,7 @@ def validate_readback(ids_name, ids, time3, mmm_source=None, sawteeth_source=Non
     elif ids_name == 'sawteeth':
         checks.update(check_sawteeth_readback(ids, sawteeth_source))
     elif ids_name == 'core_transport':
+        checks.update(check_pt_solver_region_readback(ids, pt_solver_source))
         if len(ids.model):
             n = check_time_vector('core_transport', ids.time, time3,
                                   len(ids.model[0].profiles_1d))
@@ -238,6 +272,9 @@ def readback_accepted_ids(imas, manifest, database_root, cdf):
     sawteeth_source = (source_sawteeth(cdf)
                        if any(row['ids'] == 'sawteeth' for row in accepted)
                        else None)
+    pt_solver_source = (source_pt_solver_regions(cdf)
+                        if any(row['ids'] == 'core_transport' for row in accepted)
+                        else None)
     opened = False
     try:
         db.open()
@@ -252,7 +289,9 @@ def readback_accepted_ids(imas, manifest, database_root, cdf):
             record = {'ids': name, 'occurrence': occurrence, 'status': 'PASS'}
             try:
                 ids = db.get(name, occurrence=occurrence)
-                record['checks'] = validate_readback(name, ids, t3, mmm_source, sawteeth_source)
+                record['checks'] = validate_readback(
+                    name, ids, t3, mmm_source, sawteeth_source,
+                    pt_solver_source if name == 'core_transport' else None)
             except Exception as exc:
                 record['status'] = 'FAIL'
                 record['error'] = f'{type(exc).__name__}: {exc}'
