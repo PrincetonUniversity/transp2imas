@@ -30,7 +30,7 @@ def _json_default(value):
 
 WRITER_ORDER = (
     'workflow', 'wall', 'tf', 'lh_antennas', 'ic_antennas', 'ec_launchers',
-    'nbi', 'distribution_sources', 'pf_active', 'core_profiles',
+    'nbi', 'distribution_sources', 'distributions', 'pf_active', 'core_profiles',
     'pf_passive', 'radiation', 'equilibrium', 'summary', 'core_sources',
     'waves', 'core_transport', 'sawteeth', 'edge_sources', 'dataset_fair',
 )

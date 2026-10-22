@@ -26,6 +26,7 @@ from imas_waves import imas_waves
 from imas_workflow import imas_workflow
 from imas_dataset_fair import imas_dataset_fair
 from imas_distribution_sources import imas_distribution_sources
+from imas_distributions import imas_distributions
 from imas_core_transport import imas_core_transport
 from imas_sawteeth import imas_sawteeth
 
@@ -44,6 +45,7 @@ def make_writers(nci, moments, nzones, ec_nml_launch, pf_passive_geometry,
         'ec_launchers': lambda: imas_ec_launchers(nci, ec_nml_launch=ec_nml_launch),
         'nbi': lambda: imas_nbi(nci),
         'distribution_sources': lambda: imas_distribution_sources(nci),
+        'distributions': lambda: imas_distributions(nci),
         'pf_active': lambda: imas_pf_active(nci, geometry_path=pf_active_geometry),
         'core_profiles': lambda: imas_core_profiles(nci),
         'pf_passive': lambda: imas_pf_passive(nci, geometry_path=pf_passive_geometry),

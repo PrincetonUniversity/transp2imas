@@ -282,6 +282,17 @@ def process_case(cdf, report_dir, python, deep, strict_inputs, strict_current):
     return result
 
 
+def is_time_dependent_result(path):
+    """True for TRANSP result CDFs (have TIME3, X and XB).
+
+    Companion files such as ``<run>PH.CDF`` hold other data and none of the
+    time/radial grids that the writers and diagnostics require.
+    """
+    from scipy.io import netcdf_file
+    with netcdf_file(path, mmap=False) as nc:
+        return {'TIME3', 'X', 'XB'} <= set(nc.variables)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--data-root', type=Path, default=HERE / 'data')
@@ -294,7 +305,13 @@ def main(argv=None):
                    help='fail on EC current residual greater than 0.5%%')
     ns = p.parse_args(argv)
     ns.report_dir.mkdir(parents=True, exist_ok=True)
-    cdfs = sorted(ns.data_root.rglob('*.CDF'))
+    found = sorted(ns.data_root.rglob('*.CDF'))
+    cdfs = []
+    for path in found:
+        if is_time_dependent_result(path):
+            cdfs.append(path)
+        else:
+            print(f'skipping {path.relative_to(ns.data_root)}: no TIME3/X/XB (not a time-dependent result CDF)')
     if not cdfs:
         p.error('no CDF fixtures in ' + str(ns.data_root))
     results = []

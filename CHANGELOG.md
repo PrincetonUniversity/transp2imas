@@ -4,6 +4,12 @@ Notable changes to transp2imas are recorded here. Future entries and GitHub
 releases are managed automatically by Release Please from Conventional Commit
 messages.
 
+- Add TR.DAT-driven discovery of NUBEAM `DATA<n>` and `FI_TAR.GZ<n>` outputs,
+  keeping their independent `outtim`/`fi_outtim` counts and excluding CPU
+  particle-state files from conversion inputs. Keep the large NSTX case out
+  of git. Write the `distributions` IDS (GGD on NUBEAM's MC zone grid x
+  energy x pitch, pitch along B) from them, with tests and plotting script.
+
 - Trace the equilibrium LCFS from `PSIRZ` and the enclosed boundary flux by
   default; reserve Fourier moment reconstruction for explicit `--moments yes`
   requests. Populate equilibrium geometric-axis coordinates from boundary and
