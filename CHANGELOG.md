@@ -92,6 +92,13 @@ messages.
   This prevents all-example false failures from `json.dumps` and restores real
   IMAS readback to the end-to-end verification sequence.
 
+## [0.12.0](https://github.com/PrincetonUniversity/transp2imas/compare/v0.11.1...v0.12.0) (2026-10-22)
+
+
+### Features
+
+* Nubeam related quantities ([#114](https://github.com/PrincetonUniversity/transp2imas/issues/114)) ([f1df6d0](https://github.com/PrincetonUniversity/transp2imas/commit/f1df6d0d91140923c2a8b03a726866872f24ab2e))
+
 ## [0.11.1](https://github.com/PrincetonUniversity/transp2imas/compare/v0.11.0...v0.11.1) (2026-10-19)
 
 
