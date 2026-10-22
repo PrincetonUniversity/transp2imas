@@ -22,7 +22,7 @@ LDLIBS += -L$(IMAS_PREFIX)/lib -limas-gfortran -limas
 
 .DEFAULT_GOAL := help
 
-.PHONY: help quick verify verify-all verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
+.PHONY: help quick verify verify-all verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
 
 help:
 	@echo "Diagnostic and example commands"
@@ -67,6 +67,7 @@ quick:
 	$(PYTHON) verify_release_config.py
 	$(PYTHON) verify_sawteeth_mapping.py --quick
 	$(PYTHON) verify_end_to_end_contract.py
+	$(PYTHON) verify_nubeam_fi.py --quick
 
 verify: quick
 	@test -f "$(CDF)" || { echo "CDF not found: $(CDF)" >&2; exit 1; }
@@ -93,6 +94,10 @@ verify-waves:
 
 verify-inputs:
 	$(PYTHON) verify_input_provenance.py
+
+verify-nubeam-fi:
+	$(PYTHON) verify_nubeam_fi.py
+	$(PYTHON) verify_nubeam_outputs.py
 
 verify-pf-passive:
 	$(PYTHON) verify_pf_passive_mapping.py

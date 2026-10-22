@@ -151,6 +151,20 @@ class TestMMMContracts(unittest.TestCase):
             self.assertNotIn("'" + name + "': (", source)
 
 
+def time_dependent_cdfs(root):
+    """TRANSP result CDFs under ``root``; skips files without the radial/time grids.
+
+    Companion files such as ``<run>PH.CDF`` (no TIME3/X/XB variables) are not
+    time-dependent TRANSP output and cannot be passed to the transport writers.
+    """
+    found = []
+    for path in sorted(Path(root).rglob('*.CDF')):
+        with netcdf_file(path, mmap=False) as nc:
+            if {'TIME3', 'X', 'XB'} <= set(nc.variables):
+                found.append(path)
+    return found
+
+
 class TestMMMWriter(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -229,7 +243,7 @@ class TestMMMWriter(unittest.TestCase):
 
     def test_mmm_absent_from_other_real_cdfs(self):
         data_root = ROOT / 'examples/data'
-        files = sorted(data_root.rglob('*.CDF'))
+        files = time_dependent_cdfs(data_root)
         if not files:
             self.skipTest('no source fixtures')
         for path in files:
@@ -345,7 +359,7 @@ def main(argv=None):
         return 1
     if ns.quick:
         return 0
-    paths = sorted(ns.data_root.rglob('*.CDF'))
+    paths = time_dependent_cdfs(ns.data_root)
     if not paths:
         parser.error(f'no CDF examples in {ns.data_root}')
     results = []
