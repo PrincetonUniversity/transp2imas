@@ -4,6 +4,7 @@
 import re
 import numpy as np
 from nc2imas import *
+from utilities import append_successful_entries
 
 
 class imas_edge_sources:
@@ -110,7 +111,8 @@ class imas_edge_sources:
             if not atom.label or atom.label == 'dummy':
                 return key, None
             return key, atom
-        except Exception:
+        except KeyError:
+            self.im.mapping.skipped(f'unknown species token {key!r}', target='source/ggd/ion')
             return key, None
 
     def _fill_species_identity(self, node, token, ion=False):
@@ -203,11 +205,18 @@ class imas_edge_sources:
     def _set_momentum_ggd(self, aos, values, it, sign=1.0):
         if not isinstance(values, np.ndarray) or not values.size:
             return False
+        field = 'phi' if self.im.dd_at_least(3, 42, 0) else 'toroidal'
         aos.resize(1)
         q = aos[0]
+        if any(str(c) for c in getattr(q, field).metadata.coordinates_same_as):
+            # DD 3.39 ties the toroidal component's size to the radial one; filling radial with zeros
+            # would assert a radial momentum source that TRANSP does not provide.
+            aos.resize(0)
+            self.im.mapping.skipped(f'{field} momentum not written: the DD ties it to the radial component',
+                                    target='source/ggd/*/momentum')
+            return False
         q.grid_index = self.GRID_INDEX
         q.grid_subset_index = self.GRID_SUBSET_INDEX
-        field = 'phi' if self.im.dd_at_least(3, 42, 0) else 'toroidal'
         data = sign * np.asarray(values[it], dtype=np.float64)
         arr = getattr(q, field)
         arr.resize(len(data))
@@ -623,20 +632,16 @@ class imas_edge_sources:
 
         # Each gas/recycling neutral population can generate two distinct
         # physical processes: atomic ionization and charge exchange.
-        es.source.resize(2 * len(inventory) + (3 if (has_reco or has_reco_recapture) else 0))
-        used = 0
+        builders = []
         for item in inventory:
-            if self._fill_ionization_source(es.source[used], item):
-                used += 1
-            if self._fill_charge_exchange_source(es.source[used], item):
-                used += 1
-        if has_reco and self._fill_recombination_source(es.source[used]):
-            used += 1
-        if has_reco_recapture and self._fill_recombination_recapture_ionization(es.source[used]):
-            used += 1
-        if has_reco_recapture and self._fill_recombination_charge_exchange(es.source[used]):
-            used += 1
-        es.source.resize(used)
+            builders.append(lambda source, item=item: self._fill_ionization_source(source, item))
+            builders.append(lambda source, item=item: self._fill_charge_exchange_source(source, item))
+        if has_reco:
+            builders.append(self._fill_recombination_source)
+        if has_reco_recapture:
+            builders.append(self._fill_recombination_recapture_ionization)
+            builders.append(self._fill_recombination_charge_exchange)
+        used = append_successful_entries(lambda: self.im.new_ids('edge_sources'), es, 'source', builders)
 
         if used:
             self.im.putdb_imas(es)

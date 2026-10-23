@@ -42,9 +42,12 @@ class TestOccurrences(unittest.TestCase):
                         text.index('self._fill_combined_model(ct.model[0])'))
         self.assertIn('len(ct.model[0].profiles_1d) != self.nt', text)
 
-    def test_regional_model_name_and_settings_only_no_profiles(self):
+    def test_regional_slots_are_per_selected_model_and_never_relabel_assembled_output(self):
         source = (ROOT / 'imas_core_transport.py').read_text()
-        self.assertIn('slot.identifier.name = selected.upper()', source)
+        # The slot is named for the output it holds (the assembled neoclassical result, or the
+        # model's own native channels), never renamed to a selected model it does not come from.
+        self.assertNotIn('slot.identifier.name = selected.upper()', source)
+        self.assertIn("identity = 'neoclassical' if assembled else names[0].upper()", source)
         self.assertIn('slot.profiles_1d.resize(0)', source)
 
 if __name__=='__main__':unittest.main()

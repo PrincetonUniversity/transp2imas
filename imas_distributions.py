@@ -385,18 +385,22 @@ class imas_distributions:
         trdat = case_dir / f"{run_id}TR.DAT"
         if not trdat.is_file():
             self.logger.info(f"distributions: {trdat.name} not found next to the CDF; skipping")
+            self.im.mapping.skipped(f'{trdat.name} not found next to the CDF', target='distributions')
             return
         try:
             discover_nubeam_outputs(case_dir, run_id, trdat)
         except FileNotFoundError as exc:
             self.logger.warning(f"distributions: requested NUBEAM output unavailable ({exc}); skipping")
+            self.im.mapping.skipped(f'requested NUBEAM output unavailable: {exc}', target='distributions')
             return
         except ValueError as exc:
             self.logger.info(f"distributions: no NUBEAM fast-ion output requested ({exc}); skipping")
+            self.im.mapping.skipped(f'no NUBEAM fast-ion output requested: {exc}', target='distributions')
             return
         snapshots = read_fast_ion_snapshots(case_dir, run_id, trdat, logger=self.logger)
         if not snapshots:
             self.logger.warning("distributions: no DATA/FI_TAR pair shares an output time; skipping")
+            self.im.mapping.skipped('no DATA/FI_TAR pair shares an output time', target='distributions')
             return
         snapshots.sort(key=lambda snap: snap.time)
 
@@ -672,13 +676,9 @@ class imas_distributions:
         times = np.array([snap.time for snap in snapshots])
         ids.magnetic_axis.r = np.array([snap.flux_map.r_axis for snap in snapshots])
         ids.magnetic_axis.z = np.array([snap.flux_map.z_axis for snap in snapshots])
-        raxis = self.im.get_ncvar("RAXIS", self.im.cm2m)
-        bzxr = self.im.get_ncvar("BZXR", self.im.cm2m)
-        if self.im.is_valid(raxis, bzxr):
-            raxis = np.interp(times, self.im.timesc, raxis)
-            bzxr = np.interp(times, self.im.timesc, bzxr)
-            ids.vacuum_toroidal_field.r0 = float(np.mean(raxis))
-            ids.vacuum_toroidal_field.b0 = self.im.bt_sign * bzxr / raxis
+        reference = self.im.vacuum_field_reference(times)
+        if reference is not None:
+            ids.vacuum_toroidal_field.r0, ids.vacuum_toroidal_field.b0 = reference
 
 
 if __name__ == "__main__":

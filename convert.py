@@ -5,6 +5,7 @@ import sys
 import time
 from pathlib import Path
 
+import mapping_status
 from conversion_plan import ConversionJournal, select_ids
 from nc2imas import nc2imas, get_args, TRANSP2IMAS_VERSION
 from utilities import find_all_files
@@ -28,6 +29,7 @@ from imas_dataset_fair import imas_dataset_fair
 from imas_distribution_sources import imas_distribution_sources
 from imas_distributions import imas_distributions
 from imas_core_transport import imas_core_transport
+from imas_transport_solver_numerics import imas_transport_solver_numerics
 from imas_sawteeth import imas_sawteeth
 
 TRANSP2IMAS_DD4_PATCHLEVEL = TRANSP2IMAS_VERSION
@@ -55,6 +57,7 @@ def make_writers(nci, moments, nzones, ec_nml_launch, pf_passive_geometry,
         'core_sources': lambda: imas_core_sources(nci),
         'waves': lambda: imas_waves(nci),
         'core_transport': lambda: imas_core_transport(nci),
+        'transport_solver_numerics': lambda: imas_transport_solver_numerics(nci),
         'sawteeth': lambda: imas_sawteeth(nci),
         'edge_sources': lambda: imas_edge_sources(nci),
         'dataset_fair': lambda: imas_dataset_fair(nci),
@@ -86,6 +89,8 @@ def do_convert(argvs):
                      ip_direction=ip_direction, bt_direction=bt_direction,
                      dd_version=dd_version) as nci:
             journal.attach_converter(nci)
+            journal.data['setup_reads'] = nci.mapping.consumed(None)
+            journal.data['mapping_policy'] = 'strict' if mapping_status.is_strict() else 'lenient'
             print(f'IMAS target DD: {nci.dd_version} (schema family DD{nci.dd_major_version})')
             writers = make_writers(nci, moments, nzones, ec_nml_launch,
                                    pf_passive_geometry, pf_active_geometry)
@@ -94,15 +99,24 @@ def do_convert(argvs):
                 before = len(nci._written_ids)
                 started = time.monotonic()
                 nci._active_writer = name
+                nci.mapping.writer = name
                 try:
                     writers[name]()
                 except Exception as exc:
                     journal.record_writer(name, nci._written_ids[before:],
-                                          time.monotonic() - started, error=exc)
+                                          time.monotonic() - started, error=exc,
+                                          mapping=nci.mapping.summary(name),
+                                          consumed=nci.mapping.consumed(name))
                     raise
                 else:
+                    if len(nci._written_ids) == before and not nci.mapping.entries(name):
+                        # A writer that wrote nothing and recorded no reason of its own.
+                        nci.mapping.skipped('no IDS written; the writer logged its reason in the conversion log',
+                                            target=name)
                     journal.record_writer(name, nci._written_ids[before:],
-                                          time.monotonic() - started)
+                                          time.monotonic() - started,
+                                          mapping=nci.mapping.summary(name),
+                                          consumed=nci.mapping.consumed(name))
                 finally:
                     nci._active_writer = None
         journal.finish()

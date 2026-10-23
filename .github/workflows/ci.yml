@@ -29,7 +29,7 @@ jobs:
           cache: pip
 
       - name: Install source-check dependencies
-        run: python -m pip install --upgrade pip numpy scipy matplotlib
+        run: python -m pip install --upgrade pip numpy scipy matplotlib PyYAML
 
       - name: Enforce headers, compile, and run quick checks
         env:

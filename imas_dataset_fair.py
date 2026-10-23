@@ -23,7 +23,8 @@ class imas_dataset_fair:
         self.logger.info('\ndataset_fair')
         try:
             ids = self.im.new_ids('dataset_fair')
-        except Exception as exc:
+        except ValueError as exc:          # imas.exception.IDSNameError: not in this DD
+            self.im.mapping.unavailable_in_dd('dataset_fair', str(exc))
             self.logger.warning(f'dataset_fair is unavailable in target DD: {exc}')
             return
 

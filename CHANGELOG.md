@@ -4,6 +4,57 @@ Notable changes to transp2imas are recorded here. Future entries and GitHub
 releases are managed automatically by Release Please from Conventional Commit
 messages.
 
+- Add measured mapping coverage and a declarative mapping registry. The CDF dataset records which variables each
+  writer actually read (`consumed` and `setup_reads` in the `--report-json` journal);
+  `mapping_registry.yaml` lists typed, XML-only, input and deliberately deferred mappings with units, transform,
+  sign, verification level and tests, is validated against the Data Dictionary, the bundled CDFs and the
+  measured reads (`examples/verify_mapping_registry.py`), and renders `docs/mapping-registry.md`.
+  `examples/report_coverage.py` reports all-source reads, reads over the applicable set and typed registry
+  entries separately, never counting a read as an export.
+- Skip `edge_sources` GGD momentum components that the target DD ties to the radial component (DD 3.39
+  `toroidal`) instead of failing validation; the old trim-by-resize had been discarding these sources.
+- Separate absent optional data from broken required mappings. `get_ncvar` and `fill_data` no longer turn
+  read, shape, index, interpolation or schema failures into empty arrays or slice-0-only log lines: they raise
+  `MappingError` naming the writer, CDF variable and IDS target (or, with `--lenient-mapping`, record a skipped
+  field with the reason). Absent optional variables, skipped fields and IDSs missing from the DD are recorded
+  per writer in the `--report-json` journal (`mapping`), every skipped writer carries a reason, and the broad
+  `except Exception` handlers were reduced from 37 to 8.
+- Attribute regional PT_SOLVER models over time: keep every model selected in a region with its
+  `initial`..`end` intervals (a GLF23 -> TGLF switch no longer becomes TGLF for the whole run, and a model
+  disabled before the end is no longer lost), write one model slot per selected model without
+  placeholders, add `effective_until` to the radial validity states, and stop relabelling the
+  assembled neoclassical result with a selected model name (it is named `neoclassical`, with the
+  selected models and their intervals as metadata).
+- Add a `transport_solver_numerics` writer: PT_SOLVER `NPTRITER` and the `PT_*` timers as named
+  control parameters (`newton_iterations`, `cumulative_cpu_time_hours`, `cumulative_wall_time_hours`)
+  on the native `TIME` grid, for DD >= 3.42 (DD 3.39.0 has unnamed control parameters, so nothing is
+  written); inactive channels, non-hour timers and non-integer counts are skipped.
+- Keep the native `TIME` coordinate values with each PT_SOLVER runtime diagnostic channel (`NPTRITER`,
+  `PT_CPTIME`, `PT_WTIME`): `TIME` is not the `TIME3` grid of `core_transport` and differs in length in
+  some CDFs. Discover the channels independently of the PT_SOLVER input provenance (without a PT plan,
+  only channels with nonzero data are recorded), decode their text units instead of storing bytes reprs,
+  and run the PT verification scripts in `make quick`.
+- Normalize `j_parallel` (`core_sources`, `core_profiles`, `equilibrium`) and `rho_tor` (`core_profiles`,
+  `equilibrium`, shared grid helper) by the IDS's own `vacuum_toroidal_field/b0`, as the Data Dictionary
+  defines them, instead of TRANSP's `BZ`, which differs from the exported `b0` by 5-38% in the bundled
+  cases. Fill `vacuum_toroidal_field` in `equilibrium` (it was empty although its `j_parallel` is
+  defined relative to it) and use the same `r0`/`b0` convention in `summary`.
+- Fix IDS arrays of structures being erased on write: `radiation`, `distribution_sources` and
+  `edge_sources` shrank a filled array with `resize(used)`, which IMAS-Python resets
+  (`keep=False`), so they wrote empty entries while reporting success. Entries are now built in
+  scratch IDSs and appended (`utilities.append_successful_entries`); regression tests read the
+  entries back from HDF5.
+- Make `vacuum_toroidal_field` consistent with the TF IDS: `b0` is now `BZXR / r0` with one
+  constant reference radius, so `r0 * b0` equals the TF vacuum field times radius (it differed by
+  up to 17% when the magnetic axis moved).
+- Write the complete NBI toroidal momentum source to `core_sources`
+  (`TQBE + TQBI + TQBTH + TQJXB`, plus the fast-ion anomalous-diffusion torque `TQABDF` when
+  present) with `TQJXB` as the included JxB subset, instead of `TQBTH` alone, and fill the DD 3.39
+  JxB node. The sum reproduces TRANSP's `TQIN` in every bundled case with beams.
+- Write the predictive angular-momentum flux (`AMTR_MOD`) to the `transport_solver` model.
+- End-to-end verification no longer treats `<run>PH.CDF` companion files as cases or regional
+  settings-only `core_transport` models as missing profiles.
+
 - Add TR.DAT-driven discovery of NUBEAM `DATA<n>` and `FI_TAR.GZ<n>` outputs,
   keeping their independent `outtim`/`fi_outtim` counts and excluding CPU
   particle-state files from conversion inputs. Keep the large NSTX case out

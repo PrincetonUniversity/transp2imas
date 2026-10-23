@@ -4,6 +4,7 @@
 import re
 import numpy as np
 from nc2imas import *
+from utilities import append_successful_entries
 
 
 class imas_radiation:
@@ -129,7 +130,8 @@ class imas_radiation:
         token = {'3': 'HE3', '4': 'HE4'}.get(token, token)
         try:
             return token, atom_base(token)
-        except Exception:
+        except KeyError:
+            self.im.mapping.skipped(f'unknown species token {token!r}', target='process/ion')
             return token, None
 
     def _fill_element_identity(self, node, token, z_ion=None):
@@ -173,10 +175,10 @@ class imas_radiation:
                 value = re.split(r'[\s,;]+', value.strip())[0]
             try:
                 return float(self.im.parse_number(value, float))
-            except Exception:
+            except (ValueError, TypeError):
                 try:
                     return float(str(value).replace('D', 'E').replace('d', 'e'))
-                except Exception:
+                except (ValueError, TypeError):
                     return None
 
         aimp = scalar('AIMP')
@@ -338,12 +340,7 @@ class imas_radiation:
             lambda p: self._fill_electron_process(p, 'synchrotron_radiation', 'PRAD_CY'),
             self._fill_line_radiation,
         ]
-        ids.process.resize(len(builders))
-        used = 0
-        for build in builders:
-            if build(ids.process[used]):
-                used += 1
-        ids.process.resize(used)
+        used = append_successful_entries(lambda: self.im.new_ids('radiation'), ids, 'process', builders)
 
         if used:
             self.logger.info(f'radiation: wrote {used} emission processes')

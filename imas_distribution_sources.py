@@ -7,6 +7,7 @@ import numpy as np
 from scipy import constants
 
 from nc2imas import nc2imas
+from utilities import append_successful_entries
 
 
 class imas_distribution_sources:
@@ -62,21 +63,31 @@ class imas_distribution_sources:
         Missing/malformed values are optional metadata and must never abort the
         distribution_sources writer.
         """
+        target = f'source[{int(ib)}]/species'
         try:
             value = self.im.get_namelist_var(name, float, ind=int(ib) - 1)
-        except Exception:
+        except (KeyError, ValueError, TypeError, IndexError) as exc:
+            self.im.mapping.skipped(f'namelist value unavailable: {type(exc).__name__}: {exc}',
+                                    source=name, target=target)
             return None
         if value is None:
+            self.im.mapping.skipped('namelist value not set', source=name, target=target)
             return None
         try:
             # get_namelist_var normally returns a scalar for ind>=0, but be
             # defensive in case an older parser returns a length-one array.
             arr = np.asarray(value)
             if arr.size != 1:
+                self.im.mapping.skipped(f'namelist value has {arr.size} elements, expected 1',
+                                        source=name, target=target)
                 return None
             value = float(arr.reshape(-1)[0])
-            return value if np.isfinite(value) else None
-        except Exception:
+            if not np.isfinite(value):
+                self.im.mapping.skipped('namelist value is not finite', source=name, target=target)
+                return None
+            return value
+        except (ValueError, TypeError) as exc:
+            self.im.mapping.skipped(f'namelist value is not numeric: {exc}', source=name, target=target)
             return None
 
     @staticmethod
@@ -250,7 +261,8 @@ class imas_distribution_sources:
 
         try:
             ids = self.im.new_ids('distribution_sources')
-        except Exception as exc:
+        except ValueError as exc:          # imas.exception.IDSNameError: not in this DD
+            self.im.mapping.unavailable_in_dd('distribution_sources', str(exc))
             self.logger.warning(f'distribution_sources is unavailable in target DD: {exc}')
             return
 
@@ -262,12 +274,9 @@ class imas_distribution_sources:
         if hasattr(ids, 'time'):
             self.im.fill_data(ids.time, self.time)
 
-        ids.source.resize(len(beam_numbers))
-        used = 0
-        for ib in beam_numbers:
-            if self._fill_source(ids.source[used], ib):
-                used += 1
-        ids.source.resize(used)
+        used = append_successful_entries(
+            lambda: self.im.new_ids('distribution_sources'), ids, 'source',
+            [lambda source, ib=ib: self._fill_source(source, ib) for ib in beam_numbers])
 
         if used == 0:
             self.logger.info('distribution_sources: no supported NBI sources after validation; skipping')

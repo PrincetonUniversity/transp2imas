@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from input_provenance import InputInventory
-from pt_solver_regions import build_pt_region_plan, occurrence_region_models
+from pt_solver_regions import build_pt_region_plan, interval_attributes, occurrence_region_models
 
 
 def string(value):
@@ -36,25 +36,40 @@ def inspect_occurrence(ct, index, expected=None):
     assert root.get('occurrence') == str(index)
     assert root.get('region') == expected['region'], (root.get('region'),expected)
     selections = root.findall('model_selection')
-    assert len(selections) == 2
-    assert len(ct.model) == 2
+    expected_pairs = {(x['category'], x['model'].upper()) for x in expected['selections']}
+    assert {(x.get('category'), x.get('name')) for x in selections} == expected_pairs, \
+        ([x.attrib for x in selections], expected_pairs)
     assert root.find('./pt_solver_regions/boundary_and_equation_timeline/state') is not None
     assert root.find('.//input_file/namelist') is not None, 'referenced PT_TEMPLATE namelist XML absent'
-    for category, model in zip(('anomalous','neoclassical'), ct.model):
-        selection = next(x for x in selections if x.get('category') == category)
-        configured = (expected['models'][category] or 'none').upper()
-        assert selection.get('name') == configured, (category,selection.attrib,configured)
+    seen = set()
+    for model in ct.model:
         model_xml = ET.fromstring(string(model.code.parameters))
         scope = model_xml.find('pt_solver_occurrence')
         assert scope is not None
         assert scope.get('region') == expected['region']
-        assert scope.get('category') == category
-        assert scope.get('model') == configured
+        category = scope.get('category')
+        attribution = scope.get('output_attribution')
+        identity = string(model.identifier.name)
+        listed = scope.get('selected_models').split(',')
+        if attribution == 'assembled_result_not_attributed_to_a_selected_model':
+            # the assembled neoclassical result is never renamed to a selected model
+            assert identity == 'neoclassical' and scope.get('model') == 'neoclassical'
+        else:
+            assert identity == scope.get('model') == listed[0]
+        for node in scope.findall('selected_model'):
+            expected_item = next(x for x in expected['selections']
+                                 if x['category'] == category and x['model'].upper() == node.get('name'))
+            stored = [(i.get('effective_from'), i.get('effective_until')) for i in node.findall('interval')]
+            want = [interval_attributes(a, b) for a, b in expected_item['intervals']]
+            assert stored == [(w['effective_from'], w['effective_until']) for w in want], (stored, want)
+            seen.add((category, node.get('name')))
         state = scope.get('cdf_model_output_available')
-        assert state in ('true','false')
+        assert state in ('true', 'false')
         if state == 'false':
             assert scope.get('output_scope') == 'settings_only'
-        print(f'  {category}: {configured}, CDF output={state}, profile slices={len(model.profiles_1d)}')
+        print(f'  {category}: slot {identity!r} selected={scope.get("selected_models")}, '
+              f'CDF output={state}, profile slices={len(model.profiles_1d)}')
+    assert seen == expected_pairs, (seen, expected_pairs)
 
 
 def main():
@@ -74,7 +89,7 @@ def main():
     plan = build_pt_region_plan(InputInventory(a.trdat.resolve(), a.source_run))
     assert plan and plan['trusted_model_assignment'], 'No authoritative PT_TEMPLATE found'
     regions = occurrence_region_models(plan)
-    print('Expected regional occurrences:',[(i+1,r['region'],r['models']) for i,r in enumerate(regions)])
+    print('Expected regional occurrences:',[(i+1,r['region'],[(x['category'],x['model'],x['intervals']) for x in r['selections']]) for i,r in enumerate(regions)])
     backend = imas.ids_defs.HDF5_BACKEND
     db = imas.DBEntry(backend, a.machine, a.shot, a.run,
                       a.user or __import__('getpass').getuser(),

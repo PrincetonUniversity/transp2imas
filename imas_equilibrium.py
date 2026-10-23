@@ -300,13 +300,15 @@ class imas_equilibrium:
 
 
     def boundary_minor(self, rsurf, time):
-         minor = -1
-         try:
-            minor = (np.max(rsurf) - np.min(rsurf))/2.0
-         except (ValueError, TypeError):
+         """Boundary minor radius, or ``None`` when the boundary R is empty (recorded as skipped)."""
+         values = np.asarray(rsurf, dtype=float)
+         if values.size == 0:
             if time==0:
                self.im.logger.info('minor_axis: plasma boundary invalid')
-         return minor
+            self.im.mapping.skipped('plasma boundary R is empty (no LCFS data for this time slice)',
+                                    target='time_slice/boundary/minor_radius')
+            return None
+         return (np.max(values) - np.min(values))/2.0
 
 
     def create_ids(self):
@@ -485,17 +487,24 @@ class imas_equilibrium:
                 psi_norm = np.divide(psi - psi_axis[:,None], denom[:,None],
                                      out=np.zeros_like(psi),
                                      where=np.abs(denom[:,None]) > 0.0)
-            except Exception:
+            except (ValueError, TypeError, IndexError, FloatingPointError) as exc:
+                self.im.mapping.broken(exc, source='PLFLX', target='time_slice/profiles_1d/psi_norm')
                 psi_norm = []
 
-        # TRANSP rho_tor = sqrt(Phi/(pi*B0)).  Phi and physical B0 have the
-        # same sign in a consistent convention, leaving a positive metric rho.
+        # rho_tor = sqrt(Phi/(pi*B0)) with B0 the vacuum_toroidal_field/b0 written in this IDS.
+        # Phi and the physical B0 have the same sign in a consistent convention, leaving a
+        # positive metric rho.
         rho_tor = []
-        try:
-            b0_signed = bt_sign * bz
-            rho_tor = np.sqrt(np.clip(phi/(pi*b0_signed[:,None]), 0.0, None))
-        except Exception:
-            rho_tor = []
+        reference = self.im.vacuum_field_reference(self.im.timep)
+        b0_signed = None if reference is None else reference[1]
+        if b0_signed is None:
+            self.im.mapping.skipped('vacuum toroidal field (RAXIS/BZXR) is not in the CDF',
+                                    source='BZXR', target='time_slice/profiles_1d/rho_tor')
+        else:
+            try:
+                rho_tor = np.sqrt(np.clip(phi/(pi*b0_signed[:,None]), 0.0, None))
+            except (TypeError, ValueError, FloatingPointError) as exc:
+                self.im.mapping.broken(exc, source='TRFLX', target='time_slice/profiles_1d/rho_tor')
 
         dpsi_drho_tor = self.im.radial_gradient(psi, rho_tor) \
             if self.im.is_valid(psi, rho_tor) else []
@@ -513,10 +522,16 @@ class imas_equilibrium:
             if self.im.is_valid(jphi_x) else []
         jb_x = self.im.get_ncvar('PLJB', self.im.area_inv)
         jparallel_x = []
-        if self.im.is_valid(jb_x, bz):
+        # <J.B>/B0 with the IDS's own |b0| (see rho_tor above), not TRANSP's BZ
+        b0_mag = None if b0_signed is None else np.abs(b0_signed)
+        if b0_mag is None:
+            self.im.mapping.skipped('vacuum toroidal field (RAXIS/BZXR) is not in the CDF',
+                                    source='BZXR', target='time_slice/profiles_1d/j_parallel')
+        elif self.im.is_valid(jb_x):
             try:
-                jparallel_x = self.im.jparallel_sign * jb_x / bz[:,None]
-            except Exception:
+                jparallel_x = self.im.jparallel_sign * jb_x / b0_mag[:,None]
+            except (TypeError, ValueError, FloatingPointError) as exc:
+                self.im.mapping.broken(exc, source='PLJB', target='time_slice/profiles_1d/j_parallel')
                 jparallel_x = []
         jparallel = self.im.interp_radial_profiles(jparallel_x, coord_x, coord_xb,
                                                    axis_value=jparallel_x[:,0]) \
@@ -574,6 +589,8 @@ class imas_equilibrium:
         # Scalars read from TIME above were explicitly interpolated to TIME3.
         eqm.time.resize(ntimep)
         eqm.time[:] = timep
+        # j_parallel and rho_tor of this IDS are defined with this IDS's vacuum_toroidal_field/b0.
+        self.im.fill_vac_tor_field(eqm)
         eqm.time_slice.resize(ntimep)
 
         has2d_eq = False
@@ -667,7 +684,7 @@ class imas_equilibrium:
             self.im.fill_data(eqm.time_slice[it].boundary.outline.z, ybound, name='ybound')
 
             minor = self.boundary_minor(rbound, it)
-            if minor > 0:
+            if minor is not None and minor > 0:
                eqm.time_slice[it].boundary.minor_radius = minor
 
             geom_rz = None
