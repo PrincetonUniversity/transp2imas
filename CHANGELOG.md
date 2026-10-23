@@ -143,6 +143,13 @@ messages.
   This prevents all-example false failures from `json.dumps` and restores real
   IMAS readback to the end-to-end verification sequence.
 
+## [0.12.1](https://github.com/PrincetonUniversity/transp2imas/compare/v0.12.0...v0.12.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* Multiple verification scripts ([#116](https://github.com/PrincetonUniversity/transp2imas/issues/116)) ([15b40d1](https://github.com/PrincetonUniversity/transp2imas/commit/15b40d1bc54c6db1253ea2816bf82a6393b6813e))
+
 ## [0.12.0](https://github.com/PrincetonUniversity/transp2imas/compare/v0.11.1...v0.12.0) (2026-10-22)
 
 
