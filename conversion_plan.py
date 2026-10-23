@@ -32,7 +32,7 @@ WRITER_ORDER = (
     'workflow', 'wall', 'tf', 'lh_antennas', 'ic_antennas', 'ec_launchers',
     'nbi', 'distribution_sources', 'distributions', 'pf_active', 'core_profiles',
     'pf_passive', 'radiation', 'equilibrium', 'summary', 'core_sources',
-    'waves', 'core_transport', 'sawteeth', 'edge_sources', 'dataset_fair',
+    'waves', 'core_transport', 'transport_solver_numerics', 'sawteeth', 'edge_sources', 'dataset_fair',
 )
 
 
@@ -69,6 +69,7 @@ class ConversionJournal:
             'backend': None,
             'occurrence': None,
             'output_directory': None,
+            'mapping_policy': None,
             'writers': [],
             'written_ids': [],
             'status': 'RUNNING',
@@ -92,7 +93,7 @@ class ConversionJournal:
         self.data['backend'] = (None if backend is None
                                 else str(getattr(backend, 'name', backend)))
 
-    def record_writer(self, name, writes, duration, error=None):
+    def record_writer(self, name, writes, duration, error=None, mapping=None, consumed=None):
         # Preserve only the stable readback contract, with native JSON types.
         # IMAS and NetCDF may supply NumPy scalar IDs and occurrence numbers.
         events = [{'ids': str(event['ids']),
@@ -104,6 +105,12 @@ class ConversionJournal:
                   'occurrences': [event['occurrence'] for event in events]}
         if error:
             record['error'] = f'{type(error).__name__}: {error}'
+        if mapping:
+            # Absent optional inputs and skipped fields with reasons (see mapping_status.MappingLedger).
+            record['mapping'] = mapping
+        if consumed:
+            # CDF variables this writer actually read (measured, not inferred from the source text).
+            record['consumed'] = sorted(consumed)
         self.data['writers'].append(record)
         self.data['written_ids'].extend(events)
         return status

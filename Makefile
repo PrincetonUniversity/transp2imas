@@ -22,7 +22,7 @@ PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not 
 
 .DEFAULT_GOAL := help
 
-.PHONY: help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
+.PHONY: help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-readback verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
 
 help:
 	@echo "TRANSP-to-IMAS developer commands"
@@ -120,6 +120,9 @@ verify-inputs:
 
 export-inputs:
 	$(PYTHON) examples/export_input_xml.py "$(TRDAT)" --runid "$(CASE)" --output-dir build/input-xml
+
+verify-readback:
+	$(MAKE) -C examples verify-readback PYTHON="$(PYTHON)"
 
 verify-nubeam-fi:
 	$(MAKE) -C examples verify-nubeam-fi PYTHON="$(PYTHON)"

@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import unittest,sys,xml.etree.ElementTree as ET
-sys.path.insert(0,'/mnt/data/pt_latest')
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import types
 sys.modules['input_provenance']=types.SimpleNamespace(assignments=lambda x: [],strip_fortran_comment=lambda x:x)
 from pt_solver_regions import region_occurrence_xml,region_validity_xml,numerical_settings_xml
@@ -14,6 +15,7 @@ class TestValidityNumerics(unittest.TestCase):
   d={z.get('quantity'):z for z in states[0].findall('domain')}
   self.assertEqual(d['temperature'].get('xi_max'),'0.75');self.assertEqual(d['density'].get('xi_max'),'0.75');self.assertEqual(d['toroidal_momentum'].get('xi_max'),'0.75')
   self.assertEqual(states[1].get('effective_from'),'0.5')
+  self.assertEqual([x.get('effective_until') for x in states],['0.5','end'])
  def test_numerics_include_versions_updates_and_residuals(self):
   root=numerical_settings_xml(self.plan)
   controls=root.findall('.//control');names={c.get('name') for c in controls}
@@ -21,7 +23,7 @@ class TestValidityNumerics(unittest.TestCase):
   self.assertEqual(root.find('.//regional_model_control').get('raw'),'3')
   self.assertEqual(len(root.findall('.//settings')),2)
  def test_occurrence_has_direct_validity_and_numerics(self):
-  item={'region':'axial','models':{'anomalous':'glf23','neoclassical':'neoch'}}
+  item={'region':'axial','selections':[{'category':'anomalous','model':'glf23','intervals':[(None,None)]},{'category':'neoclassical','model':'neoch','intervals':[(None,None)]}],'final_models':{'anomalous':'glf23','neoclassical':'neoch'}}
   r=ET.fromstring(region_occurrence_xml(self.plan,item,1))
   self.assertEqual(len(r.findall('./regional_validity/state')),2)
   self.assertTrue(r.findall('.//pt_solver_numerics/input_file/settings'))

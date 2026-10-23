@@ -21,7 +21,8 @@ class imas_workflow:
         self.logger.info('\nworkflow')
         try:
             ids = self.im.new_ids('workflow')
-        except Exception as exc:
+        except ValueError as exc:          # imas.exception.IDSNameError: not in this DD
+            self.im.mapping.unavailable_in_dd('workflow', str(exc))
             self.logger.warning(f'workflow is unavailable in target DD: {exc}')
             return
 

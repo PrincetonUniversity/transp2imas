@@ -85,8 +85,8 @@ class imas_summary:
         if hasattr(sid, 'pulse'):
             try:
                 sid.pulse = int(self.im.shot)
-            except Exception:
-                pass
+            except (TypeError, ValueError):
+                self.im.mapping.skipped('shot number is not an integer', source='shot', target='pulse')
         if hasattr(sid, 'simulation'):
             sim = sid.simulation
             if times.size and hasattr(sim, 'time_begin'):
@@ -107,15 +107,14 @@ class imas_summary:
 
         # Basic global quantities.
         self._fill_nc(gq, 'ip', 'PCURC', ip_sign)
-        self._fill_nc(gq, 'b0', 'BZ', bt_sign)
+        # r0 and b0 follow the convention shared with vacuum_toroidal_field in every IDS: one
+        # constant r0 and b0 = bt_sign*BZXR/r0, so r0*b0 equals the TF vacuum field times radius.
         bz = self.im.get_ncvar('BZ')
-        bzxr = self.im.get_ncvar('BZXR', self.im.cm2m)  # T*cm -> T*m
-        if self.im.is_valid(bz, bzxr):
-            with np.errstate(divide='ignore', invalid='ignore'):
-                r0_t = np.where(np.abs(bz) > 0.0, bzxr/bz, np.nan)
-            finite = r0_t[np.isfinite(r0_t)]
-            if finite.size:
-                self._fill(gq, 'r0', float(np.median(finite)), 'TRANSP CDF:BZXR/BZ', scalar=True)
+        reference = self.im.vacuum_field_reference(self.im.timesc)
+        if reference is not None:
+            r0, b0_series = reference
+            self._fill(gq, 'r0', r0, 'TRANSP CDF: mean of first/last RAXIS', scalar=True)
+            self._fill(gq, 'b0', b0_series, 'TRANSP CDF: bt_sign*BZXR/r0')
 
         # li was renamed li_3 in DD4.
         li_name = 'li_3' if hasattr(gq, 'li_3') else 'li'
@@ -142,7 +141,8 @@ class imas_summary:
                 minor = np.sqrt(np.clip(area/self.im.pi, 0.0, None))
                 with np.errstate(divide='ignore', invalid='ignore'):
                     beta_n = 1.0e8 * beta * minor * b0 / ip
-            except Exception:
+            except (ValueError, TypeError, FloatingPointError) as exc:
+                self.im.mapping.broken(exc, source='BTEQ/PAREA/PCURC', target='global_quantities/beta_tor_norm')
                 beta_n = np.array([])
         beta_name = 'beta_tor_norm' if hasattr(gq, 'beta_tor_norm') else 'beta_normal'
         self._fill(gq, beta_name, beta_n, 'Derived from BTEQ,PAREA,BZ,PCURC')
@@ -187,8 +187,8 @@ class imas_summary:
                 bpol_x = self.im.interp_radial_profiles(bpol, coord_xb, coord_x, axis_value=0.0)
                 ebpol = np.sum((bpol_x*bpol_x)/(2.0*constants.mu_0) * dvol, axis=1)
                 self._fill(gq, 'energy_b_field_pol', ebpol, 'Integral TRANSP CDF:BPOL^2/(2 mu0) dV')
-            except Exception:
-                pass
+            except (ValueError, TypeError, IndexError, FloatingPointError) as exc:
+                self.im.mapping.broken(exc, source='BPOL', target='global_quantities/energy_b_field_pol')
 
         # Toroidal current components; TRANSP CUR* [A/cm^2] times DAREA [cm^2]
         # gives A directly.

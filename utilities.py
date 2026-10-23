@@ -9,12 +9,59 @@ import numpy as np
 import inspect
 import argparse
 
+import mapping_status
+
 
 def check_file_exists(name:str)->bool:
     path_ = Path(name).absolute()
     if path_.is_symlink():
         path_ = os.readlink(name)
     return os.path.isfile(path_)
+
+def vacuum_field_reference(raxis_m, bzxr_tm, bt_sign, times, source_times):
+    """Reference radius ``r0`` and vacuum toroidal field ``b0(times)`` for IMAS.
+
+    IMAS requires ``vacuum_toroidal_field.r0 * b0(t)`` to equal the TF IDS vacuum field
+    times radius (TRANSP ``BZXR`` with the toroidal-field sign applied).  ``r0`` is therefore
+    one constant radius, the mean of the first and last magnetic-axis radius of the source
+    time grid, and ``b0 = bt_sign * BZXR / r0``.  Dividing by the time-dependent axis radius
+    instead breaks the product whenever the axis moves (up to 17% in the NSTX examples).
+
+    ``raxis_m`` and ``bzxr_tm`` are on ``source_times``; ``b0`` is interpolated to ``times``.
+    Returns ``(r0, b0)``.
+    """
+    raxis = np.asarray(raxis_m, dtype=np.float64)
+    field_r = bt_sign * np.asarray(bzxr_tm, dtype=np.float64)
+    r0 = 0.5 * (raxis[0] + raxis[-1])
+    if not np.array_equal(times, source_times):
+        field_r = np.interp(times, source_times, field_r)
+    return float(r0), field_r / r0
+
+
+def append_successful_entries(new_ids, ids, array_name, builders):
+    """Fill an IDS array of structures with only the entries whose builder succeeds.
+
+    IMAS-Python's ``resize(n)`` defaults to ``keep=False`` and recreates every element, so
+    allocating a larger array, filling it and then shrinking with ``resize(used)`` erases
+    all the filled entries (even a same-size resize does).  Filling slots in place also lets
+    a builder that fails half way leave partial data in a slot the next builder reuses.
+    Each builder therefore fills an empty element of a scratch IDS; only elements whose
+    builder returned a true value are appended to ``ids.<array_name>``.
+
+    ``new_ids`` is a callable returning an empty IDS of the same type (for example
+    ``lambda: im.new_ids('radiation')``), ``builders`` an iterable of callables taking an
+    empty element.  Returns the number of entries appended.
+    """
+    target = getattr(ids, array_name)
+    used = 0
+    for build in builders:
+        scratch = getattr(new_ids(), array_name)
+        scratch.resize(1)
+        if build(scratch[0]):
+            target.append(scratch[0])
+            used += 1
+    return used
+
 
 def find_all_files(pat, path_):
     result = []
@@ -130,6 +177,9 @@ def get_args(argv=None):
         help='authoritative active PF coil/supply/circuit JSON; validates winding signs and channels')
     parser.add_argument('--ids', default=None,
         help='comma-separated IDSs to convert; default all (e.g. workflow,equilibrium,core_profiles)')
+    parser.add_argument('--lenient-mapping', action='store_true',
+        help='record a CDF variable that exists but cannot be mapped (bad shape, unreadable) as a skipped '
+             'field with its reason in the --report-json journal instead of aborting; default is strict')
     parser.add_argument('--report-json', default=None,
         help='write per-IDS conversion results and successful IMAS puts as JSON (including on failure)')
     parser.add_argument('-mom', '--moments', type=str, choices=['yes', 'no'], default='no',
@@ -146,6 +196,7 @@ def get_args(argv=None):
         help="Provide logging level")
 
     args = parser.parse_args(argv[1:] if argv is not None else None)
+    mapping_status.set_strict(not args.lenient_mapping)
 
     if not args.input_cdf:
         print("** Error: Failed to get command line arguments**\n")

@@ -55,11 +55,30 @@ def parse_arguments(argv=None):
     return parser.parse_args(argv)
 
 
+def is_companion_cdf(path):
+    """True for a readable NetCDF file without TIME3/X/XB, e.g. ``<run>PH.CDF``.
+
+    Such companion files are not time-dependent TRANSP results (the converter refuses them:
+    "machine is not found in CDF header"), so they are not end-to-end cases.  A file that
+    cannot be opened as NetCDF is *not* classified here and is left to fail in the converter.
+    """
+    from scipy.io import netcdf_file
+    with open(path, 'rb') as handle:
+        magic = handle.read(4)
+    if len(magic) < 4 or magic[:3] != b'CDF':         # not a NetCDF classic header
+        return False
+    try:
+        with netcdf_file(path, mmap=False) as nc:
+            return not {'TIME3', 'X', 'XB'} <= set(nc.variables)
+    except (OSError, ValueError, TypeError, IndexError):
+        return False
+
+
 def discover_cases(data_root, cases):
     root = Path(data_root)
     if not root.is_dir():
         raise FileNotFoundError(f'Data root is not a directory: {root}')
-    files = sorted(root.rglob('*.CDF'))
+    files = [p for p in sorted(root.rglob('*.CDF')) if not is_companion_cdf(p)]
     if cases:
         requested = set(cases)
         found = {p.stem for p in files}
@@ -98,6 +117,44 @@ def source_time3(cdf):
     if t3.ndim != 1 or not t3.size or t.ndim != 1 or not t.size:
         raise AssertionError(f'{cdf}: invalid TIME or TIME3')
     return t, t3
+
+
+# transport_solver_numerics control parameter -> CDF channel (all on the native TIME coordinate)
+RUNTIME_SOURCES = {'newton_iterations': 'NPTRITER', 'cumulative_cpu_time_hours': 'PT_CPTIME',
+                   'cumulative_wall_time_hours': 'PT_WTIME'}
+
+
+def source_runtime_diagnostics(cdf):
+    """Native TIME and the PT_SOLVER runtime channels that exist in the CDF."""
+    with netcdf_file(str(cdf), 'r', mmap=False) as nc:
+        source = {'TIME': np.asarray(nc.variables['TIME'][:], dtype=np.float64).copy()}
+        for parameter, variable in RUNTIME_SOURCES.items():
+            if variable in nc.variables:
+                source[parameter] = np.asarray(nc.variables[variable][:], dtype=np.float64).copy()
+    return source
+
+
+def check_solver_numerics_readback(ids, source):
+    """The solver slices are on the native TIME coordinate (never compared with TIME3)."""
+    time = source['TIME']
+    if not np.allclose(np.asarray(ids.time, dtype=np.float64), time, rtol=1.0e-9, atol=1.0e-9):
+        raise AssertionError('transport_solver_numerics.time is not the native CDF TIME')
+    if len(ids.solver_1d) != time.size:
+        raise AssertionError(f'transport_solver_numerics: {len(ids.solver_1d)} slices for '
+                             f'{time.size} native TIME samples')
+    names = set()
+    for it, solver_slice in enumerate(ids.solver_1d):
+        parameters = solver_slice.control_parameters
+        for slot in list(parameters.integer0d) + list(parameters.real0d):
+            name = str(slot.name)
+            if name not in RUNTIME_SOURCES or name not in source:
+                raise AssertionError(f'transport_solver_numerics: unexpected control parameter {name!r}')
+            if not np.isclose(float(slot.value), source[name][it], rtol=1.0e-9, atol=1.0e-12):
+                raise AssertionError(f'transport_solver_numerics.{name}[{it}] does not match the CDF')
+            names.add(name)
+    if not names:
+        raise AssertionError('transport_solver_numerics has no control parameters')
+    return {'native_TIME_samples': int(time.size), 'control_parameters': sorted(names)}
 
 
 def source_mmm_coordinates(cdf):
@@ -219,7 +276,7 @@ def check_pt_solver_region_readback(ids, expected_plan):
 
 
 def validate_readback(ids_name, ids, time3, mmm_source=None,
-                      sawteeth_source=None, pt_solver_source=None):
+                      sawteeth_source=None, pt_solver_source=None, solver_source=None):
     """Validate schema and known time/radial coordinate invariants."""
     ids.validate()  # IMAS DD coordinate and mandatory-field validator.
     checks = {'schema': 'PASS'}
@@ -241,12 +298,18 @@ def validate_readback(ids_name, ids, time3, mmm_source=None,
                 raise AssertionError(f'core_profiles[{i}]: Te does not match radial grid')
     elif ids_name == 'sawteeth':
         checks.update(check_sawteeth_readback(ids, sawteeth_source))
+    elif ids_name == 'transport_solver_numerics':
+        checks.update(check_solver_numerics_readback(ids, solver_source))
     elif ids_name == 'core_transport':
         checks.update(check_pt_solver_region_readback(ids, pt_solver_source))
-        if len(ids.model):
-            n = check_time_vector('core_transport', ids.time, time3,
-                                  len(ids.model[0].profiles_1d))
-            checks['native_TIME3_samples'] = n
+        # Regional settings-only models intentionally have no profile array, so the TIME3 check
+        # applies to the models that carry profiles; the combined model must always have them.
+        for model in ids.model:
+            if len(model.profiles_1d):
+                n = check_time_vector('core_transport', ids.time, time3, len(model.profiles_1d))
+                checks['native_TIME3_samples'] = n
+            elif str(model.identifier.name) == 'combined':
+                raise AssertionError('core_transport: combined model has no profiles_1d')
         if mmm_source is not None:
             checks['mmm_native_coordinate_models'] = check_mmm_native_grids(
                 ids, time3, mmm_source)
@@ -275,6 +338,9 @@ def readback_accepted_ids(imas, manifest, database_root, cdf):
     pt_solver_source = (source_pt_solver_regions(cdf)
                         if any(row['ids'] == 'core_transport' for row in accepted)
                         else None)
+    solver_source = (source_runtime_diagnostics(cdf)
+                     if any(row['ids'] == 'transport_solver_numerics' for row in accepted)
+                     else None)
     opened = False
     try:
         db.open()
@@ -291,7 +357,8 @@ def readback_accepted_ids(imas, manifest, database_root, cdf):
                 ids = db.get(name, occurrence=occurrence)
                 record['checks'] = validate_readback(
                     name, ids, t3, mmm_source, sawteeth_source,
-                    pt_solver_source if name == 'core_transport' else None)
+                    pt_solver_source if name == 'core_transport' else None,
+                    solver_source if name == 'transport_solver_numerics' else None)
             except Exception as exc:
                 record['status'] = 'FAIL'
                 record['error'] = f'{type(exc).__name__}: {exc}'

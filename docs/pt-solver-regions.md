@@ -209,8 +209,11 @@ without inventing physical information.
 The exporter now additionally writes `core_transport` occurrence 0 for the
 assembled result, and successive occurrences 1..N for radial regions with
 positive extent and a verified PT_TEMPLATE activation. Region order is axial,
-confinement, edge, with no gap for unused regions. Each region occurrence has
-exactly two `model` entries: anomalous and neoclassical. Configuration and
+confinement, edge, with no gap for unused regions. A region gets an occurrence if
+it selects a model at *any* time (a model disabled before the end of the run keeps
+its region). Each region occurrence has one `model` entry per model *selected* during
+the run (see "Time-resolved attribution" below); there are no placeholder entries for
+categories that never select a model. Configuration and
 boundaries, including time updates, are XML in the regional occurrence's
 `code.parameters`; original PT_TEMPLATE Fortran source is embedded in a
 `namelist` XML element. Original unmodified external model settings remain in
@@ -227,3 +230,41 @@ No array is manufactured or zero-padded to make output appear present.
 This is additive provenance, not independent regional simulations. In
 particular, GLF23 coefficients need not already include final PT_SOLVER
 stabilization or compositing; the latter belong exclusively to occurrence 0.
+
+### Time-resolved attribution (model switches)
+
+`%active` flags accumulate over the template's update blocks, which are applied in
+chronological order (an update time that is absent or negative means "initial"), and a model
+enabled in a category replaces the previous one in that region. Every model keeps all the
+intervals in which it was selected, as `effective_from` / `effective_until` (`initial` ...
+`end`): a GLF23 -> TGLF switch at 552 s gives GLF23 `initial..552` and TGLF `552..end`, a model
+disabled later keeps its earlier interval, and a model enabled again gets a second one. The
+earlier implementation kept only the model selected last per category, so such a switch became
+a single TGLF identifier over the whole record and a model disabled before the end (and even its
+region) disappeared. The end-of-run view survives only as `final_models`.
+
+The intervals are in the regional occurrence XML (`model_selection/interval`) and in each model's
+`pt_solver_occurrence/selected_model/interval`; the radial validity states
+(`regional_validity/state`) now carry `effective_until` too. Stored profiles are not clipped in time
+or radius: the intervals say when a selection was in force, not that the stored values outside it
+are absent.
+
+### Output identity versus selected-model identity
+
+* **Anomalous models.** One slot per selected model. Where TRANSP publishes that family's own
+  channels (GLF23, MMM) the slot holds them and is named for the model
+  (`output_attribution=native_model_channels`); otherwise it is settings-only
+  (`selection_only_no_output`).
+* **Neoclassical.** TRANSP publishes one assembled neoclassical result, not one per neoclassical
+  model, so it is written once as a slot named `neoclassical` with
+  `output_attribution=assembled_result_not_attributed_to_a_selected_model`. The selected models
+  (NEOCH, NEOGK, NCLASS, GTCNEO) and their intervals are listed in `selected_models` and
+  `selected_model` elements; the output is never renamed to one of them, because the CDF does not
+  establish which neoclassical model produced it in which region. Without neoclassical channels, each
+  selected neoclassical model gets a settings-only slot.
+
+Checked on the bundled cases: every template has a single initial block, so ITER keeps GLF23 and
+the assembled neoclassical slot in all three regions over the whole run, and the NSTX 141711Y05
+confinement occurrence has a settings-only CDBM slot plus the assembled neoclassical slot. A
+GLF23 -> TGLF / NEOCH -> NCLASS switch is tested synthetically (and end to end on ITER with a modified
+copy of its template) in `examples/verify_regional_model_timeline.py`.

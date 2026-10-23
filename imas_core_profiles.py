@@ -425,20 +425,19 @@ class imas_core_profiles:
             self.im.fill_data(cp.global_quantities.current_bootstrap, curbsxa)
 
         # Parallel current profiles. TRANSP PLJB* are <J.B> in A*T/cm^2.
-        # TRANSP's scalar BZ is an unsigned/internal toroidal-field magnitude;
-        # dividing by it and multiplying by ip_sign gives the IMAS definition
-        # <J.B>/B0 in the physical +phi convention.
-        bz_parallel = self.im.get_ncvar('BZ')
-        if not np.array_equal(self.im.timep, self.im.timesc):
-            bz_parallel = self.im.interp1d_time(self.im.timep, self.im.timesc, bz_parallel)
+        # IMAS defines these as <J.B>/B0 with B0 the IDS's own vacuum_toroidal_field/b0
+        # (not TRANSP's BZ); dividing by |b0| and multiplying by ip_sign gives that
+        # definition in the physical +phi convention.
+        bz_parallel = self.im.vacuum_b0_magnitude(self.im.timep)
 
         def _parallel_from_jdotb(varname):
             jb = self.im.get_ncvar(varname, self.im.area_inv)
-            if not self.im.is_valid(jb, bz_parallel):
+            if not self.im.is_valid(jb) or bz_parallel is None:
                 return []
             try:
                 return self.im.jparallel_sign * np.divide(jb, bz_parallel[:,None])
-            except Exception:
+            except (ValueError, TypeError, FloatingPointError) as exc:
+                self.im.mapping.broken(exc, source=varname, target='profiles_1d/j_*')
                 return []
 
         j_total = _parallel_from_jdotb('PLJB')
@@ -454,12 +453,13 @@ class imas_core_profiles:
         # not selected for the run.
         conpljb = self.im.get_ncvar('CONPLJB')
         j_bootstrap = []
-        if self.im.is_valid(curbs_phi, conpljb, bz_parallel):
+        if bz_parallel is not None and self.im.is_valid(curbs_phi, conpljb, bz_parallel):
             try:
                 # curbs_phi already has the physical Ip sign. CONPLJB and BZ
                 # are internal magnitudes, so their ratio only supplies geometry.
                 j_bootstrap = curbs_phi * np.divide(conpljb, bz_parallel[:,None])
-            except Exception:
+            except (ValueError, TypeError, FloatingPointError) as exc:
+                self.im.mapping.broken(exc, source='CONPLJB', target='profiles_1d/j_bootstrap')
                 j_bootstrap = []
 
         #vloop VSURC(TIME)
@@ -585,15 +585,18 @@ class imas_core_profiles:
         #TRFLX(TIME3, XB)
         bflux_tor = self.im.get_ncvar('TRFLX')
         rho_tor = []
-        #interpolate onto profile time
-        if not np.array_equal(self.im.timep, self.im.timesc):
-            bz = self.im.interp1d_time(self.im.timep, self.im.timesc, bz)
+        # rho_tor = sqrt(phi/(pi*B0)) with B0 the IDS's own vacuum_toroidal_field/b0
+        b0_rho = self.im.vacuum_b0_magnitude(self.im.timep)
 
-        try:
-            bflux_tor_x = self.im.interp_radial_profiles(bflux_tor, coord_xb, coord_x, axis_value=0.0)
-            rho_tor = np.sqrt(np.clip(bflux_tor_x/(pi*bz[:,None]), 0.0, None))
-        except Exception:
-            self.im.logger.info('error calculating rho_tor')
+        if b0_rho is None:
+            self.im.mapping.skipped('vacuum toroidal field (RAXIS/BZXR) is not in the CDF',
+                                    source='BZXR', target='profiles_1d/grid/rho_tor')
+        else:
+            try:
+                bflux_tor_x = self.im.interp_radial_profiles(bflux_tor, coord_xb, coord_x, axis_value=0.0)
+                rho_tor = np.sqrt(np.clip(bflux_tor_x/(pi*b0_rho[:,None]), 0.0, None))
+            except (ValueError, TypeError, IndexError, FloatingPointError) as exc:
+                self.im.mapping.broken(exc, source='TRFLX', target='profiles_1d/grid/rho_tor')
 
         #(TIME3, XB)
         psib = self.im.get_ncvar('PLFLX2PI')
@@ -625,13 +628,13 @@ class imas_core_profiles:
         try:
             denom = psi_boundary - psi_axis
             rho_pol_norm = np.sqrt(np.clip((psi - psi_axis[:,None]) / denom[:,None], 0.0, None))
-        except Exception:
-            pass
+        except (ValueError, TypeError, IndexError, FloatingPointError) as exc:
+            self.im.mapping.broken(exc, source='PLFLX', target='profiles_1d/grid/rho_pol_norm')
 
         nrho = rho_tor_norm.shape[0]
 
         self.logger.info(f'  ntimep {ntimep} nrho {nrho}')
-        self.logger.info(f'\tbz {len(bz)} rho_tor {len(rho_tor)} bflux_tor {len(bflux_tor)}')
+        self.logger.info(f'\tb0 {len(b0_rho)} rho_tor {len(rho_tor)} bflux_tor {len(bflux_tor)}')
 
         n_i_total_over_n_e = []
         if self.im.is_valid(nion, nel):
@@ -673,7 +676,8 @@ class imas_core_profiles:
             if self.im.is_valid(j_ohmic):
                 try:
                     e_field_parallel = eta_parallel * j_ohmic
-                except Exception:
+                except (ValueError, TypeError, FloatingPointError) as exc:
+                    self.im.mapping.broken(exc, source='ETA', target='profiles_1d/e_field/parallel')
                     e_field_parallel = []
 
         # Total toroidal angular-momentum density.  PPHI is the time/radius
@@ -692,7 +696,8 @@ class imas_core_profiles:
             try:
                 phi_potential = self.im.interp_radial_profiles(
                     vrpot_b, coord_xb, coord_x, axis_value=vrpot_b[:,0])
-            except Exception:
+            except (ValueError, TypeError, IndexError, FloatingPointError) as exc:
+                self.im.mapping.broken(exc, source='VRPOT', target='profiles_1d/phi_potential')
                 phi_potential = []
         # A radial electric field is deliberately not reconstructed here.
         # VRPOT is preserved as phi_potential; converting -grad(phi) to a
@@ -802,9 +807,11 @@ class imas_core_profiles:
               if hasattr(ion_node, 'pressure_thermal') and self.im.is_valid(ion.dens_th, ion.temp):
                   try:
                       pth = ion.dens_th * ion.temp * constants.e
+                  except (ValueError, TypeError, FloatingPointError) as exc:
+                      self.im.mapping.broken(exc, source='ion density/temperature',
+                                             target='profiles_1d/ion/pressure_thermal')
+                  else:
                       self.im.fill_data(ion_node.pressure_thermal, pth, ind=i, name='ion_pressure_thermal')
-                  except Exception:
-                      pass
               # Radial NCLASS velocity is stored by TRANSP on the XB grid and has
               # the same number of points as the core-profile X grid.  Keep it for
               # now; a later cleanup can interpolate XB -> X explicitly.

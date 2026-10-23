@@ -35,6 +35,9 @@ Convert only the transport IDS (including PT_SOLVER model metadata when availabl
 python3 convert.py -i examples/data/iter/38530P94.CDF -b HDF5 -new --dd-version 4.1.1 --ids core_transport
 ```
 
+`--report-json FILE` writes a conversion journal that lists, per writer, the optional CDF variables that were absent and the fields that were skipped with their reasons. A CDF variable that exists but cannot be mapped (for example with the wrong radial size) aborts the conversion; `--lenient-mapping` records it as a skipped field instead. See [required versus optional mappings](docs/mapping-status.md); the journal also lists the CDF variables each writer read, and the [mapping registry](docs/mapping-registry.md) states what is mapped, deferred and verified.
+
+
 Convert an NSTX example with one active PT_SOLVER region:
 
 ```bash
@@ -47,7 +50,7 @@ The `-new` flag creates a fresh entry; omit it only when you intend to work with
 
 `transp2imas` provides IDS mappings for plasma profiles and equilibrium, sources, transport, heating systems, magnetic coils and passive structures, sawteeth and simulation metadata, subject to source-data availability and Data Dictionary support. It also preserves provenance of TRANSP and external-model inputs when those files are available.
 
-For predictive TRANSP runs, `core_transport` occurrence **0** carries the combined transport solution. Additional occurrences represent active PT_SOLVER regions (axial, confinement, edge), each with anomalous and neoclassical model selection. Whole-radius model profiles may be retained, with regional validity ranges and numerical settings in supplementary XML. Available PT_SOLVER runtime channels such as `NPTRITER`, `PT_CPTIME`, and `PT_WTIME` may be serialized as supplementary XML, rather than standardized IMAS fields. Missing quantities are not fabricated. See [PT_SOLVER region mapping](docs/pt-solver-regions.md) and [input provenance](docs/input-provenance.md).
+For predictive TRANSP runs, `core_transport` occurrence **0** carries the combined transport solution. Additional occurrences represent active PT_SOLVER regions (axial, confinement, edge), each with anomalous and neoclassical model selection. Whole-radius model profiles may be retained, with regional validity ranges and numerical settings in supplementary XML. Available PT_SOLVER runtime channels (`NPTRITER`, `PT_CPTIME`, `PT_WTIME`) are serialized losslessly as supplementary XML together with their native `TIME` coordinate (not the `TIME3` grid), and, for DD >= 3.42, also as named control parameters of `transport_solver_numerics` on that native `TIME` grid (timers keep their CDF hours; no residuals or convergence status are invented; DD 3.39.0 has unnamed control parameters, so nothing is written there). Missing quantities are not fabricated. See [PT_SOLVER region mapping](docs/pt-solver-regions.md) and [input provenance](docs/input-provenance.md).
 
 ## Verification
 

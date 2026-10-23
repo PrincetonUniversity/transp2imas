@@ -283,10 +283,13 @@ def region_validity_xml(plan, region):
         'outside_validity': 'stored_values_not_selected_by_this_region',
         'time_semantics': 'piecewise_constant_from_effective_from',
     })
-    for state in plan['boundary_states']:
+    states = plan['boundary_states']
+    for index, state in enumerate(states):
         at = state['start_time']
+        following = states[index + 1]['start_time'] if index + 1 < len(states) else None
         phase = ET.SubElement(root, 'state', {
             'effective_from': 'initial' if at is None else _fmt(at),
+            'effective_until': 'end' if following is None else _fmt(following),
         })
         for quantity in BOUNDARIES:
             low, high = _range_limits(region, state['values'], quantity)
@@ -489,31 +492,103 @@ ANOMALOUS_MODELS = frozenset(('glf23', 'tglf', 'mmm', 'rlw', 'coppi',
 NEOCLASSICAL_MODELS = frozenset(('neoch', 'neogk', 'nclass', 'gtcneo'))
 
 
-def occurrence_region_models(plan):
-    """One occurrence per used region, ordered axial/confinement/edge.
+CATEGORIES = ('anomalous', 'neoclassical')
 
-    Only an explicit, readable PT_TEMPLATE can establish the active model.
-    A missing TR.DAT cannot establish radial extent.  Carry cumulative
-    %active choices across updates; a replacement model supersedes the prior
-    one within its category. Never invent omitted region configurations.
+
+def _start_key(block):
+    """Chronological sort key of a template block: no/negative update time means initial."""
+    time = block['start_time']
+    return -math.inf if time is None or time < 0 else float(time)
+
+
+def _model_category(name):
+    return ('anomalous' if name in ANOMALOUS_MODELS else
+            'neoclassical' if name in NEOCLASSICAL_MODELS else None)
+
+
+def _activation_events(plan):
+    """Readable ``%active`` assignments of every template block, in chronological order.
+
+    Blocks are explicit assignments, not state snapshots, so each event is kept as written
+    (an unreadable ``active`` value is ignored, never guessed).
     """
-    if not plan or not plan['trusted_model_assignment'] or not plan['boundary_states']:
-        return []
-    selections = {region: {'anomalous': None, 'neoclassical': None}
-                  for region in REGIONS}
+    events = []
     for source in plan['templates']:
         for block in source['blocks']:
             for region, models in block['regions'].items():
                 for name, options in models.items():
-                    category = ('anomalous' if name in ANOMALOUS_MODELS else
-                                'neoclassical' if name in NEOCLASSICAL_MODELS else None)
+                    category = _model_category(name)
                     if category is None or 'active' not in options:
                         continue
                     active = _boolean(options['active'])
-                    if active is True:
-                        selections[region][category] = name
-                    elif active is False and selections[region][category] == name:
-                        selections[region][category] = None
+                    if active is None:
+                        continue
+                    events.append((_start_key(block), len(events), region, category, name, active))
+    events.sort(key=lambda event: (event[0], event[1]))
+    return events
+
+
+def region_selection_timeline(plan):
+    """Time-resolved model selection ``{region: {category: [{'model', 'intervals'}]}}``.
+
+    Active flags accumulate across updates and a model enabled in a category replaces the
+    previous one in that region.  Each model lists every interval ``(start, end)`` in which it
+    was selected, ``start`` None meaning "from the initial state" and ``end`` None meaning "until
+    the end of the run"; a model that is disabled later keeps its earlier interval (it is not
+    dropped), and a model re-enabled later gets a further interval.  Models are ordered by their
+    first activation.  Nothing is inferred for regions/categories the template never mentions.
+    """
+    timeline = {region: {category: [] for category in CATEGORIES} for region in REGIONS}
+    current = {}                                # (region, category) -> [model, start]
+
+    def close(key, end):
+        model, start = current.pop(key)
+        if start is not None and end is not None and end <= start:
+            return                              # replaced at the instant it was enabled
+        region, category = key
+        entry = next((e for e in timeline[region][category] if e['model'] == model), None)
+        if entry is None:
+            entry = {'model': model, 'intervals': []}
+            timeline[region][category].append(entry)
+        entry['intervals'].append((start, end))
+
+    for key_time, _order, region, category, name, active in _activation_events(plan):
+        key = (region, category)
+        time = None if key_time == -math.inf else key_time
+        held = current.get(key)
+        if active:
+            if held is not None and held[0] == name:
+                continue
+            if held is not None:
+                close(key, time)
+            current[key] = [name, time]
+            # keep first-activation order even if the interval closes at once
+            if not any(e['model'] == name for e in timeline[region][category]):
+                timeline[region][category].append({'model': name, 'intervals': []})
+        elif held is not None and held[0] == name:
+            close(key, time)
+    for key in list(current):
+        close(key, None)
+    for region in REGIONS:
+        for category in CATEGORIES:
+            timeline[region][category] = [e for e in timeline[region][category] if e['intervals']]
+    return timeline
+
+
+def occurrence_region_models(plan):
+    """One occurrence per region that selects a model at some time, ordered axial/confinement/edge.
+
+    Each item is ``{'region', 'selections', 'final_models'}``: ``selections`` lists every
+    ``{'category', 'model', 'intervals'}`` selected during the run (see
+    :func:`region_selection_timeline`), so a GLF23 -> TGLF switch keeps both models and a model
+    disabled before the end is not lost; ``final_models`` is only the model still active at the
+    end of the run per category.  Only an explicit, readable PT_TEMPLATE can establish the active
+    model, and a missing TR.DAT cannot establish radial extent.  Omitted configurations are never
+    invented.
+    """
+    if not plan or not plan['trusted_model_assignment'] or not plan['boundary_states']:
+        return []
+    timeline = region_selection_timeline(plan)
     result = []
     for region in REGIONS:
         extent = any(_range_limits(region, state['values'], quantity)[1] >
@@ -521,10 +596,41 @@ def occurrence_region_models(plan):
                      for state in plan['boundary_states'] for quantity in BOUNDARIES)
         if not extent:
             continue
-        chosen = selections[region]
-        if any(chosen.values()):
-            result.append({'region': region, 'models': chosen})
+        selections = [{'category': category, 'model': entry['model'], 'intervals': list(entry['intervals'])}
+                      for category in CATEGORIES for entry in timeline[region][category]]
+        if not selections:
+            continue
+        final = {category: next((e['model'] for e in timeline[region][category]
+                                 if e['intervals'][-1][1] is None), None)
+                 for category in CATEGORIES}
+        result.append({'region': region, 'selections': selections, 'final_models': final})
     return result
+
+
+def regional_model_slots(item, neoclassical_channels_available):
+    """Model slots of one regional occurrence: one per *selected* model, no placeholders.
+
+    Anomalous models get a slot each (every model selected at some time, so a GLF23 -> TGLF
+    switch keeps both).  TRANSP publishes ONE assembled neoclassical result, not one per
+    neoclassical model, so when those channels exist a single assembled slot lists every selected
+    neoclassical model with its intervals and the output is not relabelled with any of their names.
+    Without the channels each selected neoclassical model gets a settings-only slot.
+    """
+    slots = [{'category': 'anomalous', 'selected': [selection]}
+             for selection in item['selections'] if selection['category'] == 'anomalous']
+    neoclassical = [s for s in item['selections'] if s['category'] == 'neoclassical']
+    if neoclassical:
+        if neoclassical_channels_available:
+            slots.append({'category': 'neoclassical', 'selected': neoclassical, 'assembled': True})
+        else:
+            slots.extend({'category': 'neoclassical', 'selected': [s]} for s in neoclassical)
+    return slots
+
+
+def interval_attributes(start, end):
+    """``effective_from``/``effective_until`` attributes of a selection interval."""
+    return {'effective_from': 'initial' if start is None else _fmt(start),
+            'effective_until': 'end' if end is None else _fmt(end)}
 
 
 def region_occurrence_xml(plan, item, occurrence):
@@ -533,11 +639,13 @@ def region_occurrence_xml(plan, item, occurrence):
         'occurrence': str(occurrence), 'region': item['region'],
         'radial_coordinate': 'rho_tor_norm',
         'outputs_policy': 'write_only_verified_CDF_model_channels',
+        'selection_semantics': 'cumulative_active_flags_replacement_within_category',
     })
-    ET.SubElement(root, 'model_selection', {'category': 'anomalous',
-                  'name': (item['models']['anomalous'] or 'none').upper()})
-    ET.SubElement(root, 'model_selection', {'category': 'neoclassical',
-                  'name': (item['models']['neoclassical'] or 'none').upper()})
+    for selection in item['selections']:
+        node = ET.SubElement(root, 'model_selection', {
+            'category': selection['category'], 'name': selection['model'].upper()})
+        for start, end in selection['intervals']:
+            ET.SubElement(node, 'interval', interval_attributes(start, end))
     # This deliberately retains ALL regional boundary changes and the exact
     # executed template, not just the final model names.
     root.append(region_validity_xml(plan, item['region']))

@@ -141,7 +141,7 @@ class nc2imas(imas_connection, netcdf_connection):
         """
         try:
             value = self.get_ncattr(name)
-        except Exception:
+        except (AttributeError, KeyError, RuntimeError):      # closed/unreadable dataset: attribute not available
             return default
         if value is None:
             return default
@@ -291,7 +291,7 @@ class nc2imas(imas_connection, netcdf_connection):
 
         try:
             dd_major = int(str(self.dd_major_version).split('.')[0])
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             dd_major = 4
         self.target_cocos = 17 if dd_major >= 4 else 11
 
@@ -568,24 +568,39 @@ class nc2imas(imas_connection, netcdf_connection):
 
     #If ind<0, use this to fill ONLY 1D data. if var is 2D, ind must be valid.
     #Don't use this to fill scalar
+    @staticmethod
+    def _node_path(node):
+        """IDS path of ``node`` for status messages (never raises)."""
+        path = getattr(getattr(node, 'metadata', None), 'path', None)
+        return str(path) if path is not None else type(node).__name__
+
     def fill_data(self, ids, dat, mult:float=None, ind:int=-1, ind2:int=-1,
           interp:bool=False, name:str=None, resize:bool=True, chk:int=-1) -> bool:
-        nm = name if name is not None else 'data'
+        """Assign ``dat`` to an array node; returns True if it was written.
 
+        Absent source data (``is_valid`` false) is optional input: the field is skipped and recorded in
+        the mapping ledger.  Data that is present but cannot be assigned (radial size different from
+        ``chk``, a scalar for an array node, a shape or schema error) is a broken mapping, not absent
+        data: it raises ``MappingError`` (strict) or is recorded as skipped with the reason (lenient).
+        Before, a size mismatch was only reported for time slice 0 and silently skipped for the others.
+        """
+        nm = name if name is not None else 'data'
+        target = self._node_path(ids)
+        if not self.is_valid(dat, name=nm):
+            self.mapping.skipped('no source data', target=target)
+            if ind==0:
+                self.logger.info(f'\t\t{nm} is invalid')
+            return False
         try:
-          if self.is_valid(dat, name=nm):
             if (ind>= 0 and ind2>=0):
                dat = dat[ind:ind2]
             elif ind>= 0:
                dat = dat[ind]
 
             if chk>0 and not np.isscalar(dat) and len(dat)!=chk:
-               if ind==0:
-                  self.logger.info(f'Error: size mismatch {len(dat)} != {chk}')
-               return
-
+               raise ValueError(f'size mismatch {len(dat)} != {chk}')
             if np.isscalar(dat):
-               raise Exception('Cannot fill scalar value')
+               raise ValueError('cannot fill a scalar value into an array node')
             if mult is not None:
                 dat = mult*dat
             if interp is True and not np.array_equal(self.timesc, self.timep):
@@ -593,11 +608,10 @@ class nc2imas(imas_connection, netcdf_connection):
             if (not np.isscalar(dat)) and resize:
                 ids.resize(len(dat), refcheck=False)
             ids[:] = dat
-          elif ind==0:
-            self.logger.info(f'\t\t{nm} is invalid')
-        except (AttributeError, ValueError, TypeError, IndexError, FloatingPointError):
-            if ind==0:
-                self.logger.info(f'\t\t{nm} is invalid')
+        except (AttributeError, ValueError, TypeError, IndexError, FloatingPointError) as exc:
+            self.mapping.broken(f'{type(exc).__name__}: {exc}', source=nm, target=target)
+            return False
+        return True
 
     def load_namelist(self):
         if self.nml_name is None:
@@ -877,20 +891,52 @@ class nc2imas(imas_connection, netcdf_connection):
             out[it] = np.interp(xt[it], xx, yy)
         return out
 
+    def vacuum_field_reference(self, times=None):
+        """``(r0, b0(times))`` of the vacuum toroidal field, or ``None`` without RAXIS/BZXR.
+
+        ``times`` defaults to the writer time grid ``timep``; see
+        :func:`utilities.vacuum_field_reference` for the convention.
+        """
+        raxis = self.get_ncvar('RAXIS', self.cm2m)       # RAXIS(TIME) m
+        bzxR = self.get_ncvar('BZXR', self.cm2m)         # BZXR(TIME) T m, vacuum field x radius
+        if not self.is_valid(raxis, bzxR):
+            return None
+        return vacuum_field_reference(raxis, bzxR, self.bt_sign,
+                                      self.timep if times is None else times, self.timesc)
+
+    def check_profile_shape(self, name, array, nt, nx):
+        """``array`` if it is a ``(nt, nx)`` time-radius profile (or empty), else a broken mapping.
+
+        A profile with another radial size cannot be placed on the writer's grid.  Catching it here
+        names the variable, instead of failing later in some array arithmetic or being dropped.
+        Returns an empty array when the lenient policy skips it.
+        """
+        values = np.asarray(array)
+        if values.ndim == 2 and values.shape[0] == nt and values.shape[1] != nx:
+            self.mapping.broken(f'radial size mismatch {values.shape[1]} != {nx} on the writer grid',
+                                source=name, target=f'profile ({nt} times x {nx} radial points)')
+            return np.array([])
+        return array
+
+    def vacuum_b0_magnitude(self, times=None):
+        """``|b0(times)|`` (T) of the IMAS ``vacuum_toroidal_field`` node, or ``None``.
+
+        IMAS defines the parallel current densities as ``average(J.B)/B0`` and
+        ``rho_tor = sqrt(phi/(pi*B0))`` with B0 the IDS's own ``vacuum_toroidal_field/b0``,
+        so those normalizations must use this field and not TRANSP's ``BZ`` (the field at a
+        fixed radius that also differs from ``BZXR/r0`` by up to ~40%).  The physical sign is
+        applied separately by the callers.
+        """
+        reference = self.vacuum_field_reference(times)
+        return None if reference is None else np.abs(reference[1])
+
     def fill_vac_tor_field(self, ids):
-        #RAXIS(TIME)
-        raxis = self.get_ncvar('RAXIS', self.cm2m)
-        #(TIME) TESLA*CM. vac field
-        bzxR = self.get_ncvar('BZXR', self.cm2m)
-        if self.is_valid(raxis, bzxR):
-            if not np.array_equal(self.timesc, self.timep):
-               raxis = np.interp(self.timep, self.timesc, raxis)
-               bzxR = np.interp(self.timep, self.timesc, bzxR)
-            b_field_tor = self.bt_sign * bzxR / raxis
-            rave = (raxis[0] + raxis[-1])/2.0
+        reference = self.vacuum_field_reference()
+        if reference is not None:
+            r0, b0 = reference
             self.logger.info('\tVac_tor_field')
-            ids.vacuum_toroidal_field.r0 = rave.astype(float)
-            self.fill_data(ids.vacuum_toroidal_field.b0, b_field_tor)
+            ids.vacuum_toroidal_field.r0 = r0
+            self.fill_data(ids.vacuum_toroidal_field.b0, b0)
 
     #fill ids.profiles_1d[*].grid. Resize if not already done
     def fill_profiles1d_grid(self, ids):
@@ -906,14 +952,12 @@ class nc2imas(imas_connection, netcdf_connection):
         # Toroidal flux coordinate. TRFLX is on XB and already in Wb.
         bflux_tor_b = self.get_ncvar('TRFLX')
         bflux_tor = self.interp_radial_profiles(bflux_tor_b, coord_xb, coord_x, axis_value=0.0)
-        bz = self.get_ncvar('BZ')
-        if not np.array_equal(self.timesc, self.timep):
-            bz = self.interp1d_time(self.timep, self.timesc, bz)
+        b0 = self.vacuum_b0_magnitude(self.timep)      # rho_tor = sqrt(phi/(pi*B0)), B0 = vacuum b0
         rho_tor = []
-        if self.is_valid(bz, bflux_tor):
+        if self.is_valid(b0, bflux_tor):
             try:
-                rho_tor = np.sqrt(np.clip(bflux_tor/(self.pi*bz[:,None]), 0.0, None))
-            except Exception:
+                rho_tor = np.sqrt(np.clip(bflux_tor/(self.pi*b0[:,None]), 0.0, None))
+            except (ValueError, FloatingPointError):
                 rho_tor = []
 
         # Poloidal flux: PLFLX is an enclosed increment on XB in Wb/rad.
@@ -929,7 +973,8 @@ class nc2imas(imas_connection, netcdf_connection):
             try:
                 denom = psi_boundary - psi_axis
                 rho_pol_norm = np.sqrt(np.clip((psi-psi_axis[:,None])/denom[:,None], 0.0, None))
-            except Exception:
+            except (ValueError, TypeError, IndexError, FloatingPointError) as exc:
+                self.mapping.broken(exc, source='PLFLX', target='profiles_1d/grid/rho_pol_norm')
                 rho_pol_norm = []
 
         # Finite-zone geometry -> enclosed values at XB -> interpolate to X.
@@ -965,7 +1010,7 @@ class nc2imas(imas_connection, netcdf_connection):
         try:
             ts = Path(path).stat().st_mtime
             return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        except Exception:
+        except (OSError, ValueError, OverflowError):
             return ''
 
     def _provenance_file_records(self):
@@ -989,8 +1034,9 @@ class nc2imas(imas_connection, netcdf_connection):
                     continue
                 if resolved is not None:
                     candidates.append((f'{role}:{key}', str(resolved)))
-        except Exception:
-            pass
+        except Exception as exc:          # best-effort provenance: never abort, but never silent either
+            self.mapping.skipped(f'could not collect model/template files: {type(exc).__name__}: {exc}',
+                                 target='ids_properties/provenance')
         seen = set()
         for role, filename in candidates:
             if not filename:
@@ -998,7 +1044,7 @@ class nc2imas(imas_connection, netcdf_connection):
             path = Path(filename).expanduser()
             try:
                 resolved = path.resolve()
-            except Exception:
+            except (OSError, RuntimeError):
                 resolved = path
             key = str(resolved)
             if key in seen:
@@ -1012,8 +1058,8 @@ class nc2imas(imas_connection, netcdf_connection):
                     for chunk in iter(lambda: stream.read(1024 * 1024), b''):
                         h.update(chunk)
                 digest = h.hexdigest()
-            except Exception:
-                pass
+            except OSError:
+                pass            # unreadable provenance file: no digest (recorded as such below)
             # Avoid embedding machine-specific absolute paths in the portable
             # provenance string. The exact resolved path remains in code.parameters.
             name = f'{role}:file:{Path(filename).name}'
@@ -1049,8 +1095,10 @@ class nc2imas(imas_connection, netcdf_connection):
                         ref.timestamp = timestamp
             elif hasattr(node, 'sources'):
                 node.sources = [name for name, _ in records]
-        except Exception as exc:
+        except Exception as exc:          # best-effort provenance: never abort, but never silent either
             self.logger.warning(f'Could not attach IDS provenance: {exc}')
+            self.mapping.skipped(f'could not attach IDS provenance: {type(exc).__name__}: {exc}',
+                                 target='ids_properties/provenance')
         return ids
 
     def fill_properties(self, ids):
@@ -1139,7 +1187,7 @@ class nc2imas(imas_connection, netcdf_connection):
         if self.nml_name:
             try:
                 roots.append(Path(self.nml_name).expanduser().resolve().parent)
-            except Exception:
+            except (OSError, RuntimeError):
                 roots.append(Path(self.nml_name).expanduser().parent)
         roots.append(Path.cwd())
         for root in roots:
@@ -1288,7 +1336,7 @@ class nc2imas(imas_connection, netcdf_connection):
                     'TRANSP_DOI', 'TGLF_hash', 'GLF23_hash'):
             try:
                 value = self.get_ncattr(key)
-            except Exception:
+            except (AttributeError, KeyError, RuntimeError):
                 value = None
             if value is None:
                 continue

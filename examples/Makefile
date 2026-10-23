@@ -22,7 +22,7 @@ LDLIBS += -L$(IMAS_PREFIX)/lib -limas-gfortran -limas
 
 .DEFAULT_GOAL := help
 
-.PHONY: help quick verify verify-all verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
+.PHONY: help quick verify verify-all verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-readback verify-aos coverage verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end audit inspect plot-ids fortran clean
 
 help:
 	@echo "Diagnostic and example commands"
@@ -52,6 +52,7 @@ help:
 
 quick:
 	$(PYTHON) -m py_compile $(wildcard *.py)
+	$(PYTHON) verify_mapping_registry.py --quick
 	$(PYTHON) verify_writer_api.py
 	$(PYTHON) verify_pf_passive_mapping.py
 	$(PYTHON) verify_pf_active_mapping.py
@@ -68,6 +69,19 @@ quick:
 	$(PYTHON) verify_sawteeth_mapping.py --quick
 	$(PYTHON) verify_end_to_end_contract.py
 	$(PYTHON) verify_nubeam_fi.py --quick
+	$(PYTHON) verify_aos_serialization.py --quick
+	$(PYTHON) verify_vacuum_field.py --quick
+	$(PYTHON) verify_nbi_momentum.py --quick
+	$(PYTHON) verify_momentum_transport.py --quick
+	$(PYTHON) verify_parallel_current.py --quick
+	$(PYTHON) verify_pt_occurrences.py
+	$(PYTHON) verify_regional_model_timeline.py --quick
+	$(PYTHON) verify_mapping_status.py --quick
+	$(PYTHON) verify_pt_validity_numerics.py
+	$(PYTHON) verify_pt_runtime_diagnostics.py
+	$(PYTHON) verify_pt_runtime_actual_cdf.py data/iter/38530P94.CDF
+	$(PYTHON) verify_runtime_diagnostics_readback.py --quick
+	$(PYTHON) verify_transport_solver_numerics.py --quick
 
 verify: quick
 	@test -f "$(CDF)" || { echo "CDF not found: $(CDF)" >&2; exit 1; }
@@ -94,6 +108,18 @@ verify-waves:
 
 verify-inputs:
 	$(PYTHON) verify_input_provenance.py
+
+verify-readback verify-aos:
+	$(PYTHON) verify_mapping_registry.py --journals "$(ROOT)/build/end-to-end"
+	$(PYTHON) verify_aos_serialization.py
+	$(PYTHON) verify_vacuum_field.py
+	$(PYTHON) verify_nbi_momentum.py
+	$(PYTHON) verify_momentum_transport.py
+	$(PYTHON) verify_parallel_current.py
+	$(PYTHON) verify_runtime_diagnostics_readback.py
+	$(PYTHON) verify_transport_solver_numerics.py
+	$(PYTHON) verify_regional_model_timeline.py
+	$(PYTHON) verify_mapping_status.py
 
 verify-nubeam-fi:
 	$(PYTHON) verify_nubeam_fi.py
@@ -131,6 +157,9 @@ verify-isolver:
 
 verify-dd:
 	$(PYTHON) verify_dd_compat.py 3.39.0 4.1.1
+
+coverage:
+	$(PYTHON) report_coverage.py --journals "$(ROOT)/build/end-to-end"
 
 verify-end-to-end:
 	$(PYTHON) verify_end_to_end.py --python "$(PYTHON)" --dd-version "$(if $(filter auto,$(DD_VERSION)),4.1.1,$(DD_VERSION))" \

@@ -41,6 +41,9 @@ class imas_core_sources:
         if not self.im.is_valid(a):
             return np.array([])
         a = np.asarray(a, dtype=np.float64)
+        a = self.im.check_profile_shape(name, a, self.nt, self.nx)
+        if not a.size:
+            return a
         return a if mult is None else a * mult
 
     @staticmethod
@@ -66,18 +69,20 @@ class imas_core_sources:
         """Convert a TRANSP toroidal current profile to ``<J.B>/B0``.
 
         ``variable`` is in A/cm^2. ``CONPLJB`` approximates ``<J.B>/Jtor``
-        and TRANSP ``BZ`` is the internal toroidal-field magnitude. The plasma
-        current sign maps the resulting profile to the physical IMAS +phi
-        convention.
+        and IMAS normalizes by the IDS's own ``b0`` (``<J.B>/B0``, B0 =
+        ``vacuum_toroidal_field/b0``), not TRANSP's ``BZ``. The plasma current sign
+        maps the resulting profile to the physical IMAS +phi convention.
         """
         current = self._get(variable, self.im.area_inv)
         conpljb = self._get('CONPLJB')
-        bz = self._get('BZ')
-        if bz.size and len(bz) != self.nt:
-            bz = self.im.interp1d_time(self.time, self.im.timesc, bz)
-        if not self.im.is_valid(current, conpljb, bz):
+        b0 = self.im.vacuum_b0_magnitude(self.time)
+        if b0 is None:
+            self.im.mapping.skipped('vacuum toroidal field (RAXIS/BZXR) is not in the CDF',
+                                    source=variable, target='source/profiles_1d/j_parallel')
             return np.array([])
-        denominator = bz[:, None]
+        if not self.im.is_valid(current, conpljb):
+            return np.array([])
+        denominator = b0[:, None]
         geometry = np.divide(
             conpljb,
             denominator,
@@ -170,8 +175,12 @@ class imas_core_sources:
 
             mom_node = p.momentum_phi if self.im.dd_at_least(3,42,0) else p.momentum_tor
             self.im.fill_data(mom_node, momentum, ind=it, chk=self.nx)
-            if hasattr(p, 'momentum_phi_j_cross_b_field'):
-                self.im.fill_data(p.momentum_phi_j_cross_b_field, momentum_jxb, ind=it, chk=self.nx)
+            # DD4 / late DD3 spell it phi, DD 3.39 tor.
+            jxb_node = next((getattr(p, name) for name in ('momentum_phi_j_cross_b_field',
+                                                           'momentum_tor_j_cross_b_field')
+                             if hasattr(p, name)), None)
+            if jxb_node is not None:
+                self.im.fill_data(jxb_node, momentum_jxb, ind=it, chk=self.nx)
             torq_node = p.torque_phi_inside if self.im.dd_at_least(3,42,0) else p.torque_tor_inside
             self.im.fill_data(torq_node, torq_in, ind=it, chk=self.nx)
             self.im.fill_data(p.j_parallel, j_parallel, ind=it, chk=self.nx)
@@ -197,6 +206,37 @@ class imas_core_sources:
                 if self.im.dd_at_least(3,42,0): g.torque_phi = float(torque_g[it])
                 else: g.torque_tor = float(torque_g[it])
 
+    # TRANSP's total input torque (xplbal.f90, TQINP -> CDF TQIN) is
+    #   TQJXB + FTQRIP*TQRPL + TQBE + TQBI + TQBTH + TQDIFB + TQANOM + TQNTV,
+    # of which TQBE/TQBI (collisional torque on electrons/ions), TQBTH (thermalization) and
+    # TQJXB (return-current JxB) are the beam terms; TQDIFB is the fast-ion anomalous-diffusion
+    # torque, written to the CDF as TQABDF.  The sum of the first five reproduces TQIN to
+    # single precision in every bundled case with beams (ITER needs TQABDF); TQANOM and TQNTV
+    # are not beam torques.  The IMAS JxB field is a subset already included in the total.
+    NBI_REQUIRED_TORQUES = ('TQBE', 'TQBI', 'TQBTH', 'TQJXB')
+    NBI_OPTIONAL_TORQUES = ('TQABDF',)
+
+    def _nbi_momentum(self):
+        """``(total, jxb)`` NBI toroidal momentum source on the thermal plasma (IMAS sign), SI.
+
+        Both are empty unless every required beam torque is in the CDF: a partial sum
+        must not be written as the total.
+        """
+        terms = {name: self._get(name, self.im.vol_inv)
+                 for name in self.NBI_REQUIRED_TORQUES + self.NBI_OPTIONAL_TORQUES}
+        missing = [name for name in self.NBI_REQUIRED_TORQUES if not terms[name].size]
+        if missing:
+            self.logger.warning('core_sources: nbi momentum source not written; missing '
+                                + ', '.join(missing) + ' (a partial sum would not be the total torque)')
+            return np.array([]), np.array([])
+        ripple = self._get('TQRPL', self.im.vol_inv)
+        if ripple.size and np.any(ripple):
+            self.logger.warning('core_sources: TQRPL (beam ripple JxB torque) is nonzero but its '
+                                'weight FTQRIP is not in the CDF; it is excluded from the nbi momentum')
+        total = self._sum_valid(*terms.values())
+        sign = self.im.ip_sign
+        return sign * total, sign * terms['TQJXB']
+
     def _build_nbi(self, source):
         if not self._has('PBE','PBI','PBTH','SBTH','SBE'):
             return False
@@ -205,10 +245,7 @@ class imas_core_sources:
         ep = self._get('SBE', self.im.vol_inv)
         ie = self._sum_valid(self._get('PBI', self.im.vol_inv), self._get('PBTH', self.im.vol_inv))
         ip = self._get('SBTH', self.im.vol_inv)
-        mom = self._get('TQBTH', self.im.vol_inv)
-        if mom.size: mom *= self.im.ip_sign
-        jxb = self._get('TQJXB', self.im.vol_inv)
-        if jxb.size: jxb *= self.im.ip_sign
+        mom, jxb = self._nbi_momentum()
         ions=[]
         species=self.im.get_species_names('SBTH_?', cut='SBTH_')
         for sp in species:
@@ -217,7 +254,8 @@ class imas_core_sources:
             if part.size or en.size: ions.append((sp,part,en,False))
         if len(species)==1:
             try: self._set_source_species_neutral(source, species[0])
-            except Exception: pass
+            except KeyError:                    # atom_base: unknown species token
+                self.im.mapping.skipped(f'unknown beam species {species[0]!r}', target='source/species')
         jp = self._parallel_from_toroidal_current('CURB')
         self._fill_channel(source, electron_energy=ee, electron_particles=ep,
                            ion_energy=ie, ion_particles=ip, momentum=mom,
@@ -239,12 +277,10 @@ class imas_core_sources:
         self._prepare_source(source,'ohmic')
         ee=self._get('POH',self.im.vol_inv)
         jb=self._get('PLJBOH',self.im.area_inv)
-        bz=self._get('BZ')
-        if bz.size and len(bz)!=self.nt:
-            bz=self.im.interp1d_time(self.time,self.im.timesc,bz)
+        b0=self.im.vacuum_b0_magnitude(self.time)       # <J.B>/B0 with the IDS's own b0
         jp=np.array([])
-        if jb.size and bz.size:
-            jp=self.im.jparallel_sign*np.divide(jb,bz[:,None],out=np.zeros_like(jb),where=np.abs(bz[:,None])>0)
+        if jb.size and b0 is not None:
+            jp=self.im.jparallel_sign*np.divide(jb,b0[:,None],out=np.zeros_like(jb),where=np.abs(b0[:,None])>0)
         self._fill_channel(source,electron_energy=ee,j_parallel=jp)
         return True
 

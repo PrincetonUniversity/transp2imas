@@ -30,6 +30,8 @@ import imas_distributions as idm
 import nubeam_fi as nf
 from nubeam_outputs import discover_nubeam_outputs
 from transp_acfile import ACFile
+from mapping_status import MappingLedger
+from utilities import vacuum_field_reference
 
 try:
     import imas
@@ -509,6 +511,7 @@ class CdfShim:
         self._helper = idm.StandaloneHelper(dd_version)
         self._nc = netCDF4.Dataset(cdf_path)
         self.timesc = np.array(self._nc["TIME"][:])
+        self.mapping = MappingLedger()
         self.written = None
 
     def get_ncvar(self, name, mult=None):
@@ -520,6 +523,12 @@ class CdfShim:
     @staticmethod
     def is_valid(*values, name=None):
         return all(v is not None for v in values)
+
+    def vacuum_field_reference(self, times):
+        raxis, bzxr = self.get_ncvar("RAXIS", self.cm2m), self.get_ncvar("BZXR", self.cm2m)
+        if raxis is None or bzxr is None:
+            return None
+        return vacuum_field_reference(raxis, bzxr, self.bt_sign, times, self.timesc)
 
     def new_ids(self, name):
         return imas.IDSFactory(self.dd_version).new(name)
@@ -693,6 +702,13 @@ class WriterCdfQuantityTests(unittest.TestCase):
             if hasattr(node, name):
                 return getattr(node, name)
         raise AssertionError(f"none of {names} in {node}")
+
+    def test_vacuum_field_satisfies_r0_times_b0_equals_bt_sign_bzxr(self):
+        ids, _series, _profiles = self._write("4.1.1")
+        times = np.asarray(ids.time)
+        expected = -np.interp(times, [0.0, 0.2, 0.4], 0.01 * 40.0 * (1.0 + np.array([0.0, 0.2, 0.4])))   # bt_sign * BZXR
+        np.testing.assert_allclose(float(ids.vacuum_toroidal_field.r0) * np.asarray(ids.vacuum_toroidal_field.b0),
+                                   expected, rtol=1e-12)
 
     def test_balances_torques_currents_and_trapped_in_each_dd(self):
         dvol = 1000.0 * (1 + np.arange(NX))

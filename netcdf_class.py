@@ -8,9 +8,13 @@ import numpy as np
 import re
 from netCDF4 import Dataset
 from typing import List, Dict, Tuple, Union
+
+from mapping_status import MappingLedger, RecordingDataset
 class netcdf_connection:
     def __init__(self, ncfile:str, machine:str):
         self.nc = None
+        # Absent optional inputs and skipped fields, per writer, for the conversion journal.
+        self.mapping = MappingLedger()
         self.vars_ = []
         self.ncfile = ncfile
         self.device = None
@@ -50,7 +54,7 @@ class netcdf_connection:
         path_ = Path(self.ncfile).absolute()
         if path_.is_symlink():
             path_ = os.readlink(self.ncfile)
-        self.nc = Dataset(path_, 'r')
+        self.nc = RecordingDataset(Dataset(path_, 'r'), self.mapping)
         self.expand_vars(self.nc)
 
     def close_ncfile(self, quiet:bool=False):
@@ -256,8 +260,17 @@ class netcdf_connection:
 
 
     def get_ncvar(self, var:str, scale:float=1., ind:int=-1, interp:bool=False) -> np.array:
+        """CDF variable as a float64 array, or an empty array if the CDF does not have it.
+
+        An absent variable is optional input and is recorded in ``self.mapping``.  A variable that is
+        present but cannot be read or interpolated (bad index, wrong length for ``interp``, unreadable)
+        is a broken mapping, not absent data: it raises ``MappingError`` (or, in the lenient policy, is
+        recorded as a skipped field with its reason).
+        """
+        if var not in self.nc.variables:
+            self.mapping.missing_optional(var)
+            return np.array([])
         try:
-            res = None
             if ind>=0:
                res = np.array(self.nc.variables[var][ind])
             else:
@@ -279,7 +292,9 @@ class netcdf_connection:
                 return scale*res
             else:
                 return res
-        except (KeyError, IndexError, ValueError, TypeError, AttributeError, RuntimeError, FloatingPointError):
+        except (IndexError, ValueError, TypeError, AttributeError, RuntimeError, FloatingPointError) as exc:
+            detail = f'cannot read/transform CDF variable (ind={ind}, interp={interp})'
+            self.mapping.broken(f'{detail}: {type(exc).__name__}: {exc}', source=var)
             return np.array([])
 
     def get_ncvars_lst(self, lst:List[str], scale:float=1., ind:int=-1) -> np.array:

@@ -1,0 +1,209 @@
+# Declarative registry of TRANSP -> IMAS mappings.
+#
+# Every entry states what is mapped, how, and how that is verified.  The validator
+# (examples/verify_mapping_registry.py) checks each entry against the IMAS Data Dictionary, the
+# bundled CDFs and the tests it names, and the coverage report (examples/report_coverage.py)
+# compares it with the variables each writer was *measured* to read.  Recognition of a variable
+# name is never evidence of export: only entries of kind direct_typed / derived_typed count as
+# typed exports.
+#
+# kind:
+#   direct_typed   one source -> one typed IMAS field (units/sign only)
+#   derived_typed  typed IMAS field computed from one or more sources
+#   xml_only       preserved only as XML code.parameters (no typed node)
+#   input_consumed read to build or normalise other mappings; not exported itself
+#   deferred       reviewed on purpose and not mapped; `reason` is required
+# verification:
+#   readback_verified  values written to HDF5, read back and compared by `tests`
+#   writer_verified    real writer on a fixture; values checked in memory, not read back
+#   unverified         implemented, no test pins the values
+# fields:
+#   ids            writer/IDS names the entry applies to
+#   source         CDF variable names or shell-style patterns ('?' one char, '*' any)
+#   input_files    non-CDF inputs (TR.DAT, DATA<n>, ...), informational
+#   destination    path inside the IDS; a mapping per DD version where the name differs
+#   units          'source -> destination'
+#   transform / sign  one-line description of the conversion and sign convention
+#   tests          repo scripts that exercise it (must exist)
+#   read_by        (deferred) writers that may read the source without exporting it
+#   writer         writer name (key of conversion_plan.WRITER_ORDER) expected to read `source`
+
+- id: vacuum_field_reference
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles, core_sources, core_transport, equilibrium, transport_solver_numerics]
+  source: [RAXIS, BZXR]
+  destination: {'4': vacuum_toroidal_field/b0, '3': vacuum_toroidal_field/b0}
+  units: 'cm, T*cm -> m, T'
+  transform: 'r0 = mean of first/last RAXIS; b0 = bt_sign*BZXR/r0 so that r0*b0 equals the TF B*R'
+  sign: bt_sign
+  verification: readback_verified
+  tests: [examples/verify_vacuum_field.py]
+
+- id: tf_vacuum_field
+  kind: direct_typed
+  writer: tf
+  ids: [tf]
+  source: [BZXR]
+  destination: {'4': b_field_phi_vacuum_r, '3': b_field_tor_vacuum_r}
+  units: 'T*cm -> T*m'
+  sign: bt_sign
+  verification: unverified
+
+- id: core_profiles_rho_tor
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [TRFLX, BZXR]
+  destination: {'4': profiles_1d/grid/rho_tor, '3': profiles_1d/grid/rho_tor}
+  units: 'Wb -> m'
+  transform: 'rho_tor = sqrt(Phi/(pi*|b0|)) with b0 the vacuum-field b0 written in the same IDS'
+  verification: readback_verified
+  tests: [examples/verify_parallel_current.py]
+
+- id: equilibrium_rho_tor
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [TRFLX, BZXR]
+  destination: {'4': time_slice/profiles_1d/rho_tor, '3': time_slice/profiles_1d/rho_tor}
+  units: 'Wb -> m'
+  transform: 'rho_tor = sqrt(Phi/(pi*|b0|)) with b0 the vacuum-field b0 written in the same IDS'
+  verification: readback_verified
+  tests: [examples/verify_parallel_current.py]
+
+- id: j_parallel_core_profiles
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [PLJB, PLJBOH, CURBS, CONPLJB]
+  destination: {'4': profiles_1d/j_total, '3': profiles_1d/j_total}
+  units: 'A*T/cm^2 -> A/m^2'
+  transform: '<J.B>/B0 with B0 = |vacuum b0|; j_total from PLJB, j_ohmic from PLJBOH'
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_parallel_current.py]
+
+- id: j_parallel_equilibrium
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PLJB]
+  destination: {'4': time_slice/profiles_1d/j_parallel, '3': time_slice/profiles_1d/j_parallel}
+  units: 'A*T/cm^2 -> A/m^2'
+  transform: '<J.B>/B0 with B0 = |vacuum b0|'
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_parallel_current.py]
+
+- id: nbi_momentum_source
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [TQBE, TQBI, TQBTH, TQJXB, TQABDF]
+  destination: {'4': source/profiles_1d/momentum_phi, '3': source/profiles_1d/momentum_tor}
+  units: 'N*m/cm^3 -> N*m/m^3'
+  transform: 'TQIN-style sum of the NBI torque terms; TQRPL excluded (its weight FTQRIP is not in the CDF)'
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_nbi_momentum.py]
+
+- id: momentum_flux_solver_model
+  kind: derived_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [AMTR_MOD, SURF, DVOL]
+  destination: {'4': model/profiles_1d/momentum_phi/flux, '3': model/profiles_1d/momentum_tor/flux}
+  units: 'N*m -> flux through the surface'
+  transform: 'flux from the volume-integrated divergence, divided by the flux-surface area'
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_momentum_transport.py]
+
+- id: momentum_flux_observed
+  kind: derived_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [AMTR_OBS]
+  destination: {'4': model/profiles_1d/momentum_phi/flux, '3': model/profiles_1d/momentum_tor/flux}
+  units: 'N*m -> flux through the surface'
+  transform: 'same flux-from-divergence formula as AMTR_MOD'
+  sign: ip_sign
+  verification: unverified
+
+- id: pt_runtime_diagnostics_xml
+  kind: xml_only
+  writer: core_transport
+  ids: [core_transport]
+  source: [NPTRITER, PT_CPTIME, PT_WTIME]
+  destination: {'4': model/code/parameters, '3': model/code/parameters}
+  verification: readback_verified
+  tests: [examples/verify_runtime_diagnostics_readback.py]
+
+- id: pt_runtime_diagnostics_typed
+  kind: direct_typed
+  writer: transport_solver_numerics
+  ids: [transport_solver_numerics]
+  source: [NPTRITER, PT_CPTIME, PT_WTIME]
+  destination: {'4': solver_1d/control_parameters, '3': solver_1d/control_parameters}
+  units: 'count, hour'
+  transform: 'integer/real control parameters on the TIME3 grid'
+  verification: readback_verified
+  tests: [examples/verify_transport_solver_numerics.py]
+
+- id: pt_regional_models
+  kind: xml_only
+  writer: core_transport
+  ids: [core_transport]
+  source: []
+  input_files: [TR.DAT, PT_SOLVER template]
+  destination: {'4': model/code/parameters, '3': model/code/parameters}
+  transform: 'one occurrence per region interval with the interval attributes'
+  verification: readback_verified
+  tests: [examples/verify_regional_model_timeline.py]
+
+# ---- reviewed and intentionally not mapped -------------------------------------------------
+
+- id: deferred_boundary_sources
+  kind: deferred
+  source: [T0RECYC, T0GASFL, OM0RECYC, OM0GASFL, E0INR]
+  reason: 'neutral/source-state quantities with no audited IMAS destination'
+
+- id: deferred_boundary_energy
+  kind: deferred
+  source: [PEEDG, PIEDG]
+  reason: 'energy crossing the plasma boundary, not a volumetric source'
+
+- id: deferred_neoclassical_velocity
+  kind: deferred
+  source: ['VPOL?_NC', 'VTOR?_NC']
+  read_by: [core_profiles]
+  reason: 'RMAJM-grid (101 midplane points) velocities; core_profiles reads them and exports only if a CDF provides them on the profile grid'
+
+- id: deferred_aggregate_fluxes
+  kind: deferred
+  source: [GFLNC_I, GFLNC_X, GFLNC_TOK, QFLNC_X, QFLNC_TOK, QFLNCC_X, QFLNCC_TOK]
+  reason: 'aggregate divergences; no typed total destination and no extra ion species is invented'
+
+- id: deferred_ic_spectrum
+  kind: deferred
+  source: [PIC_NPHI, 'PICF??N??']
+  reason: 'frequency/n_phi-resolved IC families need a dedicated spectral mapping audit'
+
+- id: deferred_ripple_torque
+  kind: deferred
+  source: [TQRPL, FTQRIP]
+  read_by: [core_sources]
+  reason: 'ripple torque weight FTQRIP is not in the CDF; TQRPL is read only to warn that it is excluded from the NBI momentum sum'
+
+# ---- read to build other mappings ----------------------------------------------------------
+
+- id: input_time_grids
+  kind: input_consumed
+  source: [TIME, TIME3]
+  reason: 'native time bases for every writer'
+
+- id: input_geometry
+  kind: input_consumed
+  source: [X, XB, DVOL, DAREA, SURF, BZ]
+  reason: 'coordinates and zone geometry used to normalise and integrate'
