@@ -31,6 +31,7 @@ from pf_active_mapping import (  # noqa: E402
 GEOMETRY = Path(__file__).with_name("pf_active_geometry.synthetic.json")
 
 
+# Registry entries exercised here: pf_active_coil_current, pf_active_coil_voltage, pf_active_supply_voltage
 class Node(SimpleNamespace):
     """Mock structured IMAS node."""
 
@@ -208,7 +209,9 @@ class TestActiveMapping(unittest.TestCase):
                 try:
                     module = importlib.import_module("imas_pf_active")
                     converter = MockImas()
-                    module.imas_pf_active(converter, geometry_path=str(GEOMETRY))
+                    writer = module.imas_pf_active(converter, geometry_path=str(GEOMETRY))
+                    self.assertIsNone(converter.record, 'constructing the writer must not write')
+                    writer.run()
                     ids = converter.record
                     self.assertIsNotNone(ids)
                     self.assertEqual(ids.ids_properties.homogeneous_time, 0)

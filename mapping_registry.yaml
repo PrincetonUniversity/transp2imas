@@ -32,10 +32,10 @@
   kind: derived_typed
   writer: core_profiles
   ids: [core_profiles, core_sources, core_transport, equilibrium, transport_solver_numerics]
-  source: [RAXIS, BZXR]
+  source: [RLIM, RAXIS, BZXR]
   destination: {'4': vacuum_toroidal_field/b0, '3': vacuum_toroidal_field/b0}
   units: 'cm, T*cm -> m, T'
-  transform: 'r0 = mean of first/last RAXIS; b0 = bt_sign*BZXR/r0 so that r0*b0 equals the TF B*R'
+  transform: 'r0 = middle of the limiter, (max RLIM + min RLIM)/2, a fixed machine radius as the DD asks (ITER 6.22 m giving 5.28 T, DIII-D 1.69 m giving 1.67 T); without a usable limiter, the mean of the first and last RAXIS. b0 = bt_sign*BZXR/r0, so r0*b0 equals the TF B*R'
   sign: bt_sign
   verification: readback_verified
   tests: [examples/verify_vacuum_field.py]
@@ -48,7 +48,8 @@
   destination: {'4': b_field_phi_vacuum_r, '3': b_field_tor_vacuum_r}
   units: 'T*cm -> T*m'
   sign: bt_sign
-  verification: unverified
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
 
 - id: core_profiles_rho_tor
   kind: derived_typed
@@ -114,8 +115,8 @@
   ids: [core_transport]
   source: [AMTR_MOD, SURF, DVOL]
   destination: {'4': model/profiles_1d/momentum_phi/flux, '3': model/profiles_1d/momentum_tor/flux}
-  units: 'N*m -> flux through the surface'
-  transform: 'flux from the volume-integrated divergence, divided by the flux-surface area'
+  units: 'N m cm^-3 (a torque density) -> N m m^-2, i.e. kg s^-2'
+  transform: 'AMTR_MOD is the divergence of the angular-momentum flux in N m cm^-3, which is N m m^-3 x 1e6 and equals the DD unit of core_sources momentum_phi (kg m^-1 s^-2). The flux is its cumulative volume integral (N m, the DD torque_phi_inside unit) divided by SURF (m^2), as for the energy and particle fluxes, so N m m^-2 = kg s^-2. The DD labels momentum_phi/flux kg m^-1 s^-2, which is the unit of the source term and not of a flux through a surface; the written values follow the divergence convention of the other channels. A channel whose *_MOD array is identically zero was not solved (every NSTX case has zero EPTR/EETR/AMTR_MOD, NSTX 141711Y05 solves only the ion heat) and is not written: an explicit zero flux would claim the solver predicted none'
   sign: ip_sign
   verification: readback_verified
   tests: [examples/verify_momentum_transport.py]
@@ -126,10 +127,11 @@
   ids: [core_transport]
   source: [AMTR_OBS]
   destination: {'4': model/profiles_1d/momentum_phi/flux, '3': model/profiles_1d/momentum_tor/flux}
-  units: 'N*m -> flux through the surface'
+  units: 'N m cm^-3 (a torque density) -> N m m^-2, i.e. kg s^-2'
   transform: 'same flux-from-divergence formula as AMTR_MOD'
   sign: ip_sign
-  verification: unverified
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
 
 - id: pt_runtime_diagnostics_xml
   kind: xml_only
@@ -161,6 +163,1774 @@
   transform: 'one occurrence per region interval with the interval attributes'
   verification: readback_verified
   tests: [examples/verify_regional_model_timeline.py]
+
+# ---- hardware and heating writers (implemented; no test pins the values yet) ----------------
+
+- id: wall_limiter_outline
+  kind: direct_typed
+  writer: wall
+  ids: [wall]
+  source: [RLIM, YLIM]
+  destination: {'4': description_2d/limiter/unit/outline/r, '3': description_2d/limiter/unit/outline/r}
+  units: 'cm -> m'
+  transform: 'RLIM -> outline.r, YLIM -> outline.z; closure convention follows the DD (closed flag in DD3, repeated first point in DD4)'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ic_antenna_frequency
+  kind: direct_typed
+  writer: ic_antennas
+  ids: [ic_antennas]
+  source: ['FREQA?']
+  destination: {'4': antenna/frequency/data, '3': antenna/frequency/data}
+  units: 'Hz -> Hz'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ic_antenna_power
+  kind: direct_typed
+  writer: ic_antennas
+  ids: [ic_antennas]
+  source: ['PICHA?']
+  destination: {'4': antenna/power_launched/data, '3': antenna/power_launched/data}
+  units: 'W -> W'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ic_total_power
+  kind: direct_typed
+  writer: ic_antennas
+  ids: [ic_antennas]
+  source: [PICHTOT]
+  destination: {'4': power_launched/data, '3': power_launched/data}
+  units: 'W -> W'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ec_beam_power
+  kind: direct_typed
+  writer: ec_launchers
+  ids: [ec_launchers]
+  source: ['PECIN?']
+  destination: {'4': beam/power_launched/data, '3': beam/power_launched/data}
+  units: 'W -> W'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ec_steering_angles
+  kind: derived_typed
+  writer: ec_launchers
+  ids: [ec_launchers]
+  source: ['PHAIECH?', 'THETECH?']
+  destination: {'4': beam/steering_angle_tor, '3': beam/steering_angle_tor}
+  units: 'deg -> rad'
+  transform: 'toroidal and poloidal steering angles from the TRANSP aiming angles PHAIECH/THETECH (steering_angle_pol is written from the same pair)'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: nbi_unit_power
+  kind: direct_typed
+  writer: nbi
+  ids: [nbi]
+  source: ['PINJ??']
+  destination: {'4': unit/power_launched/data, '3': unit/power_launched/data}
+  units: 'W -> W'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: nbi_unit_energy
+  kind: direct_typed
+  writer: nbi
+  ids: [nbi]
+  source: ['EINJ??_E1']
+  destination: {'4': unit/energy/data, '3': unit/energy/data}
+  units: 'eV -> eV'
+  transform: 'full-energy component of each unit'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: radiation_electron_emissivity
+  kind: direct_typed
+  writer: radiation
+  ids: [radiation]
+  source: [PRAD_BR, PRAD_CY]
+  destination: {'4': process/profiles_1d/electrons/emissivity, '3': process/profiles_1d/electrons/emissivity}
+  units: 'W/cm^3 -> W/m^3'
+  transform: 'bremsstrahlung (PRAD_BR) and cyclotron/synchrotron (PRAD_CY) processes; power_inside from the cumulative DVOL integral'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: radiation_line_emissivity
+  kind: direct_typed
+  writer: radiation
+  ids: [radiation]
+  source: [PRAD_LI]
+  destination: {'4': process/profiles_1d/emissivity_ion_total, '3': process/profiles_1d/emissivity_ion_total}
+  units: 'W/cm^3 -> W/m^3'
+  transform: 'line_radiation process, total ion/impurity emission; when PRAD_LI is absent the PRLS_* species totals are summed'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_nbi_electron_energy
+  kind: direct_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [PBE]
+  destination: {'4': source/profiles_1d/electrons/energy, '3': source/profiles_1d/electrons/energy}
+  units: 'W/cm^3 -> W/m^3'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_nbi_ion_energy
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [PBI, PBTH]
+  destination: {'4': source/profiles_1d/total_ion_energy, '3': source/profiles_1d/total_ion_energy}
+  units: 'W/cm^3 -> W/m^3'
+  transform: 'PBI + PBTH (beam heating of thermal ions)'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_nbi_electron_particles
+  kind: direct_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [SBE]
+  destination: {'4': source/profiles_1d/electrons/particles, '3': source/profiles_1d/electrons/particles}
+  units: '1/(cm^3 s) -> 1/(m^3 s)'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_ohmic_energy
+  kind: direct_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [POH]
+  destination: {'4': source/profiles_1d/electrons/energy, '3': source/profiles_1d/electrons/energy}
+  units: 'W/cm^3 -> W/m^3'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_current_drive_ohmic_nbi
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [PLJBOH, CURB, CONPLJB]
+  destination: {'4': source/profiles_1d/j_parallel, '3': source/profiles_1d/j_parallel}
+  units: 'A*T/cm^2 or A/cm^2 -> A/m^2'
+  transform: 'ohmic from PLJBOH (<J.B>); beam from CURB*CONPLJB; both divided by the IDS vacuum b0'
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_parallel_current.py]
+
+- id: core_sources_bootstrap_current
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [CURBS, CONPLJB]
+  destination: {'4': source/profiles_1d/j_parallel, '3': source/profiles_1d/j_parallel}
+  units: 'A/cm^2 -> A/m^2'
+  transform: 'CURBS*CONPLJB divided by the IDS vacuum b0'
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_radiation_sink
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [PRAD_BR, PRAD_CY, PRAD_LI]
+  destination: {'4': source/profiles_1d/electrons/energy, '3': source/profiles_1d/electrons/energy}
+  units: 'W/cm^3 -> W/m^3'
+  transform: 'negated: radiation is an energy sink for the electrons'
+  sign: -1
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+# ---- core_profiles (implemented; no test pins the values yet) -----------------------------
+
+- id: cp_electron_temperature
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [TE]
+  destination: {'4': profiles_1d/electrons/temperature, '3': profiles_1d/electrons/temperature}
+  units: 'eV -> eV'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_electron_density
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [NE]
+  destination: {'4': profiles_1d/electrons/density, '3': profiles_1d/electrons/density}
+  units: 'cm^-3 -> m^-3'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_ion_average_temperature
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [TI]
+  destination: {'4': profiles_1d/t_i_average, '3': profiles_1d/t_i_average}
+  units: 'eV -> eV'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_ion_temperature
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [TI]
+  destination: {'4': profiles_1d/ion/temperature, '3': profiles_1d/ion/temperature}
+  units: 'eV -> eV'
+  transform: 'TRANSP has one ion temperature; it is written for each thermal and impurity ion (fast-ion populations carry their own, see cp_fast_ion_temperature)'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_fast_ion_temperature
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [EBEAM_D, EBEAM_T, EBEAM_H, EFUSN_T, EFUSN_3, EFUSN_4, EFUSN_P, TMINI_D, TMINI_T, TMINI_H]
+  destination: {'4': profiles_1d/ion/temperature, '3': profiles_1d/ion/temperature}
+  units: 'eV -> eV'
+  transform: 'the mean fast-ion energy (EBEAM/EFUSN) is written unchanged as the species temperature; a mean energy is not a temperature (2/3 of it would be), convention open'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_ion_density_thermal
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [ND, NT, 'NHE?']
+  destination: {'4': profiles_1d/ion/density_thermal, '3': profiles_1d/ion/density_thermal}
+  units: 'cm^-3 -> m^-3'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_ion_radial_velocity
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [VNDNC_D, VNDNC_T, VNDNC_H, VNDNC_HE3, VNDNC_HE4]
+  destination: {'4': profiles_1d/ion/velocity/radial, '3': profiles_1d/ion/velocity/radial}
+  units: 'cm/s -> m/s'
+  transform: 'NCLASS radial velocity is on the XB grid with as many points as the X grid; kept as is'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_ion_rotation_frequency
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [OMEGA]
+  destination: {'4': profiles_1d/ion/rotation_frequency_tor, '3': profiles_1d/ion/rotation_frequency_tor}
+  units: 'rad/s -> rad/s'
+  sign: toroidal_rotation_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_ion_to_electron_density
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [NI, NE]
+  destination: {'4': profiles_1d/n_i_total_over_n_e, '3': profiles_1d/n_i_total_over_n_e}
+  units: '1'
+  transform: 'NI/NE'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_pressure_thermal
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [PPLAS, UTHRM]
+  destination: {'4': profiles_1d/pressure_thermal, '3': profiles_1d/pressure_thermal}
+  units: 'Pa -> Pa; J/cm^3 -> Pa'
+  transform: 'PPLAS (pascals); when absent 2/3 of UTHRM'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_pressure_electron
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [UE]
+  destination: {'4': profiles_1d/electrons/pressure_thermal, '3': profiles_1d/electrons/pressure_thermal}
+  units: 'J/cm^3 -> Pa'
+  transform: '2/3 of the electron energy density'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_pressure_ion_total
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [UI]
+  destination: {'4': profiles_1d/pressure_ion_total, '3': profiles_1d/pressure_ion_total}
+  units: 'J/cm^3 -> Pa'
+  transform: '2/3 of the ion energy density'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_pressure_anisotropy
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [PPLAS, UTHRM, UFASTPP, UFASTPA]
+  destination: {'4': profiles_1d/pressure_perpendicular, '3': profiles_1d/pressure_perpendicular}
+  units: 'J/cm^3 -> Pa'
+  transform: 'perpendicular = thermal + UFASTPP; parallel (pressure_parallel) = thermal + 2*UFASTPA'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_q_profile
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [Q, Q0, X, XB]
+  destination: {'4': profiles_1d/q, '3': profiles_1d/q}
+  units: '1'
+  transform: 'Q is on the XB grid; interpolated onto X with Q0 as the value at the axis'
+  sign: q_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_zeff
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [ZEFFP]
+  destination: {'4': profiles_1d/zeff, '3': profiles_1d/zeff}
+  units: '1'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_magnetic_shear
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [SHAT]
+  destination: {'4': profiles_1d/magnetic_shear, '3': profiles_1d/magnetic_shear}
+  units: '1'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_parallel_conductivity
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [ETA_USE]
+  destination: {'4': profiles_1d/conductivity_parallel, '3': profiles_1d/conductivity_parallel}
+  units: 'ohm*cm -> 1/(ohm*m)'
+  transform: '1/eta with eta converted to ohm*m; zero where eta is zero'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_phi_potential
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [VRPOT, X, XB]
+  destination: {'4': profiles_1d/phi_potential, '3': profiles_1d/phi_potential}
+  units: 'V -> V'
+  transform: 'interpolated from XB to X with the first value at the axis; no radial E field is reconstructed (needs an explicit metric convention)'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+# ---- core_transport (readback-verified on ITER 38530P94 unless stated) ---------------------
+
+- id: ct_combined_electron_particle_dv
+  kind: direct_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [DIFFE, VELE]
+  destination: {'4': model/profiles_1d/electrons/particles/d, '3': model/profiles_1d/electrons/particles/d}
+  units: 'cm^2/s, cm/s -> m^2/s, m/s'
+  transform: 'model combined: DIFFE -> d, VELE -> v (same units conversion for both)'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_combined_electron_heat_dv
+  kind: direct_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [CONDE, VEL_TE]
+  destination: {'4': model/profiles_1d/electrons/energy/d, '3': model/profiles_1d/electrons/energy/d}
+  units: 'cm^2/s, cm/s -> m^2/s, m/s'
+  transform: 'model combined: CONDE -> d, VEL_TE -> v'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_combined_ion_heat_dv
+  kind: direct_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [CONDI, VEL_TI]
+  destination: {'4': model/profiles_1d/total_ion_energy/d, '3': model/profiles_1d/total_ion_energy/d}
+  units: 'cm^2/s, cm/s -> m^2/s, m/s'
+  transform: 'model combined: CONDI -> d, VEL_TI -> v'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_combined_momentum_dv
+  kind: direct_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [CHPHI, VMO_NET]
+  destination: {'4': model/profiles_1d/momentum_phi/d, '3': model/profiles_1d/momentum_tor/d}
+  units: 'cm^2/s, cm/s -> m^2/s, m/s'
+  transform: 'model combined: CHPHI -> d, VMO_NET -> v'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_combined_conductivity
+  kind: derived_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [ETA_USE, X, XB]
+  destination: {'4': model/profiles_1d/conductivity_parallel, '3': model/profiles_1d/conductivity_parallel}
+  units: 'ohm*cm -> 1/(ohm*m)'
+  transform: 'model combined: eta (ohm*m) interpolated from X to XB, then 1/eta (0 where eta is 0)'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_combined_species_dv
+  kind: direct_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [DIFFH, DIFFD, DIFFT, DIFFHE3, DIFFHE4, VELH, VELD, VELT, VELHE3, VELHE4]
+  destination: {'4': model/profiles_1d/ion/particles/d, '3': model/profiles_1d/ion/particles/d}
+  units: 'cm^2/s, cm/s -> m^2/s, m/s'
+  transform: 'model combined: per-species effective diffusivity and velocity'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_observed_fluxes
+  kind: derived_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [EPTR_OBS, EETR_OBS, IETR_OBS, DVOL, SURF]
+  destination: {'4': model/profiles_1d/electrons/particles/flux, '3': model/profiles_1d/electrons/particles/flux}
+  units: 'per cm^3 -> per m^2'
+  transform: 'model combined: flux = cumulative sum(divergence*DVOL)/SURF; the energy fluxes go to electrons/energy/flux and total_ion_energy/flux'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_observed_species_flux
+  kind: derived_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [PTRH_OBS, PTRD_OBS, PTRT_OBS, PTRHE3_OBS, PTRHE4_OBS, DVOL, SURF]
+  destination: {'4': model/profiles_1d/ion/particles/flux, '3': model/profiles_1d/ion/particles/flux}
+  units: 'per cm^3 -> per m^2'
+  transform: 'model combined: per-species particle flux from the observed divergence'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_solver_fluxes
+  kind: derived_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [EPTR_MOD, EETR_MOD, IETR_MOD, DVOL, SURF]
+  destination: {'4': model/profiles_1d/electrons/particles/flux, '3': model/profiles_1d/electrons/particles/flux}
+  units: 'per cm^3 -> per m^2'
+  transform: 'model transport_solver: same flux-from-divergence formula; energy fluxes go to electrons/energy/flux and total_ion_energy/flux. A channel whose *_MOD array is identically zero was not solved (every NSTX case has zero EPTR/EETR/AMTR_MOD, NSTX 141711Y05 solves only the ion heat) and is not written: an explicit zero flux would claim the solver predicted none'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_solver_species_flux
+  kind: derived_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [PTRH_MOD, PTRD_MOD, PTRT_MOD, PTRHE3_MOD, PTRHE4_MOD, DVOL, SURF]
+  destination: {'4': model/profiles_1d/ion/particles/flux, '3': model/profiles_1d/ion/particles/flux}
+  units: 'per cm^3 -> per m^2'
+  transform: 'model transport_solver: per-species particle flux; IPTR_MOD (aggregate) has no destination and is not used. A channel whose *_MOD array is identically zero was not solved (every NSTX case has zero EPTR/EETR/AMTR_MOD, NSTX 141711Y05 solves only the ion heat) and is not written: an explicit zero flux would claim the solver predicted none'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_neoclassical_fluxes
+  kind: derived_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [GFLNC_E, GFLNC_H, GFLNC_D, GFLNC_T, 'GFLNC_3', 'GFLNC_4', GFLNC_B, GFLNC_BE, GFLNC_NE, GFLNC_AR, GFLNC_GA, GFLNC_W, QFLNC_E, QFLNC_H, QFLNC_D, QFLNC_T, 'QFLNC_3', 'QFLNC_4', QFLNC_B, QFLNC_BE, QFLNC_NE, QFLNC_AR, QFLNC_GA, QFLNC_W, QFLNC_I, DVOL, SURF]
+  destination: {'4': model/profiles_1d/electrons/particles/flux, '3': model/profiles_1d/electrons/particles/flux}
+  units: 'per cm^3 -> per m^2'
+  transform: 'model neoclassical: divergences integrated like the other fluxes; GFLNC_E/QFLNC_E -> electrons, QFLNC_I -> total_ion_energy, species channels -> ion[] particles/energy flux; the aggregate _I particle and _X/_TOK channels are not exported'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_neoclassical_classical_heat
+  kind: derived_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [QFLNCC_E, QFLNCC_H, QFLNCC_D, QFLNCC_T, 'QFLNCC_3', 'QFLNCC_4', QFLNCC_B, QFLNCC_BE, QFLNCC_NE, QFLNCC_AR, QFLNCC_GA, QFLNCC_W, QFLNCC_I, DVOL, SURF]
+  destination: {'4': model/profiles_1d/electrons/energy/flux, '3': model/profiles_1d/electrons/energy/flux}
+  units: 'per cm^3 -> per m^2'
+  transform: 'model neoclassical_classical_heat: NC+classical heat flux, kept separate from QFLNC_* so it is never summed with it'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_glf23_diffusivities
+  kind: direct_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [XKEGLF23, XKIGLF23, ETPHIGLF]
+  destination: {'4': model/profiles_1d/electrons/energy/d, '3': model/profiles_1d/electrons/energy/d}
+  units: 'cm^2/s -> m^2/s'
+  transform: 'model glf23: XKEGLF23 -> electrons/energy/d, XKIGLF23 -> total_ion_energy/d, ETPHIGLF -> momentum_phi/d (DD3 momentum_tor); when the GLF23 channels are all zero (a run that did not use GLF23) no glf23 model is written'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_mmm07_diffusivities
+  kind: direct_typed
+  writer: core_transport
+  ids: [core_transport]
+  source: [XKDMMM07, XKEMMM07, XKIMMM07, XPTMMM07, VPHIMMM07, XKEW19, XKIW19, XKEDRBM, XKIDRBM, XKEETG, XKEMTM]
+  destination: {'4': model/profiles_1d/electrons/energy/d, '3': model/profiles_1d/electrons/energy/d}
+  units: 'cm^2/s, cm/s -> m^2/s, m/s'
+  transform: 'models mmm07_total, _weiland, _dribm, _etg, _mtm per theory_transport_mapping.MODEL_SPECS; coefficients are boundary (XB) profiles and are not volume-integrated; reduced-model auxiliary channels stay in the model XML; a coefficient of an active model that is zero in the CDF is written as zero, and a model whose channels are all zero is not written at all (verified on DIII-D 147634T16, the bundled MMM07 case)'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ct_theory_auxiliary_xml
+  kind: xml_only
+  writer: core_transport
+  ids: [core_transport]
+  source: [KYRSDRBM, GAMMAETG, OMEGAETG, KYRSETG, GAMMAMTM, OMEGAMTM, KYRSMTM, XDBMTM, XKZMMM07, XPPMMM07, DIFFIGLF]
+  destination: {'4': model/code/parameters, '3': model/code/parameters}
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+# ---- edge_sources: gas-flow (GF) and recycling (RC) neutral origins ------------------------
+
+- id: es_ionization_particles
+  kind: direct_typed
+  writer: edge_sources
+  ids: [edge_sources]
+  source: ['SEGF_?', 'SERC_?', SERECO]
+  destination: {'4': source/ggd/electrons/particles/values, '3': source/ggd/electrons/particles/values}
+  units: '1/(cm^3 s) -> 1/(m^3 s)'
+  transform: "atomic_ionization source per neutral (SERECO is the re-ionisation of recombination neutrals, only when one species is resolved): electron source = SE*; the same rate goes to the ion particle source and, negated, to the neutral particle sink (SE* not SI*, because SI* includes the charge-exchange ion)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: es_ionization_energy
+  kind: direct_typed
+  writer: edge_sources
+  ids: [edge_sources]
+  source: ['PIGF_?', 'PIRC_?', PIRECO]
+  destination: {'4': source/ggd/ion/energy/values, '3': source/ggd/ion/energy/values}
+  units: 'W/cm^3 -> W/m^3'
+  transform: "atomic_ionization source: kinetic-energy transfer, ion +, neutral -"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: es_ionization_momentum
+  kind: direct_typed
+  writer: edge_sources
+  ids: [edge_sources]
+  source: ['TQIGF_?', 'TQIRC_?', TQIRECO]
+  destination: {'4': source/ggd/ion/momentum/phi}
+  units: 'N*m/cm^3 -> N*m/m^3'
+  transform: "atomic_ionization source: torque, ion +, neutral -; written for DD >= 3.42 only, DD 3.39 ties the toroidal component to the radial one so the component is skipped with a recorded reason"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: es_cx_particles
+  kind: direct_typed
+  writer: edge_sources
+  ids: [edge_sources]
+  source: ['SFCXGF_?', 'SFCXRC_?', SFCXRECO]
+  destination: {'4': source/ggd/ion/particles/values, '3': source/ggd/ion/particles/values}
+  units: '1/(cm^3 s) -> 1/(m^3 s)'
+  transform: "charge_exchange source: ion born from the neutral +, neutral -"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: es_cx_energy
+  kind: direct_typed
+  writer: edge_sources
+  ids: [edge_sources]
+  source: ['PCXGF_?', 'PCXRC_?', PCXRECO]
+  destination: {'4': source/ggd/total_ion_energy/values, '3': source/ggd/total_ion_energy/values}
+  units: 'W/cm^3 -> W/m^3'
+  transform: "charge_exchange source: PCX is a transfer to the neutrals, so total_ion_energy is negated and neutral energy is positive (the donor fast ion is not resolved)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: es_cx_momentum
+  kind: direct_typed
+  writer: edge_sources
+  ids: [edge_sources]
+  source: ['TQCXGF_?', 'TQCXRC_?', TQCXRECO]
+  destination: {'4': source/ggd/momentum/phi}
+  units: 'N*m/cm^3 -> N*m/m^3'
+  transform: "charge_exchange source: TQCX is a transfer to the neutrals, so aggregate momentum is negated and neutral momentum positive; DD >= 3.42 only (see es_ionization_momentum)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: es_recombination_particles
+  kind: derived_typed
+  writer: edge_sources
+  ids: [edge_sources]
+  source: [S0RECO, 'S0V0?', 'S0V0??']
+  destination: {'4': source/ggd/neutral/particles/values, '3': source/ggd/neutral/particles/values}
+  units: '1/(cm^3 s) -> 1/(m^3 s)'
+  transform: "recombination source: neutral particles = S0V0<s> when exactly one species is resolved (then electrons and ion particles get the same rate with a negative sign, one ion and one electron consumed per neutral), else the unresolved total S0RECO on a recombination_neutral_total entry"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: es_recombination_energy
+  kind: direct_typed
+  writer: edge_sources
+  ids: [edge_sources]
+  source: [P0RECO]
+  destination: {'4': source/ggd/neutral/energy/values, '3': source/ggd/neutral/energy/values}
+  units: 'W/cm^3 -> W/m^3'
+  transform: "recombination source: kinetic energy carried by the born neutral; the plasma-side energy partition is not resolved by TRANSP and is not invented"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: es_recombination_momentum
+  kind: direct_typed
+  writer: edge_sources
+  ids: [edge_sources]
+  source: [TQ0RECO]
+  destination: {'4': source/ggd/neutral/momentum/phi}
+  units: 'N m/cm^3 -> N m/m^3'
+  transform: "recombination source: torque carried by the born neutral; DD >= 3.42 only (see es_ionization_momentum)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: deferred_edge_species_ion_sources
+  kind: deferred
+  source: ['SIGF_?_?', 'SIRC_?_?']
+  read_by: [edge_sources]
+  reason: 'species-resolved ion sources are read to build a neutral-loss term that is not exported; the electron source SE* sets the particle stoichiometry because SI* = SE* + SFCX*'
+
+# ---- equilibrium (readback-verified on ITER 38530P94 unless stated) ------------------------
+
+- id: eq_plasma_current
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PCURC]
+  destination: {'4': time_slice/global_quantities/ip, '3': time_slice/global_quantities/ip}
+  units: 'A -> A'
+  transform: "calculated plasma current"
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_magnetic_axis
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [RAXIS, YAXIS]
+  destination: {'4': time_slice/global_quantities/magnetic_axis/r, '3': time_slice/global_quantities/magnetic_axis/r}
+  units: 'cm -> m'
+  transform: "RAXIS -> r, YAXIS -> z"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_psi_magnetic_axis
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PSI0_TR]
+  destination: {'4': time_slice/global_quantities/psi_magnetic_axis, '3': time_slice/global_quantities/psi_axis}
+  units: 'Wb/rad -> Wb'
+  transform: "PSI0_TR times 2*pi (DD 4.1 renamed psi_axis to psi_magnetic_axis)"
+  sign: psi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_q_scalars
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [Q95, Q0]
+  destination: {'4': time_slice/global_quantities/q_95, '3': time_slice/global_quantities/q_95}
+  units: '1'
+  transform: "Q95 -> q_95, Q0 -> q_axis"
+  sign: q_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_li3
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [LI_3]
+  destination: {'4': time_slice/global_quantities/li_3, '3': time_slice/global_quantities/li_3}
+  units: '1'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_betas
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PTOWB, DVOL, PCURC, BZXR, RLIM, RAXIS, 'RMCB?', 'RMCB??', 'RMSB?', 'RMSB??']
+  destination: {'4': time_slice/global_quantities/beta_tor, '3': time_slice/global_quantities/beta_tor}
+  units: 'Pa, m^3, A, T -> 1'
+  transform: "the Data Dictionary definitions against this IDS's own b0 and r0, from the total pressure PTOWB: beta_tor = 2 mu0 (sum PTOWB*DVOL / sum DVOL) / b0^2; beta_pol = 4 sum PTOWB*DVOL / (r0 mu0 Ip^2); beta_tor_norm = 100 beta_tor a b0 / Ip[MA] with a = (Rmax-Rmin)/2 of the boundary rebuilt from the RMCB/RMSB moments (1-2% from the traced outline). TRANSP's BTEQ is 2 mu0 <PTOWB>/(BZXR^2 <1/R^2>) and BETAT/BPEQ use a poloidal-field average, so they are different definitions and are not copied"
+  sign: 'beta_tor_norm keeps the signs of b0 and Ip (bt_sign*ip_sign); beta_tor and beta_pol are positive'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_plasma_volume
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PVOL]
+  destination: {'4': time_slice/global_quantities/volume, '3': time_slice/global_quantities/volume}
+  units: 'cm^3 -> m^3'
+  transform: ""
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_boundary_shape
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [ELONG, TRIANG, TRIANGU, TRIANGL]
+  destination: {'4': time_slice/boundary/elongation, '3': time_slice/boundary/elongation}
+  units: '1'
+  transform: "value on the last XB surface of each profile"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_shaping
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [ELONG, TRIANGU, TRIANGL, SQUARE_UO, SQUARE_LO]
+  destination: {'4': time_slice/profiles_1d/elongation, '3': time_slice/profiles_1d/elongation}
+  units: '1'
+  transform: "XB grid, copied"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_psi
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PLFLX2PI, PSI0_TR]
+  destination: {'4': time_slice/profiles_1d/psi, '3': time_slice/profiles_1d/psi}
+  units: 'Wb'
+  transform: "enclosed flux PLFLX2PI plus the axis value 2*pi*PSI0_TR (absolute flux)"
+  sign: psi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_phi
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [TRFLX]
+  destination: {'4': time_slice/profiles_1d/phi, '3': time_slice/profiles_1d/phi}
+  units: 'Wb -> Wb'
+  transform: "TRFLX is already the full toroidal flux"
+  sign: phi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_q
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [Q]
+  destination: {'4': time_slice/profiles_1d/q, '3': time_slice/profiles_1d/q}
+  units: '1'
+  transform: "XB grid"
+  sign: q_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_f
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [GFUN, BZXR]
+  destination: {'4': time_slice/profiles_1d/f, '3': time_slice/profiles_1d/f}
+  units: 'T*m'
+  transform: "F = GFUN * BZXR (signed R*B_phi)"
+  sign: f_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_pressure
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PTOWB, X, XB]
+  destination: {'4': time_slice/profiles_1d/pressure, '3': time_slice/profiles_1d/pressure}
+  units: 'Pa'
+  transform: "kinetic pressure with fast ions, interpolated from X to XB"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_geometry
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [DVOL, DAREA, SURF]
+  destination: {'4': time_slice/profiles_1d/volume, '3': time_slice/profiles_1d/volume}
+  units: 'cm^3, cm^2 -> m^3, m^2'
+  transform: "volume and area are cumulative sums of the zone quantities; surface = SURF"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_field_averages
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [GB1, BMAX, BMIN, GB2, GR2I, GRI, GXI, DRAV, DRAVFAC, X, XB]
+  destination: {'4': time_slice/profiles_1d/b_field_average, '3': time_slice/profiles_1d/b_field_average}
+  units: 'T, 1/m, 1/m^2'
+  transform: "flux-surface averages interpolated from X to XB: b_field_average/max/min, gm5=GB2, gm1=GR2I, gm9=GRI, gm7=GXI*DRAV/DRAVFAC"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_j_tor
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [CUR, X, XB]
+  destination: {'4': time_slice/profiles_1d/j_phi, '3': time_slice/profiles_1d/j_tor}
+  units: 'A/cm^2 -> A/m^2'
+  transform: "total plasma current density interpolated from X to XB with the first value at the axis (DD 3.42 renamed j_tor to j_phi)"
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_shear_mass
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [SHAT, PMASS, X, XB]
+  destination: {'4': time_slice/profiles_1d/magnetic_shear, '3': time_slice/profiles_1d/magnetic_shear}
+  units: '1, g/cm^3 -> kg/m^3'
+  transform: "SHAT -> magnetic_shear, PMASS -> mass_density; both interpolated from X to XB with the first value at the axis"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_boundary_psi
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PLFLX2PI, PSI0_TR]
+  destination: {'4': time_slice/boundary/psi, '3': time_slice/boundary/psi}
+  units: 'Wb'
+  transform: "the flux of the traced outline: the edge of profiles_1d/psi (enclosed flux PLFLX2PI[-1] plus the absolute axis value 2*pi*PSI0_TR); global_quantities/psi_boundary carries the same value. The outline is traced on PSIRZ at the enclosed-flux level PLFLXA"
+  sign: psi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_boundary_separatrix_psi
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PBPMHD, PSI0_TR]
+  destination: {'3': time_slice/boundary_separatrix/psi}
+  units: 'Wb/rad -> Wb'
+  transform: "DD3 only (removed in DD4): the equilibrium bounding-point flux 2*pi*PBPMHD, which is relative to the magnetic axis, plus the absolute axis value 2*pi*PSI0_TR"
+  sign: psi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_2d_psi
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PSIRZ, PSI0_TR, RGRID, ZGRID]
+  destination: {'4': time_slice/profiles_2d/psi, '3': time_slice/profiles_2d/psi}
+  units: 'Wb/rad -> Wb'
+  transform: "2*pi*PSIRZ (relative to the magnetic axis) plus the absolute axis value 2*pi*PSI0_TR, so the 2-D flux shares the reference of profiles_1d/psi and psi_magnetic_axis; the boundary is traced on the relative field"
+  sign: psi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+
+# ---- summary (global_quantities/<name>/value; readback-verified on ITER 38530P94) ---------
+
+- id: sm_plasma_current
+  kind: direct_typed
+  writer: summary
+  ids: [summary]
+  source: [PCURC]
+  destination: {'4': global_quantities/ip/value, '3': global_quantities/ip/value}
+  units: 'A -> A'
+  transform: "calculated plasma current"
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: sm_direct_scalars
+  kind: direct_typed
+  writer: summary
+  ids: [summary]
+  source: [LI_3, VSURC, PVOL, Q95, TAUA1, H98Y2, TAUE98Y2, LHMODE]
+  destination: {'4': global_quantities/li_3/value, '3': global_quantities/li/value}
+  units: 'V, 1, m^3, s'
+  transform: "LI_3 -> li_3 (DD3 li); VSURC -> v_loop; PVOL (cm^3 -> m^3) -> volume; Q95 -> q_95; TAUA1 -> tau_energy; H98Y2 -> h_98; TAUE98Y2 -> tau_energy_98; LHMODE (rounded) -> h_mode"
+  sign: vloop_sign, q_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: sm_vacuum_field
+  kind: derived_typed
+  writer: summary
+  ids: [summary]
+  source: [RLIM, RAXIS, BZXR]
+  destination: {'4': global_quantities/b0/value, '3': global_quantities/b0/value}
+  units: 'cm, T*cm -> m, T'
+  transform: "one constant r0 (middle of the limiter RLIM, else the mean of first and last RAXIS) and b0 = bt_sign*BZXR/r0, shared with vacuum_toroidal_field in every IDS"
+  sign: bt_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: sm_betas
+  kind: derived_typed
+  writer: summary
+  ids: [summary]
+  source: [PTOWB, DVOL, PCURC, BZXR, RLIM, RAXIS, 'RMCB?', 'RMCB??', 'RMSB?', 'RMSB??']
+  destination: {'4': global_quantities/beta_tor_norm/value, '3': global_quantities/beta_tor_norm/value}
+  units: 'Pa, m^3, A, T -> 1'
+  transform: "the Data Dictionary definitions against this IDS's own b0 and r0, from the total pressure PTOWB: beta_tor = 2 mu0 (sum PTOWB*DVOL / sum DVOL) / b0^2; beta_pol = 4 sum PTOWB*DVOL / (r0 mu0 Ip^2); beta_tor_norm = 100 beta_tor a b0 / Ip[MA] with a = (Rmax-Rmin)/2 of the boundary rebuilt from the RMCB/RMSB moments (1-2% from the traced outline). TRANSP's BTEQ is 2 mu0 <PTOWB>/(BZXR^2 <1/R^2>) and BETAT/BPEQ use a poloidal-field average, so they are different definitions and are not copied"
+  sign: 'beta_tor_norm keeps the signs of b0 and Ip (bt_sign*ip_sign); beta_tor and beta_pol are positive'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: sm_energies
+  kind: derived_typed
+  writer: summary
+  ids: [summary]
+  source: [UTOTL, UTHRM, UE, UI, PTOWB, PPLAS, UFASTPP, UFASTPA, DVOL]
+  destination: {'4': global_quantities/energy_total/value, '3': global_quantities/energy_total/value}
+  units: 'J/cm^3 -> J'
+  transform: "energy_total/thermal/electrons_thermal/ion_total_thermal are sum(U*DVOL) (no 3/2 factor); energy_mhd = 1.5*sum(PTOWB*dV); energy_diamagnetic = 1.5*sum((PPLAS+UFASTPP)*dV); energy_fast_perpendicular = 1.5*sum(UFASTPP*dV); energy_fast_parallel = 3*sum(UFASTPA*dV) because UFASTPA = p_parallel/2"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: sm_poloidal_field_energy
+  kind: derived_typed
+  writer: summary
+  ids: [summary]
+  source: [BPOL, X, XB, DVOL]
+  destination: {'4': global_quantities/energy_b_field_pol/value, '3': global_quantities/energy_b_field_pol/value}
+  units: 'T -> J'
+  transform: "BPOL interpolated from XB to X with 0 at the axis, then sum(Bpol^2/(2 mu0) dV)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: sm_currents
+  kind: derived_typed
+  writer: summary
+  ids: [summary]
+  source: [CUROH, CUR, CURBS, DAREA]
+  destination: {'4': global_quantities/current_ohm/value, '3': global_quantities/current_ohm/value}
+  units: 'A/cm^2 * cm^2 -> A'
+  transform: "current_ohm = sum(CUROH*DAREA); current_non_inductive = sum((CUR-CUROH)*DAREA); current_bootstrap = sum(CURBS*DAREA)"
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: sm_powers
+  kind: derived_typed
+  writer: summary
+  ids: [summary]
+  source: [POHT, PRAD, PRAD_BR, PRAD_LI, PRAD_CY, PINJ, DVOL]
+  destination: {'4': global_quantities/power_ohm/value, '3': global_quantities/power_ohm/value}
+  units: 'W, W/cm^3 -> W'
+  transform: "power_ohm = POHT; power_radiated and power_radiated_inside_lcfs = sum(PRAD*DVOL); bremsstrahlung = PRAD_BR, line = PRAD_LI, synchrotron = PRAD_CY (volume integrals); heating_current_drive/power_launched_nbi = PINJ (BPCAP is deliberately not mapped to power_nbi)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: sm_neutron_rates
+  kind: derived_typed
+  writer: summary
+  ids: [summary]
+  source: [NEUTT, NEUTX, NEUTX_DD, BTNTS_DD, BBNTS_DD]
+  destination: {'4': fusion/neutron_rates/total/value, '3': fusion/neutron_rates/total/value}
+  units: 'N/s'
+  transform: "total, thermal and the DD thermal / beam-thermal / beam-beam channels; dd/total is their sum"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+
+# ---- distribution_sources (NBI unit birth profiles; readback-verified on ITER) --------------
+
+- id: ds_birth_particles
+  kind: derived_typed
+  writer: distribution_sources
+  ids: [distribution_sources]
+  source: ['BDEP??_TOT']
+  destination: {'4': source/profiles_1d/particles, '3': source/profiles_1d/particles}
+  units: '1/(cm^3 s) -> 1/(m^3 s)'
+  transform: "one source per NBI unit; units whose BDEP array is identically zero are not written"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ds_birth_energy
+  kind: derived_typed
+  writer: distribution_sources
+  ids: [distribution_sources]
+  source: ['BDEP??_E1', 'BDEP??_E2', 'BDEP??_E3', 'EINJ??_E1', 'EINJ??_E2', 'EINJ??_E3']
+  destination: {'4': source/profiles_1d/energy, '3': source/profiles_1d/energy}
+  units: 'cm^-3 s^-1, eV -> W/m^3'
+  transform: "sum over the three energy components of BDEP_Ek * EINJ_Ek * e (small Monte-Carlo negatives are kept, not clipped)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ds_birth_momentum
+  kind: derived_typed
+  writer: distribution_sources
+  ids: [distribution_sources]
+  source: ['TQTOT??']
+  destination: {'4': source/profiles_1d/momentum_phi, '3': source/profiles_1d/momentum_tor}
+  units: 'N*m/cm^3 -> N/m^2'
+  transform: "total toroidal beam torque density of the unit (DD3 momentum_tor)"
+  sign: toroidal_rotation_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ds_global_quantities
+  kind: derived_typed
+  writer: distribution_sources
+  ids: [distribution_sources]
+  source: ['BDEP??_TOT', 'BDEP??_E1', 'BDEP??_E2', 'BDEP??_E3', 'TQTOT??', DVOL]
+  destination: {'4': source/global_quantities/particles, '3': source/global_quantities/particles}
+  units: '-> 1/s, W, N*m'
+  transform: "volume integrals of the birth profiles: particles, power and torque (torque_phi, DD3 torque_tor)"
+  sign: toroidal_rotation_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: ds_shinethrough
+  kind: derived_typed
+  writer: distribution_sources
+  ids: [distribution_sources]
+  source: ['BPSH??_E1', 'BPSH??_E2', 'BPSH??_E3', 'EINJ??_E1', 'EINJ??_E2', 'EINJ??_E3']
+  destination: {'4': source/global_quantities/shinethrough/power, '3': source/global_quantities/shinethrough/power}
+  units: 'W -> W, 1/s'
+  transform: "power = sum of BPSH_Ek; particles = sum of BPSH_Ek/(EINJ_Ek*e)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+# ---- waves (coherent_wave per EC gyrotron and IC antenna; readback-verified on ITER) --------
+
+- id: wv_ec_power
+  kind: derived_typed
+  writer: waves
+  ids: [waves]
+  source: ['PEECH?']
+  destination: {'4': coherent_wave/profiles_1d/power_density, '3': coherent_wave/profiles_1d/power_density}
+  units: 'W/cm^3 -> W/m^3'
+  transform: "one EC wave per gyrotron (antenna_name beamN): power_density and electrons/power_density_thermal = PEECHn; power_inside is the cumulative sum of PEECHn*DVOL; global_quantities power and electrons/power_thermal are its edge value"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: wv_ec_current
+  kind: derived_typed
+  writer: waves
+  ids: [waves]
+  source: ['ECCUR?', DAREA]
+  destination: {'4': coherent_wave/profiles_1d/current_phi_inside, '3': coherent_wave/profiles_1d/current_tor_inside}
+  units: 'A/cm^2 * cm^2 -> A'
+  transform: "current_phi_inside (DD3 current_tor_inside) is the cumulative sum of ECCURn*DAREA; global_quantities current_phi (DD3 current_tor) is its edge value"
+  sign: jphi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: wv_ic_power
+  kind: derived_typed
+  writer: waves
+  ids: [waves]
+  source: ['RFPWRAB?', 'PIC_F?', DVOL]
+  destination: {'4': coherent_wave/global_quantities/power, '3': coherent_wave/global_quantities/power}
+  units: 'W, W/cm^3 -> W, W/m^3'
+  transform: "one IC wave per antenna with absorbed power (antenna_name antennaN): global power = RFPWRABn; profile power_density = PIC_Fn and power_inside its cumulative DVOL sum. For a single IC wave QICHA/ICCUR/XGRID_NPHI are used as fallbacks and for the current and n_phi (not covered here: ITER has two)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: wv_ic_frequency
+  kind: derived_typed
+  writer: waves
+  ids: [waves]
+  source: ['FREQA?']
+  destination: {'4': coherent_wave/global_quantities/frequency, '3': coherent_wave/global_quantities/frequency}
+  units: 'Hz -> Hz'
+  transform: "antenna frequency FREQAn on the wave of antenna n"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: wv_ec_frequency
+  kind: direct_typed
+  writer: waves
+  ids: [waves]
+  source: []
+  input_files: [TR.DAT (FREQECH)]
+  destination: {'4': coherent_wave/global_quantities/frequency, '3': coherent_wave/global_quantities/frequency}
+  units: 'Hz -> Hz'
+  transform: "EC frequency FREQECH(n) from the TRANSP namelist, not a CDF variable"
+  verification: unverified
+
+# ---- core_profiles: species-resolved, global and remaining profile mappings (readback on ITER) ---
+
+- id: cp_ion_density_total
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [ND, NT, NH, NHE3, NHE4, BDENS_D, BDENS_T, BDENS_H, FDENS_T, FDENS_3, FDENS_4, FDENS_P, NMINI_D, NMINI_T, NMINI_H]
+  destination: {'4': profiles_1d/ion/density, '3': profiles_1d/ion/density}
+  units: 'cm^-3 -> m^-3'
+  transform: "ion/density of a thermal species is the sum of its thermal density and the beam (BDENS), fusion (FDENS) and minority (NMINI) densities of the same isotope that exist. BDENS is a particle-position density (see docs/nubeam-distributions.md)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_fast_ion_density
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [BDENS_D, BDENS_T, BDENS_H, FDENS_T, FDENS_3, FDENS_4, FDENS_P, NMINI_D, NMINI_T, NMINI_H]
+  destination: {'4': profiles_1d/ion/density_fast, '3': profiles_1d/ion/density_fast}
+  units: 'cm^-3 -> m^-3'
+  transform: "one pseudo-species per fast population (for example D_BEAM, T_FUSION); density_fast is the fast density and density the total of that isotope"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_fast_ion_rotation
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [OMEGB_D, OMEGB_T, OMEGB_H, OMEGF_T, OMEGF_3, OMEGF_4, OMEGF_P]
+  destination: {'4': profiles_1d/ion/rotation_frequency_tor, '3': profiles_1d/ion/rotation_frequency_tor}
+  units: 'rad/s -> rad/s'
+  transform: "average angular velocity of the beam or fusion population"
+  sign: toroidal_rotation_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_impurity_density
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [NIMPS_BE, NIMPS_NE, NIMPS_W, NIMPS_AR, NIMPS_B, NIMPS_GA, NIMP]
+  destination: {'4': profiles_1d/ion/density, '3': profiles_1d/ion/density}
+  units: 'cm^-3 -> m^-3'
+  transform: "total impurity density per element (NIMP for the single aggregate impurity); also written to density_thermal"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_impurity_temperature_rotation
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [TX, OMGX]
+  destination: {'4': profiles_1d/ion/temperature, '3': profiles_1d/ion/temperature}
+  units: 'eV, rad/s'
+  transform: "TX -> the impurity temperature; OMGX -> rotation_frequency_tor (NC impurity angular velocity)"
+  sign: toroidal_rotation_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_impurity_charge_states
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: ['NIMP_BE_?', 'NIMP_NE_?', 'NIMP_NE_??', 'NIMP_W_??', 'NIMP_AR_??', 'NIMP_B_?', 'NIMP_GA_??']
+  destination: {'4': profiles_1d/ion/state/density, '3': profiles_1d/ion/state/density}
+  units: 'cm^-3 -> m^-3'
+  transform: "NIMP_<element>_<z> -> one charge state of that impurity, labelled element+z. ZIMPS_* (mean charge) is read for the single-impurity bookkeeping but not exported (z_ion_1d is not written)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_neutral_profiles
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: ['DN0V?', 'DN0W?', 'DN0V??', 'DN0W??', 'DN0V???', 'DN0W???', 'T0V?', 'T0W?', 'T0V??', 'T0W??', 'T0V???', 'T0W???']
+  destination: {'4': profiles_1d/neutral/density, '3': profiles_1d/neutral/density}
+  units: 'cm^-3 -> m^-3; eV'
+  transform: "separate wall (W) and volume (V) neutral populations: DN0* -> density, T0* -> temperature (already eV). The signed OM0* rotation goes to the code.parameters XML (and to velocity/toroidal in DD3 only)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_momentum_phi
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [PPHI]
+  destination: {'4': profiles_1d/momentum_phi, '3': profiles_1d/momentum_tor}
+  units: 'N*m*s/cm^3 -> kg/(m*s)'
+  transform: "total angular momentum density; the IMAS unit equals the TRANSP unit times 1e6"
+  sign: toroidal_rotation_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_global_scalars
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [PCURC, VSURC, LI_3]
+  destination: {'4': global_quantities/ip, '3': global_quantities/ip}
+  units: 'A, V, 1'
+  transform: "PCURC -> ip, VSURC -> v_loop, LI_3 -> li_3 (the betas are cp_betas)"
+  sign: ip_sign, vloop_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_betas
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [PTOWB, DVOL, PCURC, BZXR, RLIM, RAXIS, 'RMCB?', 'RMCB??', 'RMSB?', 'RMSB??']
+  destination: {'4': global_quantities/beta_tor, '3': global_quantities/beta_tor}
+  units: 'Pa, m^3, A, T -> 1'
+  transform: "the Data Dictionary definitions against this IDS's own b0 and r0, from the total pressure PTOWB: beta_tor = 2 mu0 (sum PTOWB*DVOL / sum DVOL) / b0^2; beta_pol = 4 sum PTOWB*DVOL / (r0 mu0 Ip^2); beta_tor_norm = 100 beta_tor a b0 / Ip[MA] with a = (Rmax-Rmin)/2 of the boundary rebuilt from the RMCB/RMSB moments (1-2% from the traced outline). TRANSP's BTEQ is 2 mu0 <PTOWB>/(BZXR^2 <1/R^2>) and BETAT/BPEQ use a poloidal-field average, so they are different definitions and are not copied"
+  sign: 'beta_tor_norm keeps the signs of b0 and Ip (bt_sign*ip_sign); beta_tor and beta_pol are positive'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_global_currents
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [CUR, CUROH, CURBS, DAREA]
+  destination: {'4': global_quantities/current_non_inductive, '3': global_quantities/current_non_inductive}
+  units: 'A/cm^2 * cm^2 -> A'
+  transform: "toroidal currents: current_non_inductive = sum((CUR-CUROH)*DAREA), current_bootstrap = sum(CURBS*DAREA)"
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_energy_diamagnetic
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [PTOWB, DVOL]
+  destination: {'4': global_quantities/energy_diamagnetic, '3': global_quantities/energy_diamagnetic}
+  units: 'Pa*cm^3 -> J'
+  transform: "1.5 * sum(PTOWB*dV)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_volume_averages
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [TE, TI, NE, NI, DVOL]
+  destination: {'4': global_quantities/t_e_volume_average, '3': global_quantities/t_e_volume_average}
+  units: 'eV, cm^-3 -> m^-3'
+  transform: "volume averages with the TIME3 zone volumes as weights: t_e_volume_average, n_e_volume_average, ion[0]/t_i_volume_average and ion[0]/n_i_volume_average"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_peaking
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [TE0, TI0, TE, TI, DVOL]
+  destination: {'4': global_quantities/t_e_peaking, '3': global_quantities/t_e_peaking}
+  units: '1'
+  transform: "axis value (TE0, TI0 on the scalar TIME grid, interpolated to TIME3) over the volume average of TE or TI; t_i_average_peaking uses TI0"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_j_bootstrap_and_non_inductive
+  kind: derived_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [CURBS, CONPLJB, PLJB, PLJBOH]
+  destination: {'4': profiles_1d/j_bootstrap, '3': profiles_1d/j_bootstrap}
+  units: 'A/cm^2, A*T/cm^2 -> A/m^2'
+  transform: "j_bootstrap = CURBS * CONPLJB / |b0|; j_non_inductive = (PLJB - PLJBOH) / |b0|; b0 is the IDS vacuum field"
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_profile_j_tor
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [CUR]
+  destination: {'4': profiles_1d/j_phi, '3': profiles_1d/j_tor}
+  units: 'A/cm^2 -> A/m^2'
+  transform: "total toroidal current density on X (DD3 j_tor)"
+  sign: ip_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+# ---- pf_active / pf_passive (CDF-only channel mapping; writer_verified in memory) -----------
+
+- id: pf_active_coil_current
+  kind: direct_typed
+  writer: pf_active
+  ids: [pf_active]
+  source: ['KK_*']
+  destination: {'4': coil/current/data, '3': coil/current/data}
+  units: 'A (CDF units attribute; kA/MA scaled) -> A'
+  transform: 'one coil per KK_<name>; with a device manifest the channel is bound by name, CC_ effective-turns channels may stand in, and the manifest sign and factor apply'
+  sign: 'CDF-only mode: +1, polarity unverified; manifest mode: manifest sign'
+  verification: writer_verified
+  tests: [examples/verify_pf_active_mapping.py]
+
+- id: pf_active_coil_voltage
+  kind: direct_typed
+  writer: pf_active
+  ids: [pf_active]
+  source: ['VV_*']
+  destination: {'4': coil/voltage/data, '3': coil/voltage/data}
+  units: 'V (CDF units attribute; mV/kV/MV scaled) -> V'
+  sign: 'CDF-only mode: +1, polarity unverified; manifest mode: manifest sign'
+  verification: writer_verified
+  tests: [examples/verify_pf_active_mapping.py]
+
+- id: pf_active_supply_voltage
+  kind: direct_typed
+  writer: pf_active
+  ids: [pf_active]
+  source: ['VS_*']
+  destination: {'4': supply/voltage/data, '3': supply/voltage/data}
+  units: 'V (CDF units attribute; mV/kV/MV scaled) -> V'
+  transform: 'one supply per VS_<name>; KT_ target currents are never written as supply.current'
+  sign: 'orientation unverified'
+  verification: writer_verified
+  tests: [examples/verify_pf_active_mapping.py]
+
+- id: pf_passive_loop_current
+  kind: direct_typed
+  writer: pf_passive
+  ids: [pf_passive]
+  source: ['PS_[1-9]*']
+  destination: {'4': loop/current, '3': loop/current}
+  units: 'A (CDF units attribute) -> A'
+  transform: 'one loop per PS_<n> on loop[i].time; geometry only from a supplied manifest, otherwise current-only loops with a warning'
+  sign: 'manifest current_sign; +1 without a manifest'
+  verification: writer_verified
+  tests: [examples/verify_pf_passive_mapping.py]
+
+# ---- radiation species detail and remaining core_sources processes (readback on ITER) ------
+
+- id: radiation_line_ion_emissivity
+  kind: derived_typed
+  writer: radiation
+  ids: [radiation]
+  source: ['PRLS_*']
+  destination: {'4': process/profiles_1d/ion/emissivity, '3': process/profiles_1d/ion/emissivity}
+  units: 'W/cm^3 -> W/m^3'
+  transform: "line_radiation process; one ion per PRLS_<element> (element from the symbol), power_inside is the cumulative DVOL integral; generic TOK/SINGL totals are attached only to the element inferred from AIMP/XZIMP of a single-impurity run"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: radiation_line_state_emissivity
+  kind: derived_typed
+  writer: radiation
+  ids: [radiation]
+  source: ['PRLX_*']
+  destination: {'4': process/profiles_1d/ion/state/emissivity, '3': process/profiles_1d/ion/state/emissivity}
+  units: 'W/cm^3 -> W/m^3'
+  transform: "PRLX_<element>_<z> -> one charge state (z_min = z_max = z, label element+z) below that element; power_inside is the cumulative DVOL integral"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_ec_electron_energy
+  kind: direct_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [PEECH]
+  destination: {'4': source/profiles_1d/electrons/energy, '3': source/profiles_1d/electrons/energy}
+  units: 'W/cm^3 -> W/m^3'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_ic_electron_energy
+  kind: direct_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [PEICH]
+  destination: {'4': source/profiles_1d/electrons/energy, '3': source/profiles_1d/electrons/energy}
+  units: 'W/cm^3 -> W/m^3'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_ic_ion_energy
+  kind: direct_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [PIICH]
+  destination: {'4': source/profiles_1d/total_ion_energy, '3': source/profiles_1d/total_ion_energy}
+  units: 'W/cm^3 -> W/m^3'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_fusion_electron_energy
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: ['PFE_*']
+  destination: {'4': source/profiles_1d/electrons/energy, '3': source/profiles_1d/electrons/energy}
+  units: 'W/cm^3 -> W/m^3'
+  transform: "fusion source: sum over species of the alpha/charged-product heating of electrons"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_fusion_ion_energy
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: ['PFI_*', 'PFTH_*']
+  destination: {'4': source/profiles_1d/total_ion_energy, '3': source/profiles_1d/total_ion_energy}
+  units: 'W/cm^3 -> W/m^3'
+  transform: "fusion source: sum over species of PFI_<s> + PFTH_<s>"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_fusion_ion_particles
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: ['SFTH_*']
+  destination: {'4': source/profiles_1d/total_ion_particles}
+  units: '1/cm^3/s -> 1/m^3/s'
+  transform: "fusion source: sum over species of the thermalised-product source SFTH_<s>; DD 3.39 has no total_ion_particles"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_fusion_ion_species
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: ['SFTH_*', 'PFTH_*']
+  destination: {'4': source/profiles_1d/ion/particles, '3': source/profiles_1d/ion/particles}
+
+  units: '1/cm^3/s -> 1/m^3/s ; W/cm^3 -> W/m^3'
+  transform: "fusion source: ion[s].particles = SFTH_<s>, ion[s].energy = PFTH_<s>"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_nbi_ion_particles
+  kind: direct_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [SBTH]
+  destination: {'4': source/profiles_1d/total_ion_particles}
+  units: '1/cm^3/s -> 1/m^3/s'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_nbi_ion_species
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: ['SBTH_?', 'PBTH_?']
+  destination: {'4': source/profiles_1d/ion/particles, '3': source/profiles_1d/ion/particles}
+  units: '1/cm^3/s -> 1/m^3/s ; W/cm^3 -> W/m^3'
+  transform: "nbi source: ion[s].particles = SBTH_<s>, ion[s].energy = PBTH_<s>"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_equipartition
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [QIE]
+  destination: {'4': source/profiles_1d/electrons/energy, '3': source/profiles_1d/electrons/energy}
+  units: 'W/cm^3 -> W/m^3'
+  transform: "collisional_equipartition source: electrons/energy = -QIE and total_ion_energy = +QIE"
+  sign: none
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_cold_neutral_particles
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [SCEW, SCEV]
+  destination: {'4': source/profiles_1d/electrons/particles, '3': source/profiles_1d/electrons/particles}
+  units: '1/cm^3/s -> 1/m^3/s'
+  transform: "cold_neutrals source: SCEW + SCEV"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: core_sources_cold_neutral_energy
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [PION]
+  destination: {'4': source/profiles_1d/electrons/energy, '3': source/profiles_1d/electrons/energy}
+  units: 'W/cm^3 -> W/m^3'
+  transform: "cold_neutrals source: electrons/energy = -PION (ionisation energy loss)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+# ---- core_profiles: recombination neutrals, neutral rotation, single-impurity identity ----
+# (verified on DIII-D 147634T16 where the ITER case lacks the variable; neutral rotation on ITER)
+
+- id: cp_neutral_recombination
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: ['N0V0_*', 'T0V0_*']
+  destination: {'4': profiles_1d/neutral/density, '3': profiles_1d/neutral/density}
+  units: 'cm^-3 -> m^-3; eV'
+  transform: "recombination neutral population (origin recombination), kept separate from the wall (DN0W*) and volume (DN0V*) populations: N0V0_<s> -> density, T0V0_<s> -> temperature (already eV)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_neutral_rotation_xml
+  kind: xml_only
+  writer: core_profiles
+  ids: [core_profiles]
+  source: ['OM0V*', 'OM0W*']
+  destination: {'4': code/parameters, '3': code/parameters}
+  units: 'rad/s -> rad/s'
+  transform: "signed neutral omega (wall OM0W*, volume OM0V*, recombination OM0V0_*) in code.parameters <neutral_toroidal_rotation>; DD4 core_profiles has no typed neutral rotation node"
+  sign: toroidal_rotation_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_single_impurity_mass
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [AIMP]
+  destination: {'4': profiles_1d/ion/element/a, '3': profiles_1d/ion/element/a}
+  units: 'amu -> amu'
+  transform: "single-impurity (NIMP/TOK) runs only: AIMP(TIME) interpolated to the output times; multi-species impurities take A from the element table"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: cp_single_impurity_charge
+  kind: direct_typed
+  writer: core_profiles
+  ids: [core_profiles]
+  source: [XZIMP]
+  destination: {'4': profiles_1d/ion/element/z_n, '3': profiles_1d/ion/element/z_n}
+  units: 'e -> e'
+  transform: "single-impurity (NIMP/TOK) runs only: XZIMP(TIME) interpolated to the output times gives z_n and, as a fully-ionised assumption, ion/z_ion"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+# ---- distributions: CDF balances attached to the NUBEAM FI distributions ---------------------
+# Values are checked in memory by examples/verify_nubeam_fi.py (synthetic CDFs in each DD, plus ITER).
+
+- id: dist_orbit_cx_losses
+  kind: derived_typed
+  writer: distributions
+  ids: [distributions]
+  source: ['BPLIM_*', 'BPCXI_*', 'BPCXX_*']
+  destination: {'4': distribution/global_quantities/power_first_orbit}
+  units: 'W -> W'
+  transform: "power_first_orbit = BPLIM_<sp>; power_charge_exchange = BPCXI_<sp> + BPCXX_<sp>; time interpolated to the FI output times; fusion products have no counterpart; skipped for DD versions without the nodes"
+  verification: writer_verified
+  tests: [examples/verify_nubeam_fi.py]
+
+- id: dist_collisions
+  kind: derived_typed
+  writer: distributions
+  ids: [distributions]
+  source: ['BPTE_*', 'BPTI_*', 'PBE_*', 'PBI_*']
+  destination: {'4': distribution/global_quantities/collisions/electrons/power_thermal, '3': distribution/global_quantities/collisions/electrons/power_thermal}
+  units: 'W -> W; W/cm^3 -> W/m^3'
+  transform: "global power to electrons BPTE_<sp> and to one aggregate thermal-ion entry BPTI_<sp>; profiles PBE_<sp>/PBI_<sp> regridded to the MC zone rows"
+  verification: writer_verified
+  tests: [examples/verify_nubeam_fi.py]
+
+- id: dist_thermalization
+  kind: derived_typed
+  writer: distributions
+  ids: [distributions]
+  source: ['BPTH_*', 'BSTH_*', 'PBTH_*']
+  destination: {'4': distribution/global_quantities/thermalization/power, '3': distribution/global_quantities/thermalisation/power}
+  units: 'W -> W; 1/s -> 1/s; W/cm^3 -> W/m^3'
+  transform: "BPTH_<sp> -> power, BSTH_<sp> -> particles; the PBTH_<sp> profile -> profiles_1d/thermalization/energy"
+  verification: writer_verified
+  tests: [examples/verify_nubeam_fi.py]
+
+- id: dist_nbi_source
+  kind: derived_typed
+  writer: distributions
+  ids: [distributions]
+  source: ['SBDEPMC_*', 'PBDEPMC_*', 'BPHDEP0_*', 'BDEP_*']
+  destination: {'4': distribution/global_quantities/source/particles, '3': distribution/global_quantities/source/particles}
+  units: '1/s, W, N m; 1/cm^3/s -> 1/m^3/s'
+  transform: "one NBI source entry: particles SBDEPMC, power PBDEPMC, torque BPHDEP0 (ion-position entry only); the BDEP profile is regridded to profiles_1d/source/particles"
+  verification: writer_verified
+  tests: [examples/verify_nubeam_fi.py]
+
+- id: dist_trapped_density
+  kind: derived_typed
+  writer: distributions
+  ids: [distributions]
+  source: ['BTRAP_*', 'BDENS_*']
+  destination: {'4': distribution/profiles_1d/trapped/density_fast}
+  units: '- -> m^-3'
+  transform: "BTRAP_<sp> banana fraction (weighted by DVOL*BDENS_<sp>, regridded to MC rows) times the written density_fast of the distribution"
+  verification: writer_verified
+  tests: [examples/verify_nubeam_fi.py]
+
+- id: dist_torque_current
+  kind: derived_typed
+  writer: distributions
+  ids: [distributions]
+  source: ['TQJXB_*', 'UCURB', 'BPHXB*']
+  destination: {'4': distribution/global_quantities/torque_tor_j_radial, '3': distribution/global_quantities/torque_tor_j_radial}
+  units: 'N m cm^-3 -> N m (volume integral), N m^-2 (profile)'
+  transform: "global torque = sum(TQJXB*DVOL), profile regridded to MC rows; UCURB (unshielded beam current, A/cm^2 -> A/m^2) fills profiles_1d/current_fast_phi (DD3 current_fast_tor) for a sole beam species"
+  sign: none
+  verification: writer_verified
+  tests: [examples/verify_nubeam_fi.py]
+
+# ---- equilibrium: MHD energy, geometric axes, outline, 2D field; poloidal-flux grid ---------
+
+- id: eq_energy_mhd
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PMHD, DVOL]
+  destination: {'4': time_slice/global_quantities/energy_mhd, '3': time_slice/global_quantities/energy_mhd}
+  units: 'Pa, cm^3 -> J'
+  transform: "energy_mhd = 1.5*sum(PMHD*DVOL) with PMHD the equilibrium-solver pressure (the summary IDS uses PTOWB instead)"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_profile_geometric_axis
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [RMC00, YMC00, RMJMP]
+  destination: {'4': time_slice/profiles_1d/geometric_axis/r, '3': time_slice/profiles_1d/geometric_axis/r}
+  units: 'cm -> m'
+  transform: "zeroth Fourier moments RMC00/YMC00 are the geometric centres of each flux surface (z likewise); RMJMP is a radial-only fallback for CDFs without moments"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_boundary_geometric_axis
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [RMCB0, YMCB0]
+  destination: {'4': time_slice/boundary/geometric_axis/r, '3': time_slice/boundary/geometric_axis/r}
+  units: 'cm -> m'
+  transform: "geometric centre of the boundary: RMCB0/YMCB0, else the centroid of the traced outline, else the last RMC00/YMC00 surface; the same point goes to global_quantities/geometric_axis"
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: eq_boundary_outline
+  kind: derived_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [PLFLXA, PBPMHD, PSIRZ, RGRID, ZGRID, RAXIS, YAXIS]
+  destination: {'4': time_slice/boundary/outline/r, '3': time_slice/boundary/outline/r}
+  units: 'Wb/rad, cm -> m'
+  transform: "LCFS outline contoured on the rectangular flux map PSIRZ at the enclosed-flux level PLFLXA (PBPMHD when absent), on the closed curve around the axis; a clamped map falls back to the nearest existing level and records it; with --moments yes the TRANSP boundary moments are used instead"
+  verification: writer_verified
+  tests: [examples/verify_equilibrium_boundary_trace.py]
+
+- id: eq_profile_2d_b_field
+  kind: direct_typed
+  writer: equilibrium
+  ids: [equilibrium]
+  source: [B_FIELD]
+  destination: {'4': time_slice/profiles_2d/b_field_r, '3': time_slice/profiles_2d/b_field_r}
+  units: 'T -> T'
+  transform: "B_FIELD(3, nz, nr) = B_R, B_phi, B_Z on the PSIRZ grid, transposed to (nr, nz); B_phi goes to b_field_phi (DD3.39: b_field_tor)"
+  sign: 'B_R and B_Z follow poloidal_field_sign, B_phi follows bt_sign'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: grid_poloidal_flux_core_sources
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [PLFLX, PSI0_TR, X, XB]
+  destination: {'4': source/profiles_1d/grid/rho_pol_norm, '3': source/profiles_1d/grid/rho_pol_norm}
+  units: 'Wb/rad -> Wb, 1'
+  transform: "psi = psi_sign*2*pi*(PLFLX interpolated XB -> X with a zero at the axis + PSI0_TR); rho_pol_norm = sqrt((psi - psi_axis)/(psi_boundary - psi_axis)); the shared grid helper writes grid/psi from the same psi"
+  sign: psi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: grid_poloidal_flux_radiation
+  kind: derived_typed
+  writer: radiation
+  ids: [radiation]
+  source: [PLFLX, PSI0_TR, X, XB]
+  destination: {'4': process/profiles_1d/grid/rho_pol_norm, '3': process/profiles_1d/grid/rho_pol_norm}
+  units: 'Wb/rad -> Wb, 1'
+  transform: "psi = psi_sign*2*pi*(PLFLX interpolated XB -> X with a zero at the axis + PSI0_TR); rho_pol_norm = sqrt((psi - psi_axis)/(psi_boundary - psi_axis)); the shared grid helper writes grid/psi from the same psi"
+  sign: psi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: grid_poloidal_flux_waves
+  kind: derived_typed
+  writer: waves
+  ids: [waves]
+  source: [PLFLX, PSI0_TR, X, XB]
+  destination: {'4': coherent_wave/profiles_1d/grid/rho_pol_norm, '3': coherent_wave/profiles_1d/grid/rho_pol_norm}
+  units: 'Wb/rad -> Wb, 1'
+  transform: "psi = psi_sign*2*pi*(PLFLX interpolated XB -> X with a zero at the axis + PSI0_TR); rho_pol_norm = sqrt((psi - psi_axis)/(psi_boundary - psi_axis)); the shared grid helper writes grid/psi from the same psi"
+  sign: psi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+- id: grid_poloidal_flux_distribution_sources
+  kind: derived_typed
+  writer: distribution_sources
+  ids: [distribution_sources]
+  source: [PLFLX, PSI0_TR, X, XB]
+  destination: {'4': source/profiles_1d/grid/rho_pol_norm, '3': source/profiles_1d/grid/rho_pol_norm}
+  units: 'Wb/rad -> Wb, 1'
+  transform: "psi = psi_sign*2*pi*(PLFLX interpolated XB -> X with a zero at the axis + PSI0_TR); rho_pol_norm = sqrt((psi - psi_axis)/(psi_boundary - psi_axis)); the shared grid helper writes grid/psi from the same psi"
+  sign: psi_sign
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py]
+
+# ---- sawteeth (writer-verified on synthetic and bundled CDFs) --------------------------------
+
+- id: sawteeth_previous_crash_time
+  kind: direct_typed
+  writer: sawteeth
+  ids: [sawteeth]
+  source: [TLASTSAW]
+  destination: {'4': diagnostics/previous_crash_time, '3': diagnostics/previous_crash_time}
+  units: 's -> s'
+  transform: "TLASTSAW(TIME) is the most recent crash time at each sample; the IDS is written only if it changes (a constant initial value is a left-censored baseline, not an event)"
+  verification: writer_verified
+  tests: [examples/verify_sawteeth_mapping.py]
+
+- id: sawteeth_previous_period
+  kind: derived_typed
+  writer: sawteeth
+  ids: [sawteeth]
+  source: [TLASTSAW]
+  destination: {'4': diagnostics/previous_period, '3': diagnostics/previous_period}
+  units: 's -> s'
+  transform: "difference of successive reported crash times, only after two observed crash updates; samples before the first full period carry the IMAS missing value"
+  verification: writer_verified
+  tests: [examples/verify_sawteeth_mapping.py]
+
+- id: sawteeth_q1_radius
+  kind: direct_typed
+  writer: sawteeth
+  ids: [sawteeth]
+  source: [XIQ1]
+  destination: {'4': diagnostics/rho_tor_norm_q1, '3': diagnostics/rho_tor_norm_q1}
+  units: '1 -> 1'
+  transform: "normalised toroidal-flux radius of the q=1 surface; samples outside (0, 1] (negative absence sentinels) become the IMAS missing value, never zero"
+  verification: writer_verified
+  tests: [examples/verify_sawteeth_mapping.py]
 
 # ---- reviewed and intentionally not mapped -------------------------------------------------
 
@@ -195,6 +1965,24 @@
   source: [TQRPL, FTQRIP]
   read_by: [core_sources]
   reason: 'ripple torque weight FTQRIP is not in the CDF; TQRPL is read only to warn that it is excluded from the NBI momentum sum'
+
+- id: deferred_impurity_charge_profile
+  kind: deferred
+  source: ['ZIMPS_*']
+  read_by: [core_profiles]
+  reason: 'mean impurity charge profile is read for bookkeeping, but ion/z_ion_1d is deliberately not written (the per-charge-state NIMP_* densities carry the charge resolution)'
+
+- id: deferred_symmetric_major_radius
+  kind: deferred
+  source: [RMJSYM]
+  read_by: [core_profiles]
+  reason: 'read only for an angular-velocity to velocity conversion that is not used; rotation is exported as frequency'
+
+- id: deferred_sawtooth_adhoc_boundary
+  kind: deferred
+  source: [XSAWBOUND]
+  read_by: [sawteeth]
+  reason: 'TRANSP labels it an ad-hoc sawtooth boundary; nothing proves it is a mixing or inversion radius, so it is only counted and a warning is logged'
 
 # ---- read to build other mappings ----------------------------------------------------------
 

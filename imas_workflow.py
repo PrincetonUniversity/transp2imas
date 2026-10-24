@@ -3,36 +3,31 @@
 
 import numpy as np
 
-from nc2imas import nc2imas
+from writer_base import IdsWriter
 
 
-class imas_workflow:
+class imas_workflow(IdsWriter):
     """Describe the TRANSP simulation and the source inputs that produced it."""
 
-    def __init__(self, ncimas: nc2imas):
-        self.im = ncimas
-        self.logger = ncimas.logger
-        self.create_ids()
-
     def _attr(self, name):
-        return self.im.get_ncattr_text(name, default='')
+        return self.cdf.get_ncattr_text(name, default='')
 
-    def create_ids(self):
+    def build(self):
         self.logger.info('\nworkflow')
         try:
-            ids = self.im.new_ids('workflow')
+            ids = self.dd.new_ids('workflow')
         except ValueError as exc:          # imas.exception.IDSNameError: not in this DD
-            self.im.mapping.unavailable_in_dd('workflow', str(exc))
+            self.ctx.mapping.unavailable_in_dd('workflow', str(exc))
             self.logger.warning(f'workflow is unavailable in target DD: {exc}')
-            return
+            return []
 
-        ids = self.im.fill_properties(ids)
-        ids = self.im.fill_code_properties(ids)
+        ids = self.fill.fill_properties(ids)
+        ids = self.fill.fill_code_properties(ids)
         if hasattr(ids.ids_properties, 'homogeneous_time'):
             ids.ids_properties.homogeneous_time = 2
 
         if hasattr(ids, 'time_loop') and hasattr(ids.time_loop, 'component'):
-            inventory = self.im.input_inventory()
+            inventory = self.namelist.input_inventory()
             models = inventory.models()
             ids.time_loop.component.resize(1 + len(models))
             component = ids.time_loop.component[0]
@@ -44,7 +39,7 @@ class imas_workflow:
             if version and hasattr(component, 'version'):
                 component.version = version
             if hasattr(component, 'parameters'):
-                component.parameters = self.im.build_code_parameters_xml()
+                component.parameters = self.fill.build_code_parameters_xml()
 
             # Record referenced model input sets independently, without
             # claiming that every configured code was actually executed.
@@ -78,13 +73,13 @@ class imas_workflow:
                     if hasattr(lib, 'commit'):
                         lib.commit = commit
 
-        times = np.asarray(self.im.timesc, dtype=np.float64)
+        times = np.asarray(self.grid.timesc, dtype=np.float64)
         if times.size and hasattr(ids, 'time_loop') and hasattr(ids.time_loop, 'time_end'):
             ids.time_loop.time_end = float(times[-1])
 
         # workflow_cycle is intentionally empty. A post-processed TRANSP CDF
         # does not retain the actual component execution schedule per time step.
-        self.im.putdb_imas(ids)
+        return [ids]
 
 
 if __name__ == '__main__':

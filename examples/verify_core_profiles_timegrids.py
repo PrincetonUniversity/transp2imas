@@ -30,8 +30,8 @@ def verify_writer_contract():
                             and node.name == 'imas_core_profiles'), None)
     require(converter_class is not None, 'imas_core_profiles class not found')
     method = next((node for node in converter_class.body
-                   if isinstance(node, ast.FunctionDef) and node.name == 'create_ids'), None)
-    require(method is not None, 'create_ids method not found')
+                   if isinstance(node, ast.FunctionDef) and node.name == 'build'), None)
+    require(method is not None, 'build method not found')
     found = False
     for node in ast.walk(method):
         if not isinstance(node, ast.Assign) or not any(
@@ -131,13 +131,19 @@ def main(argv=None):
         return 0
     cdfs = sorted(args.data_root.rglob('*.CDF'))
     require(cdfs, f'No CDF examples found under {args.data_root}')
+    checked = 0
     for cdf in cdfs:
         with netcdf_file(str(cdf), 'r', mmap=False) as nc:
+            if 'TIME' not in nc.variables or 'TIME3' not in nc.variables:
+                print(f'{cdf.stem}: SKIP (companion CDF without TIME/TIME3)')
+                continue
             result = verify_case(nc, cdf.name)
+        checked += 1
         print(f'{cdf.stem}: TIME={result["TIME"]} TIME3={result["TIME3"]}; '
               f'Te peak={result["TE_peaking_min"]:.3f}..{result["TE_peaking_max"]:.3f}; '
               f'Ti peak={result["TI_peaking_min"]:.3f}..{result["TI_peaking_max"]:.3f}')
-    print(f'core_profiles TIME/TIME3 regression: PASS ({len(cdfs)}/{len(cdfs)} CDFs)')
+    require(checked, 'no CDF with TIME and TIME3 to check')
+    print(f'core_profiles TIME/TIME3 regression: PASS ({checked}/{checked} CDFs)')
     return 0
 
 

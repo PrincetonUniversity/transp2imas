@@ -44,7 +44,9 @@ Convert an NSTX example with one active PT_SOLVER region:
 python3 convert.py -i examples/data/nstx/141711Y05/141711Y05.CDF -b HDF5 -new --dd-version 4.1.1 --ids core_transport
 ```
 
-The `-new` flag creates a fresh entry; omit it only when you intend to work with an existing entry. Run `python3 convert.py --help` for all options, including run selection and MDSplus storage.
+`-new` creates the entry for the selected database, pulse and run (`DBEntry.create()`) and, on the HDF5 backend, discards what an existing entry at that location held (checked: converting `--ids summary -new` after `--ids tf -new` leaves only `summary`). It does not allocate a run number; pick one with `-r`. Without `-new` the entry must already exist (otherwise the run stops with "Make sure it exists, else use -new"), and each converted IDS is added to it or replaces the same IDS, leaving the others alone. So use `-new` for the first conversion of a run and omit it to add further IDSs. Run `python3 convert.py --help` for all options, including run selection and MDSplus storage.
+
+`--dd-version` selects the target Data Dictionary. When it is omitted or `auto`, `IMAS_VERSION` / `IMAS_DD_VERSION` from the environment is used, else the IMAS-Python default (3.39.0 on many installations), so pass `--dd-version 4.1.1` explicitly for DD 4.
 
 ## What gets exported
 

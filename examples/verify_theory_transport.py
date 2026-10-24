@@ -190,7 +190,7 @@ class TestMMMWriter(unittest.TestCase):
         writer.surf = im.get_ncvar('SURF', im.aconv)
         writer.nt = len(writer.time)
         writer.nx = writer.xb.shape[1]
-        writer.create_ids()
+        writer.run()
         ids = im.written
         self.last_core_transport = ids
         return {ids.model[i].identifier.name: ids.model[i]

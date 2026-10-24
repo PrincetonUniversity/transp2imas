@@ -72,7 +72,7 @@ def validate_schema(entries, *, writers=None, root=None):
                 problems.append(f'{label}: {kind} requires {field}')
         if 'source' in entry and not isinstance(entry['source'], list):
             problems.append(f'{label}: source must be a list')
-        if kind in TYPED_KINDS and not entry.get('source'):
+        if kind in TYPED_KINDS and not entry.get('source') and not entry.get('input_files'):
             problems.append(f'{label}: a typed mapping needs at least one source variable')
         if 'verification' in entry and entry['verification'] not in VERIFICATIONS:
             problems.append(f'{label}: verification {entry["verification"]!r} not in {VERIFICATIONS}')
@@ -84,8 +84,13 @@ def validate_schema(entries, *, writers=None, root=None):
         if entry.get('verification') in ('readback_verified', 'writer_verified') and not entry.get('tests'):
             problems.append(f'{label}: {entry["verification"]} requires tests')
         for test in entry.get('tests') or ():
-            if root is not None and not (Path(root) / test).is_file():
+            test_path = None if root is None else Path(root) / test
+            if test_path is None:
+                continue
+            if not test_path.is_file():
                 problems.append(f'{label}: test {test} does not exist')
+            elif entry.get('verification') != 'unverified' and label not in test_path.read_text(encoding='utf-8'):
+                problems.append(f'{label}: {test} never mentions the id, so it cannot be what verifies it')
         if writers is not None and entry.get('writer') is not None and entry['writer'] not in writers:
             problems.append(f'{label}: writer {entry["writer"]!r} is not a conversion writer')
     return problems

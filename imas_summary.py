@@ -4,16 +4,11 @@
 import numpy as np
 from scipy import constants
 
-from nc2imas import nc2imas
+from writer_base import IdsWriter
 
 
-class imas_summary:
+class imas_summary(IdsWriter):
     """Write a curated TRANSP summary IDS from high-confidence CDF quantities."""
-
-    def __init__(self, ncimas: nc2imas):
-        self.im = ncimas
-        self.logger = ncimas.logger
-        self.create_ids()
 
     def _to_summary_time(self, data):
         """Map a 1-D profile-time quantity onto summary/TIME."""
@@ -24,50 +19,50 @@ class imas_summary:
             return arr
         if arr.ndim != 1:
             return np.array([])
-        if len(arr) == self.im.ntimes:
+        if len(arr) == self.grid.ntimes:
             return arr.astype(np.float64, copy=False)
-        if len(arr) == self.im.ntimep and self.im.is_valid(self.im.timep, self.im.timesc):
-            return np.interp(self.im.timesc, self.im.timep, arr)
+        if len(arr) == self.grid.ntimep and self.fill.is_valid(self.grid.timep, self.grid.timesc):
+            return np.interp(self.grid.timesc, self.grid.timep, arr)
         return arr
 
     def _integrate_profile(self, variable, multiplier=1.0):
         """Volume integral for a TRANSP X-grid profile using DVOL in cm^3."""
-        val = self.im.get_ncvar(variable)
-        dvol = self.im.get_ncvar('DVOL')
-        if not self.im.is_valid(val, dvol) or val.ndim != 2 or val.shape != dvol.shape:
+        val = self.profile(variable)
+        dvol = self.profile('DVOL')
+        if not self.fill.is_valid(val, dvol) or val.ndim != 2 or val.shape != dvol.shape:
             return np.array([])
         out = multiplier * np.sum(val * dvol, axis=1)
         return self._to_summary_time(out)
 
     def _fill(self, parent, name, data, source=None, scalar=False):
-        if not hasattr(parent, name) or not self.im.is_valid(data):
+        if not hasattr(parent, name) or not self.fill.is_valid(data):
             return
         node = getattr(parent, name)
         if scalar:
-            self.im.fill_value(node, data, rsz=0)
+            self.fill.fill_value(node, data, rsz=0)
         else:
-            self.im.fill_value(node, self._to_summary_time(data))
+            self.fill.fill_value(node, self._to_summary_time(data))
         if source and hasattr(node, 'source'):
             node.source = source
 
     def _fill_nc(self, parent, name, cdf_name, multiplier=1.0, source=None, integer=False):
-        data = self.im.get_ncvar(cdf_name)
-        if not self.im.is_valid(data):
+        data = self.cdf.get_ncvar(cdf_name)
+        if not self.fill.is_valid(data):
             return
         data = multiplier * data
         if integer:
             data = np.rint(data).astype(np.int32)
         self._fill(parent, name, data, source or f'TRANSP CDF:{cdf_name}')
 
-    def create_ids(self):
+    def build(self):
         self.logger.info('\nsummary')
-        sid = self.im.new_ids('summary')
-        sid = self.im.fill_properties(sid)
+        sid = self.dd.new_ids('summary')
+        sid = self.fill.fill_properties(sid)
         # Store the same TRANSP/template provenance in summary/code.parameters.
-        sid = self.im.fill_code_properties(sid)
+        sid = self.fill.fill_code_properties(sid)
 
         sid.ids_properties.homogeneous_time = 1
-        times = np.asarray(self.im.timesc, dtype=np.float64)
+        times = np.asarray(self.grid.timesc, dtype=np.float64)
         sid.time.resize(len(times))
         sid.time[:] = times
 
@@ -79,14 +74,14 @@ class imas_summary:
             if hasattr(sid.type, 'description'):
                 sid.type.description = 'Data coming from a simulation (may still use or refer to an experiment)'
         if hasattr(sid, 'description'):
-            sid.description = f'TRANSP integrated simulation for run {self.im.device} {self.im.shot}'
+            sid.description = f'TRANSP integrated simulation for run {self.cdf.device} {self.cdf.shot}'
         if hasattr(sid, 'machine'):
-            sid.machine = str(self.im.device)
+            sid.machine = str(self.cdf.device)
         if hasattr(sid, 'pulse'):
             try:
-                sid.pulse = int(self.im.shot)
+                sid.pulse = int(self.cdf.shot)
             except (TypeError, ValueError):
-                self.im.mapping.skipped('shot number is not an integer', source='shot', target='pulse')
+                self.ctx.mapping.skipped('shot number is not an integer', source='shot', target='pulse')
         if hasattr(sid, 'simulation'):
             sim = sid.simulation
             if times.size and hasattr(sim, 'time_begin'):
@@ -101,27 +96,24 @@ class imas_summary:
                 sim.workflow = 'TRANSP integrated modeling; detailed provenance in workflow IDS and code.parameters'
 
         gq = sid.global_quantities
-        ip_sign = self.im.ip_sign
-        bt_sign = self.im.bt_sign
-        q_sign = self.im.q_sign
+        ip_sign = self.signs.ip_sign
+        bt_sign = self.signs.bt_sign
+        q_sign = self.signs.q_sign
 
         # Basic global quantities.
         self._fill_nc(gq, 'ip', 'PCURC', ip_sign)
         # r0 and b0 follow the convention shared with vacuum_toroidal_field in every IDS: one
-        # constant r0 and b0 = bt_sign*BZXR/r0, so r0*b0 equals the TF vacuum field times radius.
-        bz = self.im.get_ncvar('BZ')
-        reference = self.im.vacuum_field_reference(self.im.timesc)
+        # constant r0 (middle of the limiter) and b0 = bt_sign*BZXR/r0, so r0*b0 equals the TF vacuum field times radius.
+        reference = self.signs.vacuum_field_reference(self.grid.timesc)
         if reference is not None:
             r0, b0_series = reference
-            self._fill(gq, 'r0', r0, 'TRANSP CDF: mean of first/last RAXIS', scalar=True)
+            self._fill(gq, 'r0', r0, 'TRANSP CDF: middle of the RLIM limiter (else mean of first/last RAXIS)', scalar=True)
             self._fill(gq, 'b0', b0_series, 'TRANSP CDF: bt_sign*BZXR/r0')
 
         # li was renamed li_3 in DD4.
         li_name = 'li_3' if hasattr(gq, 'li_3') else 'li'
         self._fill_nc(gq, li_name, 'LI_3')
-        self._fill_nc(gq, 'v_loop', 'VSURC', self.im.vloop_sign)
-        self._fill_nc(gq, 'beta_pol', 'BETAT')
-        self._fill_nc(gq, 'beta_tor', 'BTEQ')
+        self._fill_nc(gq, 'v_loop', 'VSURC', self.signs.vloop_sign)
         self._fill_nc(gq, 'volume', 'PVOL', 1.0e-6)
         self._fill_nc(gq, 'q_95', 'Q95', q_sign)
         self._fill_nc(gq, 'tau_energy', 'TAUA1')
@@ -129,23 +121,18 @@ class imas_summary:
         self._fill_nc(gq, 'tau_energy_98', 'TAUE98Y2')
         self._fill_nc(gq, 'h_mode', 'LHMODE', integer=True)
 
-        # Normalized beta: 100 beta_tor a[m] B0[T] / Ip[MA].  The physical
-        # signs of B0 and Ip are retained, matching the IMAS convention.
-        beta = self.im.get_ncvar('BTEQ')
-        area = self.im.get_ncvar('PAREA', 1.0e-4)
-        ip = ip_sign * self.im.get_ncvar('PCURC')
-        b0 = bt_sign * bz
-        beta_n = np.array([])
-        if self.im.is_valid(beta, area, ip, b0):
-            try:
-                minor = np.sqrt(np.clip(area/self.im.pi, 0.0, None))
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    beta_n = 1.0e8 * beta * minor * b0 / ip
-            except (ValueError, TypeError, FloatingPointError) as exc:
-                self.im.mapping.broken(exc, source='BTEQ/PAREA/PCURC', target='global_quantities/beta_tor_norm')
-                beta_n = np.array([])
+        # The betas by the Data Dictionary definitions (see ``plasma_betas``): against this IDS's own b0 and r0
+        # and, for the normalised one, the boundary minor radius; TRANSP's BTEQ/BETAT use other normalisations.
+        # The physical signs of B0 and Ip are retained in beta_tor_norm, matching the IMAS convention.
+        betas = self.signs.plasma_betas()
+        if not betas:
+            self.ctx.mapping.skipped('betas need PTOWB, DVOL, PCURC, the vacuum field and the RMCB boundary moments',
+                                     target='global_quantities/beta_tor')
+        source = 'Derived from PTOWB,DVOL,PCURC,RMCB* with b0 and r0'
+        self._fill(gq, 'beta_pol', betas.get('beta_pol', np.array([])), source)
+        self._fill(gq, 'beta_tor', betas.get('beta_tor', np.array([])), source)
         beta_name = 'beta_tor_norm' if hasattr(gq, 'beta_tor_norm') else 'beta_normal'
-        self._fill(gq, beta_name, beta_n, 'Derived from BTEQ,PAREA,BZ,PCURC')
+        self._fill(gq, beta_name, betas.get('beta_tor_norm', np.array([])), source)
 
         # Energy contents. UE/UI/UTHRM/UTOTL are already energy densities in
         # J/cm^3, so their volume integrals are energies in J -- no 3/2 factor.
@@ -155,60 +142,60 @@ class imas_summary:
         self._fill(gq, 'energy_ion_total_thermal', self._integrate_profile('UI'), 'Integral TRANSP CDF:UI*DVOL')
 
         # MHD pressure and diamagnetic energy use pressure definitions from the DD.
-        ptowb = self.im.get_ncvar('PTOWB')
-        dvol = self.im.get_ncvar('DVOL', 1.0e-6)  # m^3
-        if self.im.is_valid(ptowb, dvol) and ptowb.shape == dvol.shape:
+        ptowb = self.profile('PTOWB')
+        dvol = self.profile('DVOL', 1.0e-6)  # m^3
+        if self.fill.is_valid(ptowb, dvol) and ptowb.shape == dvol.shape:
             self._fill(gq, 'energy_mhd', 1.5*np.sum(ptowb*dvol, axis=1),
                        '1.5 integral TRANSP CDF:PTOWB dV')
 
-        pthermal = self.im.get_ncvar('PPLAS')
-        ufast_perp = self.im.get_ncvar('UFASTPP', self.im.vol_inv)  # J/m3 = Pa_perp
-        ufast_parallel = self.im.get_ncvar('UFASTPA', self.im.vol_inv)
-        if self.im.is_valid(pthermal, ufast_perp, dvol):
+        pthermal = self.profile('PPLAS')
+        ufast_perp = self.profile('UFASTPP', self.grid.vol_inv)  # J/m3 = Pa_perp
+        ufast_parallel = self.profile('UFASTPA', self.grid.vol_inv)
+        if self.fill.is_valid(pthermal, ufast_perp, dvol):
             pperp = pthermal + ufast_perp
             self._fill(gq, 'energy_diamagnetic', 1.5*np.sum(pperp*dvol, axis=1),
                        '1.5 integral (PPLAS + UFASTPP) dV')
-        if self.im.is_valid(ufast_perp):
+        if self.fill.is_valid(ufast_perp):
             self._fill(gq, 'energy_fast_perpendicular',
                        1.5*self._integrate_profile('UFASTPP'),
                        '1.5 integral TRANSP CDF:UFASTPP*DVOL')
-        if self.im.is_valid(ufast_parallel):
+        if self.fill.is_valid(ufast_parallel):
             # UFASTPA = p_parallel/2; DD quantity = 1.5 integral p_parallel dV.
             self._fill(gq, 'energy_fast_parallel',
                        3.0*self._integrate_profile('UFASTPA'),
                        '3 integral TRANSP CDF:UFASTPA*DVOL')
 
         # Poloidal magnetic-field energy.
-        bpol = self.im.get_ncvar('BPOL')
-        coord_x = self.im.get_ncvar('X')
-        coord_xb = self.im.get_ncvar('XB')
-        if self.im.is_valid(bpol, dvol, coord_x, coord_xb):
+        bpol = self.profile('BPOL')
+        coord_x = self.cdf.get_ncvar('X')
+        coord_xb = self.cdf.get_ncvar('XB')
+        if self.fill.is_valid(bpol, dvol, coord_x, coord_xb):
             try:
-                bpol_x = self.im.interp_radial_profiles(bpol, coord_xb, coord_x, axis_value=0.0)
+                bpol_x = self.grid.interp_radial_profiles(bpol, coord_xb, coord_x, axis_value=0.0)
                 ebpol = np.sum((bpol_x*bpol_x)/(2.0*constants.mu_0) * dvol, axis=1)
                 self._fill(gq, 'energy_b_field_pol', ebpol, 'Integral TRANSP CDF:BPOL^2/(2 mu0) dV')
             except (ValueError, TypeError, IndexError, FloatingPointError) as exc:
-                self.im.mapping.broken(exc, source='BPOL', target='global_quantities/energy_b_field_pol')
+                self.ctx.mapping.broken(exc, source='BPOL', target='global_quantities/energy_b_field_pol')
 
         # Toroidal current components; TRANSP CUR* [A/cm^2] times DAREA [cm^2]
         # gives A directly.
-        darea = self.im.get_ncvar('DAREA')
-        cur = self.im.get_ncvar('CUR')
-        curoh = self.im.get_ncvar('CUROH')
-        curbs = self.im.get_ncvar('CURBS')
-        if self.im.is_valid(darea, curoh) and darea.shape == curoh.shape:
+        darea = self.profile('DAREA')
+        cur = self.profile('CUR')
+        curoh = self.profile('CUROH')
+        curbs = self.profile('CURBS')
+        if self.fill.is_valid(darea, curoh) and darea.shape == curoh.shape:
             self._fill(gq, 'current_ohm', ip_sign*np.sum(curoh*darea, axis=1),
                        'Integral TRANSP CDF:CUROH*DAREA')
-        if self.im.is_valid(darea, cur, curoh) and cur.shape == darea.shape == curoh.shape:
+        if self.fill.is_valid(darea, cur, curoh) and cur.shape == darea.shape == curoh.shape:
             self._fill(gq, 'current_non_inductive', ip_sign*np.sum((cur-curoh)*darea, axis=1),
                        'Integral TRANSP CDF:(CUR-CUROH)*DAREA')
-        if self.im.is_valid(darea, curbs) and darea.shape == curbs.shape:
+        if self.fill.is_valid(darea, curbs) and darea.shape == curbs.shape:
             self._fill(gq, 'current_bootstrap', ip_sign*np.sum(curbs*darea, axis=1),
                        'Integral TRANSP CDF:CURBS*DAREA')
 
         # Heating/loss powers.
-        poh_total = self.im.get_ncvar('POHT')
-        if self.im.is_valid(poh_total):
+        poh_total = self.cdf.get_ncvar('POHT')
+        if self.fill.is_valid(poh_total):
             self._fill(gq, 'power_ohm', poh_total, 'TRANSP CDF:POHT')
         else:
             self._fill(gq, 'power_ohm', self._integrate_profile('POH'), 'Integral TRANSP CDF:POH*DVOL')
@@ -241,17 +228,17 @@ class imas_summary:
             self._fill_nc(nr, 'thermal', 'NEUTX')
             if hasattr(nr, 'dd'):
                 dd = nr.dd
-                dd_th = self.im.get_ncvar('NEUTX_DD')
-                dd_bt = self.im.get_ncvar('BTNTS_DD')
-                dd_bb = self.im.get_ncvar('BBNTS_DD')
+                dd_th = self.cdf.get_ncvar('NEUTX_DD')
+                dd_bt = self.cdf.get_ncvar('BTNTS_DD')
+                dd_bb = self.cdf.get_ncvar('BBNTS_DD')
                 self._fill(dd, 'thermal', dd_th, 'TRANSP CDF:NEUTX_DD')
                 self._fill(dd, 'beam_thermal', dd_bt, 'TRANSP CDF:BTNTS_DD')
                 self._fill(dd, 'beam_beam', dd_bb, 'TRANSP CDF:BBNTS_DD')
-                if self.im.is_valid(dd_th, dd_bt, dd_bb):
+                if self.fill.is_valid(dd_th, dd_bt, dd_bb):
                     self._fill(dd, 'total', dd_th + dd_bt + dd_bb,
                                'TRANSP DD neutron components sum')
 
-        self.im.putdb_imas(sid)
+        return [sid]
 
 
 if __name__ == '__main__':

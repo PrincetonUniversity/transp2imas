@@ -261,6 +261,43 @@ TRANSP `TRFLX` is already **toroidal flux in Wb**.  It must not be multiplied by
 The `PSI0_TR` magnetic-axis offset is added to the signed enclosed poloidal flux
 when writing absolute IMAS `psi` values.
 
+### Reference field, betas, momentum flux and inactive solver channels
+
+Four conventions that were open questions are fixed here, each from the bundled CDFs.
+
+**Reference radius `r0`.** The Data Dictionary calls `vacuum_toroidal_field/r0` "usually a fixed position such as
+the middle of the vessel".  `r0` is the middle of the limiter, `(max RLIM + min RLIM)/2` (present in all twelve
+bundled cases), and `b0 = bt_sign*BZXR/r0`, so `r0*b0` equals the TF vacuum field times radius.  That gives the
+machines' own reference fields: ITER 6.22 m and 5.28 T (nominal 5.3 T), DIII-D 1.69 m and 1.67 T, C-Mod 0.68 m and
+5.4 T, NSTX 0.88 m and about 0.53 T.  The earlier choice, the mean of the first and last magnetic-axis radius,
+depends on the plasma and was 2-17% above the vessel radius (NSTX 0.99 m), so `b0` and every quantity normalised
+by it (`rho_tor`, `j_parallel`, the betas) were not comparable between shots or machines.  Without a usable
+limiter the mean axis radius is the fallback (`nc2imas.reference_radius`, `utilities.vacuum_field_reference`).
+
+**Betas.** TRANSP's `BTEQ` is exactly `2 mu0 <PTOWB>_V / (BZXR^2 <1/R^2>)` (ratio 1.0000, spread below 1e-4 on ITER,
+both NSTX cases, DIII-D and C-Mod): normalised by the volume-averaged vacuum toroidal field squared.  `BETAT` (named
+"TOTAL BETA(POLOIDAL)") and `BPEQ` ("EQUILIBRIUM BETA(POLOIDAL)") correspond to no single radius (implied reference
+radii of 40-65% of the major radius).  The Data Dictionary defines the betas against the IDS's own `b0` and `r0`, so
+the converter computes the IMAS definitions from the same pressure (`plasma_betas.py`): `beta_tor = 2 mu0 <p>_V/b0^2`,
+`beta_pol = 4 int p dV/(r0 mu0 Ip^2)`, `beta_tor_norm = 100 beta_tor a b0/Ip[MA]`, with `a = (Rmax-Rmin)/2` of the
+boundary rebuilt from the `RMCB`/`RMSB` moments (1-2% from the traced outline).  The previous `beta_tor_norm` used
+`sqrt(PAREA/pi)`, which is 1.26-1.37 times the boundary minor radius for the bundled plasmas, so it was overstated by
+that factor; `core_profiles` computed it and never wrote it, and now exports it.  `equilibrium`, `core_profiles` and
+`summary` share one implementation.
+
+**Momentum-flux units.** `AMTR_MOD`/`AMTR_OBS` are labelled `Nt-M/CM3`: the divergence of the angular-momentum flux,
+a torque density.  Times 1e6 it is N m m^-3, the Data Dictionary unit of `core_sources` `momentum_phi`
+(`kg m^-1 s^-2`) whose volume integral is `torque_phi_inside` (`kg m^2 s^-2`, N m).  The flux written is that
+cumulative integral divided by `SURF`, as for the energy and particle channels, so N m m^-2 = `kg s^-2`.  The
+Data Dictionary labels `momentum_phi/flux` `kg m^-1 s^-2`, which is the unit of the source term, not of a flux through
+a surface; the values follow the divergence convention of the other channels and no numeric change is needed.
+
+**Inactive solver channels.** A run that did not solve a channel saves zeros for it: every NSTX case has all-zero
+`EPTR_MOD`, `EETR_MOD` and `AMTR_MOD`, and NSTX 141711Y05, which has a `PT_SOLVER` template, solves only the ion
+heat (`IETR_MOD`).  Writing the zeros would state that the solver predicted no flux, so a channel whose `*_MOD`
+array is identically zero is not written, and the `transport_solver` model exists only if some channel is active
+(`imas_core_transport._solver_flux`).
+
 ### PF coil and passive-loop currents
 
 PF circuit-current signs are **not** forced to follow `s_I`.  Their sign depends

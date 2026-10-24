@@ -34,6 +34,7 @@ from pf_passive_mapping import (  # noqa: E402
 EXAMPLE_GEOMETRY = Path(__file__).with_name('pf_passive_geometry.synthetic.json')
 
 
+# Registry entries exercised here: pf_passive_loop_current
 class Node(SimpleNamespace):
     """Simple object whose members mimic IMAS geometry structures."""
 
@@ -187,7 +188,8 @@ class TestPassiveMapping(unittest.TestCase):
                 try:
                     writer = importlib.import_module('imas_pf_passive')
                     fake = MockImas()
-                    writer.imas_pf_passive(fake, geometry_path=str(EXAMPLE_GEOMETRY))
+                    instance = writer.imas_pf_passive(fake, geometry_path=str(EXAMPLE_GEOMETRY))
+                    instance.run()
                     ids = fake.put_result
                     self.assertIsNotNone(ids)
                     self.assertEqual(ids.ids_properties.homogeneous_time, 0)

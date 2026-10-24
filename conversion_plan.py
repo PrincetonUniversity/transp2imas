@@ -54,6 +54,67 @@ def select_ids(argument):
     return tuple(name for name in WRITER_ORDER if name in set(parts))
 
 
+class ConversionRunner:
+    """Run the selected writers in order, flush each writer's IDSs, and journal the outcome.
+
+    The converter is expected to expose ``defer_writes``, ``flush_writes``, ``discard_writes``,
+    ``mapping`` (a ``MappingLedger``) and the ``_written_ids`` manifest and ``_active_writer``
+    attribution of the IMAS connection.  Writers are zero-argument factories that build their IDS
+    objects and submit them; with deferral on, nothing reaches the database until the runner flushes
+    after that writer returned.  A writer that fails writes nothing of its own output, the failure is
+    journaled with the writer's name, and the remaining writers do not run.
+    """
+
+    def __init__(self, converter, writers, journal, clock=time.monotonic):
+        self.converter = converter
+        self.writers = writers
+        self.journal = journal
+        self.clock = clock
+
+    def run(self, selected):
+        nci = self.converter
+        nci.defer_writes(True)
+        try:
+            for name in selected:
+                print(name)
+                before = len(nci._written_ids)
+                started = self.clock()
+                nci._active_writer = name
+                nci.mapping.writer = name
+                write_seconds = 0.0
+                try:
+                    self.writers[name]()
+                    flush_started = self.clock()
+                    try:
+                        nci.flush_writes()
+                    finally:
+                        write_seconds = self.clock() - flush_started
+                except Exception as exc:
+                    nci.discard_writes()
+                    self.journal.record_writer(name, nci._written_ids[before:],
+                                               self.clock() - started, error=exc,
+                                               mapping=nci.mapping.summary(name),
+                                               consumed=nci.mapping.consumed(name),
+                                               reads=nci.mapping.read_summary(name),
+                                               write_seconds=write_seconds)
+                    raise
+                else:
+                    if len(nci._written_ids) == before and not nci.mapping.entries(name):
+                        # A writer that wrote nothing and recorded no reason of its own.
+                        nci.mapping.skipped('no IDS written; the writer logged its reason in the conversion log',
+                                            target=name)
+                    self.journal.record_writer(name, nci._written_ids[before:],
+                                               self.clock() - started,
+                                               mapping=nci.mapping.summary(name),
+                                               consumed=nci.mapping.consumed(name),
+                                               reads=nci.mapping.read_summary(name),
+                                               write_seconds=write_seconds)
+                finally:
+                    nci._active_writer = None
+        finally:
+            nci.defer_writes(False)
+
+
 class ConversionJournal:
     """Record what IMAS actually accepted, not merely which writers were called."""
 
@@ -93,7 +154,8 @@ class ConversionJournal:
         self.data['backend'] = (None if backend is None
                                 else str(getattr(backend, 'name', backend)))
 
-    def record_writer(self, name, writes, duration, error=None, mapping=None, consumed=None):
+    def record_writer(self, name, writes, duration, error=None, mapping=None, consumed=None,
+                      write_seconds=None, reads=None):
         # Preserve only the stable readback contract, with native JSON types.
         # IMAS and NetCDF may supply NumPy scalar IDs and occurrence numbers.
         events = [{'ids': str(event['ids']),
@@ -108,9 +170,16 @@ class ConversionJournal:
         if mapping:
             # Absent optional inputs and skipped fields with reasons (see mapping_status.MappingLedger).
             record['mapping'] = mapping
+        if write_seconds is not None:
+            # Time in the backend (IMAS validation, put and compression) as part of 'seconds'; the rest
+            # is reading, transforming and assigning.
+            record['write_seconds'] = round(float(write_seconds), 6)
         if consumed:
             # CDF variables this writer actually read (measured, not inferred from the source text).
             record['consumed'] = sorted(consumed)
+        if reads:
+            # How often, not only which: total reads, distinct variables and the most repeated ones.
+            record['reads'] = reads
         self.data['writers'].append(record)
         self.data['written_ids'].extend(events)
         return status

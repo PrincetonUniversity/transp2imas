@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# registry ids verified here (mapping_registry.yaml): pt_runtime_diagnostics_typed
 """Verify the ``transport_solver_numerics`` IDS built from PT_SOLVER runtime diagnostics.
 
 The slices are on the native CDF ``TIME`` coordinate and carry only quantities that exist in the
@@ -98,7 +99,9 @@ LAST = {}
 
 def write(nc, dd_version='4.1.1'):
     shim = Shim(nc, dd_version)
-    imas_transport_solver_numerics(shim)
+    writer = imas_transport_solver_numerics(shim)
+    assert shim.written is None, 'constructing the writer must not write'
+    writer.run()
     LAST['shim'] = shim
     return shim.written
 

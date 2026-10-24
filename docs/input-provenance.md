@@ -94,7 +94,7 @@ unreferenced inputs. NSTX `141711Y05` embeds `y05_pt.nml` via its actual
 but its `147634T16TR.DAT` was not supplied. The model files are preserved,
 while the missing master input is visible as an incomplete-input warning.
 
-Use `make verify-inputs` for all 10 examples or `make verify-all` to validate
+Use `make verify-inputs` for every bundled example or `make verify-all` to validate
 input provenance together with CDF and physics checks.
 
 ### Relative top-level TR.DAT versus nested input paths

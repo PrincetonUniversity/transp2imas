@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# registry ids verified here (mapping_registry.yaml): pt_regional_models
 """Verify time-resolved regional model attribution for PT_SOLVER occurrences.
 
 The converter used to keep only the model selected *last* in each category of a region, so a

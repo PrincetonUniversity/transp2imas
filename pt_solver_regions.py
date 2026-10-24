@@ -1,11 +1,14 @@
 #!/usr/bin/python
-"""PT_SOLVER radial-region input provenance for an assembled IMAS transport solution.
+"""PT_SOLVER radial-region input provenance, and the region occurrences built from it.
 
-A TRANSP PT_SOLVER run has ONE physical solution.  Its axial, confinement and
-edge settings select theory models on portions of the normalized toroidal-flux
-radius; they are neither separate core_transport occurrences nor alternative
-solutions.  Distinct per-region *output profiles* are not available in the
-bundled CDF cases, so this module only represents documented input settings.
+A TRANSP PT_SOLVER run has ONE physical solution: ``core_transport`` writes it as occurrence 0, the
+assembled result.  The axial, confinement and edge settings select theory models on portions of the
+normalized toroidal-flux radius over time; they are not alternative solutions.  ``core_transport``
+adds one further *view* occurrence per region that selected a model (``occurrence_region_models``),
+carrying the selected models with their time intervals and radial validity as metadata and filling
+model slots only from native CDF output channels that exist.  Distinct per-region *output profiles*
+are not available in the bundled CDF cases, so nothing is relabelled or invented: a region occurrence
+holds no profile that the CDF did not produce for it.
 
 The source of truth is the original TR.DAT plus a specifically referenced
 PT_TEMPLATE.  Adjacent unreferenced *.nml are retained as CANDIDATES only.

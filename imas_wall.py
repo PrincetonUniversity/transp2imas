@@ -2,42 +2,37 @@
 """Populate the IMAS wall IDS from available machine-boundary information."""
 
 from nc2imas import *
+from writer_base import IdsWriter
 
 
-
-class imas_wall:
-    def __init__(self, ncimas:nc2imas):
-        self.im = ncimas
-        self.logger = ncimas.logger
-        self.create_ids()
-
+class imas_wall(IdsWriter):
     def valid(self, *vars_) -> bool:
-        return self.im.is_valid(vars_)
+        return self.fill.is_valid(vars_)
 
-    def create_ids(self):
-        self.im.logger.info('\nwall')
-        wall = self.im.new_ids('wall')
+    def build(self):
+        self.logger.info('\nwall')
+        wall = self.dd.new_ids('wall')
         cm2m = 0.01
 
         #scalar time
-        timesc = self.im.get_ncvar('TIME')
+        timesc = self.cdf.get_ncvar('TIME')
         ntimes = len(timesc)
 
-        self.im.checkErrExit(timesc)
+        self.fill.checkErrExit(timesc)
 
-        wall = self.im.fill_properties(wall)
-        self.im.fill_code_properties(wall)
+        wall = self.fill.fill_properties(wall)
+        self.fill.fill_code_properties(wall)
         wall.ids_properties.homogeneous_time = 1
         wall.time.resize(ntimes)
         wall.time = timesc
 
-        limitr = self.im.get_ncvar('RLIM', cm2m)
-        limitz = self.im.get_ncvar('YLIM', cm2m)
+        limitr = self.cdf.get_ncvar('RLIM', cm2m)
+        limitz = self.cdf.get_ncvar('YLIM', cm2m)
 
         self.logger.info(f'limitr {len(limitr)} limitz {len(limitz)} ')
-        if not self.im.is_valid(limitr, limitz ):
+        if not self.fill.is_valid(limitr, limitz ):
             self.logger.debug('Error writing Wall')
-            return
+            return []
 
         tselect = 0 #first time frame
         limitr = limitr[tselect]
@@ -57,7 +52,7 @@ class imas_wall:
         # the first point at the end of outline.r/z.  Support both layouts so the
         # converter can still be used with older Data Dictionaries.
         unit = wall.description_2d[0].limiter.unit[0]
-        if self.im.dd_before(4, 0, 0):
+        if self.dd.dd_before(4, 0, 0):
             # IMAS DD3.x
             unit.closed = 1
             rout = limitr[:-1] if nlim > 1 else limitr
@@ -77,8 +72,8 @@ class imas_wall:
         unit.outline.r = rout
         unit.outline.z = zout
  
-        self.im.putdb_imas(wall)
         self.logger.info('Done wall')
+        return [wall]
 
 
 if __name__ == '__main__':

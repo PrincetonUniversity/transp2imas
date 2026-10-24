@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 from nc2imas import *
+from writer_base import IdsWriter
 from pt_solver_diagnostics import append_runtime_diagnostics_xml
 from pt_solver_regions import (
     build_pt_region_plan, append_pt_regions_xml, annotate_theory_model_xml,
@@ -17,30 +18,29 @@ from theory_transport_mapping import (
 )
 
 
-class imas_core_transport:
+class imas_core_transport(IdsWriter):
     """Map TRANSP effective/observed transport and predictive model fluxes."""
 
-    def __init__(self, ncimas:nc2imas):
-        self.im=ncimas
-        self.logger=ncimas.logger
-        self.time=np.asarray(self.im.get_ncvar('TIME3'),dtype=np.float64)
-        self.x=np.asarray(self.im.get_ncvar('X'),dtype=np.float64)
-        self.xb=np.asarray(self.im.get_ncvar('XB'),dtype=np.float64)
-        self.dvol=self.im.get_ncvar('DVOL',self.im.vconv)
-        self.surf=self.im.get_ncvar('SURF',self.im.aconv)
+    def _load_grid(self):
+        """Read the grids the models are written on (done in ``build``, not at construction)."""
+        self.time=np.asarray(self.cdf.get_ncvar('TIME3'),dtype=np.float64)
+        self.x=np.asarray(self.cdf.get_ncvar('X'),dtype=np.float64)
+        self.xb=np.asarray(self.cdf.get_ncvar('XB'),dtype=np.float64)
         self.nt=len(self.time)
         self.nx=self.xb.shape[1]
-        self.create_ids()
+        self.dvol=self._get('DVOL',self.grid.vconv)
+        self.surf=self._get('SURF',self.grid.aconv)
 
     def _get(self,name,mult=None):
-        a=self.im.get_ncvar(name)
-        if not self.im.is_valid(a): return np.array([])
-        a=np.asarray(a,dtype=np.float64)
+        """A CDF profile as float64; one whose radial size is not the writer's is a named broken mapping."""
+        a=self.cdf.get_ncvar(name)
+        if not self.fill.is_valid(a): return np.array([])
+        a=np.asarray(self.fill.check_profile_shape(name,np.asarray(a,dtype=np.float64),self.nt,self.nx))
         return a if mult is None else a*mult
 
     def _first_available(self,names,mult=None):
         for name in names:
-            if self.im.check_var_name(name):
+            if self.cdf.check_var_name(name):
                 return name,self._get(name,mult)
         return '',np.array([])
 
@@ -52,32 +52,57 @@ class imas_core_transport:
         enclosed volume integral divided by the flux-surface area SURF.
         """
         div=self._get(name,mult)
-        if not self.im.is_valid(div,self.dvol,self.surf): return np.array([])
+        if not self.fill.is_valid(div,self.dvol,self.surf): return np.array([])
         integrated=np.cumsum(div*self.dvol,axis=1)
         return physical_sign*np.divide(integrated,self.surf,out=np.zeros_like(integrated),where=np.abs(self.surf)>0)
+
+    def _solver_flux(self,name,physical_sign=1.0):
+        """Flux of a predictive ``*_MOD`` channel from its divergence, or empty when the channel is all zero.
+
+        A run that did not solve a channel saves zeros for it (every NSTX case has all-zero EPTR/EETR/AMTR_MOD,
+        and NSTX 141711Y05 solves only the ion heat).  Writing those would state that the solver predicted no
+        flux, so an inactive channel is left out.  The flux is the volume integral of the divergence over the
+        surface area, in N m m^-2 for the angular momentum and W m^-2, m^-2 s^-1 for the heat and particles.
+        """
+        if not self._has_nonzero(name):
+            return np.array([])
+        return self._flux_from_divergence(name,self.grid.vol_inv,physical_sign=physical_sign)
 
     def _has_nonzero(self,name):
         """True when CDF variable ``name`` exists and holds a nonzero value somewhere."""
         values=self._get(name,None)
         return bool(values.size and np.any(values))
 
+    def _enclosed_geometry(self):
+        """``(volume, area)`` enclosed by each XB surface for all times, computed once per grid.
+
+        ``_fill_grid`` runs for every model and time slice and used to re-read DAREA and re-sum the whole
+        time-by-radius arrays each time (5800 reads on NSTX 142202U01).  The cache is keyed on the identity of
+        ``self.dvol``, so a writer given another grid recomputes.
+        """
+        cache=self.__dict__.get('_enclosed_cache')
+        if cache is None or cache[0] is not self.dvol:
+            area=self._get('DAREA',self.grid.aconv)
+            cache=self._enclosed_cache=(self.dvol,self.grid.cumulative_zone_quantity(self.dvol),
+                                        self.grid.cumulative_zone_quantity(area))
+        return cache[1],cache[2]
+
     def _fill_grid(self,grid,it):
-        self.im.fill_data(grid.rho_tor_norm,self.xb,ind=it,chk=self.nx)
+        self.fill.fill_data(grid.rho_tor_norm,self.xb,ind=it,chk=self.nx)
         # Add geometry where readily available on the same XB grid.
-        vol_b=self.im.cumulative_zone_quantity(self.dvol)
-        area_b=self.im.cumulative_zone_quantity(self.im.get_ncvar('DAREA',self.im.aconv))
-        self.im.fill_data(grid.volume,vol_b,ind=it,chk=self.nx)
-        self.im.fill_data(grid.area,area_b,ind=it,chk=self.nx)
-        self.im.fill_data(grid.surface,self.surf,ind=it,chk=self.nx)
+        vol_b,area_b=self._enclosed_geometry()
+        self.fill.fill_data(grid.volume,vol_b,ind=it,chk=self.nx)
+        self.fill.fill_data(grid.area,area_b,ind=it,chk=self.nx)
+        self.fill.fill_data(grid.surface,self.surf,ind=it,chk=self.nx)
 
     def _fill_ion_identity(self,node,sp):
         atom=atom_base(sp)
         node.element.resize(1)
         node.element[0].a=float(atom.a)
-        self.im.set_nuclear_charge(node.element[0],atom.z_n)
+        self.fill.set_nuclear_charge(node.element[0],atom.z_n)
         node.element[0].atoms_n=int(atom.atoms_n)
         node.z_ion=float(atom.z_n)
-        self.im.set_species_name(node,atom.label)
+        self.fill.set_species_name(node,atom.label)
 
     def _species_observed(self):
         specs=[]
@@ -89,9 +114,9 @@ class imas_core_transport:
             ('HE4','DIFFHE4','VELHE4','PTRHE4_OBS'),
         ]
         for sp,dn,vn,fn in candidates:
-            if self.im.check_var_name(dn) or self.im.check_var_name(vn) or self.im.check_var_name(fn):
-                specs.append((sp,self._get(dn,self.im.aconv),self._get(vn,self.im.cm2m),
-                              self._flux_from_divergence(fn,self.im.vol_inv),fn))
+            if self.cdf.check_var_name(dn) or self.cdf.check_var_name(vn) or self.cdf.check_var_name(fn):
+                specs.append((sp,self._get(dn,self.grid.aconv),self._get(vn,self.grid.cm2m),
+                              self._flux_from_divergence(fn,self.grid.vol_inv),fn))
         return specs
 
     def _species_model(self):
@@ -114,8 +139,8 @@ class imas_core_transport:
         specs=[]
         for sp,names in candidates:
             name,arr=self._first_available(names)
-            if name:
-                specs.append((sp,self._flux_from_divergence(name,self.im.vol_inv),name))
+            if name and arr.size and np.any(arr):          # an all-zero channel was not solved: see _solver_flux
+                specs.append((sp,self._flux_from_divergence(name,self.grid.vol_inv),name))
         return specs
 
     def _prepare_model(self,model,name,index,description,comment,flux_grid='XB'):
@@ -144,32 +169,32 @@ class imas_core_transport:
                 # No typed fluxes are assigned for these MMM component models.
                 # Store X once as the secondary native radial coordinate;
                 # do not fabricate geometry/flux values on this grid.
-                self.im.fill_data(p.grid_flux.rho_tor_norm, self.x,
+                self.fill.fill_data(p.grid_flux.rho_tor_norm, self.x,
                                   ind=it, chk=self.x.shape[1])
             else:
                 self._fill_grid(p.grid_flux,it)
 
     def _fill_combined_model(self,model):
         # Effective coefficients used in the TRANSP balance analysis.
-        de=self._get('DIFFE',self.im.aconv)
-        ve=self._get('VELE',self.im.cm2m)
-        che=self._get('CONDE',self.im.aconv)
-        vhe=self._get('VEL_TE',self.im.cm2m)
-        chi=self._get('CONDI',self.im.aconv)
-        vhi=self._get('VEL_TI',self.im.cm2m)
-        chphi=self._get('CHPHI',self.im.aconv)
-        vmom=self._get('VMO_NET',self.im.cm2m)
+        de=self._get('DIFFE',self.grid.aconv)
+        ve=self._get('VELE',self.grid.cm2m)
+        che=self._get('CONDE',self.grid.aconv)
+        vhe=self._get('VEL_TE',self.grid.cm2m)
+        chi=self._get('CONDI',self.grid.aconv)
+        vhi=self._get('VEL_TI',self.grid.cm2m)
+        chphi=self._get('CHPHI',self.grid.aconv)
+        vmom=self._get('VMO_NET',self.grid.cm2m)
 
-        epart_flux=self._flux_from_divergence('EPTR_OBS',self.im.vol_inv)
-        een_flux=self._flux_from_divergence('EETR_OBS',self.im.vol_inv)
-        ien_flux=self._flux_from_divergence('IETR_OBS',self.im.vol_inv)
-        mom_flux=self._flux_from_divergence('AMTR_OBS',self.im.vol_inv,physical_sign=self.im.ip_sign)
+        epart_flux=self._flux_from_divergence('EPTR_OBS',self.grid.vol_inv)
+        een_flux=self._flux_from_divergence('EETR_OBS',self.grid.vol_inv)
+        ien_flux=self._flux_from_divergence('IETR_OBS',self.grid.vol_inv)
+        mom_flux=self._flux_from_divergence('AMTR_OBS',self.grid.vol_inv,physical_sign=self.signs.ip_sign)
 
         # ETA_USE is ohm*cm on X; conductivity in core_transport is on grid_d (XB).
         eta=self._get('ETA_USE',0.01)
         sigma=np.array([])
         if eta.size:
-            eta_b=self.im.interp_radial_profiles(eta,self.x,self.xb)
+            eta_b=self.grid.interp_radial_profiles(eta,self.x,self.xb)
             sigma=np.divide(1.0,eta_b,out=np.zeros_like(eta_b),where=np.abs(eta_b)>0)
 
         species_specs=self._species_observed()
@@ -183,50 +208,49 @@ class imas_core_transport:
 
         for it in range(self.nt):
             p=model.profiles_1d[it]
-            self.im.fill_data(p.conductivity_parallel,sigma,ind=it,chk=self.nx)
+            self.fill.fill_data(p.conductivity_parallel,sigma,ind=it,chk=self.nx)
 
-            self.im.fill_data(p.electrons.particles.d,de,ind=it,chk=self.nx)
-            self.im.fill_data(p.electrons.particles.v,ve,ind=it,chk=self.nx)
-            self.im.fill_data(p.electrons.particles.flux,epart_flux,ind=it,chk=self.nx)
-            self.im.fill_data(p.electrons.energy.d,che,ind=it,chk=self.nx)
-            self.im.fill_data(p.electrons.energy.v,vhe,ind=it,chk=self.nx)
-            self.im.fill_data(p.electrons.energy.flux,een_flux,ind=it,chk=self.nx)
-            self.im.fill_data(p.total_ion_energy.d,chi,ind=it,chk=self.nx)
-            self.im.fill_data(p.total_ion_energy.v,vhi,ind=it,chk=self.nx)
-            self.im.fill_data(p.total_ion_energy.flux,ien_flux,ind=it,chk=self.nx)
+            self.fill.fill_data(p.electrons.particles.d,de,ind=it,chk=self.nx)
+            self.fill.fill_data(p.electrons.particles.v,ve,ind=it,chk=self.nx)
+            self.fill.fill_data(p.electrons.particles.flux,epart_flux,ind=it,chk=self.nx)
+            self.fill.fill_data(p.electrons.energy.d,che,ind=it,chk=self.nx)
+            self.fill.fill_data(p.electrons.energy.v,vhe,ind=it,chk=self.nx)
+            self.fill.fill_data(p.electrons.energy.flux,een_flux,ind=it,chk=self.nx)
+            self.fill.fill_data(p.total_ion_energy.d,chi,ind=it,chk=self.nx)
+            self.fill.fill_data(p.total_ion_energy.v,vhi,ind=it,chk=self.nx)
+            self.fill.fill_data(p.total_ion_energy.flux,ien_flux,ind=it,chk=self.nx)
 
-            mom=p.momentum_phi if self.im.dd_at_least(3,42,0) else p.momentum_tor
-            self.im.fill_data(mom.d,chphi,ind=it,chk=self.nx)
-            self.im.fill_data(mom.v,vmom,ind=it,chk=self.nx)
-            self.im.fill_data(mom.flux,mom_flux,ind=it,chk=self.nx)
+            mom=p.momentum_phi if self.dd.dd_at_least(3,42,0) else p.momentum_tor
+            self.fill.fill_data(mom.d,chphi,ind=it,chk=self.nx)
+            self.fill.fill_data(mom.v,vmom,ind=it,chk=self.nx)
+            self.fill.fill_data(mom.flux,mom_flux,ind=it,chk=self.nx)
 
             p.ion.resize(len(species_specs))
             for ji,(sp,d,v,flux,_fn) in enumerate(species_specs):
                 inode=p.ion[ji]
                 self._fill_ion_identity(inode,sp)
-                self.im.fill_data(inode.particles.d,d,ind=it,chk=self.nx)
-                self.im.fill_data(inode.particles.v,v,ind=it,chk=self.nx)
-                self.im.fill_data(inode.particles.flux,flux,ind=it,chk=self.nx)
+                self.fill.fill_data(inode.particles.d,d,ind=it,chk=self.nx)
+                self.fill.fill_data(inode.particles.v,v,ind=it,chk=self.nx)
+                self.fill.fill_data(inode.particles.flux,flux,ind=it,chk=self.nx)
         return len(species_specs)
 
     def _fill_transport_solver_model(self,model):
         """Write predictive/model fluxes separately from observed balance data."""
-        epart_flux=self._flux_from_divergence('EPTR_MOD',self.im.vol_inv)
-        een_flux=self._flux_from_divergence('EETR_MOD',self.im.vol_inv)
-        ien_flux=self._flux_from_divergence('IETR_MOD',self.im.vol_inv)
+        epart_flux=self._solver_flux('EPTR_MOD')
+        een_flux=self._solver_flux('EETR_MOD')
+        ien_flux=self._solver_flux('IETR_MOD')
         # Angular-momentum counterpart of the three channels above, converted exactly like the
         # observed AMTR_OBS (cumulative volume integral over SURF, IMAS toroidal sign).  It is a
         # divergence, so it is never copied into the flux node.  An all-zero AMTR_MOD only says
         # that the momentum model was inactive, so it is not written.
-        mom_flux=(self._flux_from_divergence('AMTR_MOD',self.im.vol_inv,physical_sign=self.im.ip_sign)
-                  if self._has_nonzero('AMTR_MOD') else np.array([]))
+        mom_flux=self._solver_flux('AMTR_MOD',physical_sign=self.signs.ip_sign)
         species_specs=self._species_model()
 
         present=[]
         for name,arr in [('EPTR_MOD',epart_flux),('EETR_MOD',een_flux),('IETR_MOD',ien_flux),('AMTR_MOD',mom_flux)]:
             if arr.size: present.append(name)
         present.extend(name for _sp,_flux,name in species_specs)
-        has_iptr=self.im.check_var_name('IPTR_MOD')
+        has_iptr=self.cdf.check_var_name('IPTR_MOD')
         # Do not create an empty solver model merely because IPTR_MOD exists:
         # that aggregate quantity has no faithful core_transport destination.
         if not present:
@@ -252,17 +276,17 @@ class imas_core_transport:
 
         for it in range(self.nt):
             p=model.profiles_1d[it]
-            self.im.fill_data(p.electrons.particles.flux,epart_flux,ind=it,chk=self.nx)
-            self.im.fill_data(p.electrons.energy.flux,een_flux,ind=it,chk=self.nx)
-            self.im.fill_data(p.total_ion_energy.flux,ien_flux,ind=it,chk=self.nx)
+            self.fill.fill_data(p.electrons.particles.flux,epart_flux,ind=it,chk=self.nx)
+            self.fill.fill_data(p.electrons.energy.flux,een_flux,ind=it,chk=self.nx)
+            self.fill.fill_data(p.total_ion_energy.flux,ien_flux,ind=it,chk=self.nx)
             if mom_flux.size:
-                mom=p.momentum_phi if self.im.dd_at_least(3,42,0) else p.momentum_tor
-                self.im.fill_data(mom.flux,mom_flux,ind=it,chk=self.nx)
+                mom=p.momentum_phi if self.dd.dd_at_least(3,42,0) else p.momentum_tor
+                self.fill.fill_data(mom.flux,mom_flux,ind=it,chk=self.nx)
             p.ion.resize(len(species_specs))
             for ji,(sp,flux,_name) in enumerate(species_specs):
                 inode=p.ion[ji]
                 self._fill_ion_identity(inode,sp)
-                self.im.fill_data(inode.particles.flux,flux,ind=it,chk=self.nx)
+                self.fill.fill_data(inode.particles.flux,flux,ind=it,chk=self.nx)
 
         return True,present
 
@@ -273,9 +297,9 @@ class imas_core_transport:
         the CDF metadata describes them as *divergences* on X.  Their
         volume integrals are fluxes on the XB grid in IMAS SI units.
         """
-        raw = validate_profile(self.im.nc, source, kind, required_shape=self.dvol.shape)
-        volume_cm3 = np.asarray(self.dvol, dtype=np.float64) / self.im.vconv
-        surf_cm2 = np.asarray(self.surf, dtype=np.float64) / self.im.aconv
+        raw = validate_profile(self.cdf.nc, source, kind, required_shape=self.dvol.shape)
+        volume_cm3 = np.asarray(self.dvol, dtype=np.float64) / self.grid.vconv
+        surf_cm2 = np.asarray(self.surf, dtype=np.float64) / self.grid.aconv
         return divergence_to_surface_flux(raw, volume_cm3, surf_cm2, kind)
 
     def _fill_neoclassical_model(self, model, channels, classical=False):
@@ -329,23 +353,23 @@ class imas_core_transport:
         for it in range(self.nt):
             p = model.profiles_1d[it]
             if 'E' in particle_names:
-                self.im.fill_data(p.electrons.particles.flux,
+                self.fill.fill_data(p.electrons.particles.flux,
                                   particle_flux[particle_names['E']], ind=it, chk=self.nx)
             if 'E' in heat_names:
-                self.im.fill_data(p.electrons.energy.flux,
+                self.fill.fill_data(p.electrons.energy.flux,
                                   energy_flux[heat_names['E']], ind=it, chk=self.nx)
             if 'I' in heat_names:
-                self.im.fill_data(p.total_ion_energy.flux,
+                self.fill.fill_data(p.total_ion_energy.flux,
                                   energy_flux[heat_names['I']], ind=it, chk=self.nx)
             p.ion.resize(len(known_species))
             for j, sp in enumerate(known_species):
                 ion = p.ion[j]
                 self._fill_ion_identity(ion, sp)
                 if sp in particle_names:
-                    self.im.fill_data(ion.particles.flux,
+                    self.fill.fill_data(ion.particles.flux,
                                       particle_flux[particle_names[sp]], ind=it, chk=self.nx)
                 if sp in heat_names:
-                    self.im.fill_data(ion.energy.flux,
+                    self.fill.fill_data(ion.energy.flux,
                                       energy_flux[heat_names[sp]], ind=it, chk=self.nx)
         return True, used
 
@@ -398,22 +422,23 @@ class imas_core_transport:
             for destination, values in converted.values():
                 target = prof
                 for section in destination.split('.'):
-                    if section == 'momentum_phi' and not self.im.dd_at_least(3, 42, 0):
+                    if section == 'momentum_phi' and not self.dd.dd_at_least(3, 42, 0):
                         section = 'momentum_tor'
                     target = getattr(target, section)
-                self.im.fill_data(target, values, ind=it, chk=self.nx)
+                self.fill.fill_data(target, values, ind=it, chk=self.nx)
         return True
 
-    def create_ids(self):
-        ct=self.im.new_ids('core_transport')
-        ct=self.im.fill_properties(ct)
-        self.im.fill_code_properties(ct)
-        self.im.fill_external_model_inputs(ct, 'core_transport')
+    def build(self):
+        self._load_grid()
+        ct=self.dd.new_ids('core_transport')
+        ct=self.fill.fill_properties(ct)
+        self.fill.fill_code_properties(ct)
+        self.fill.fill_external_model_inputs(ct, 'core_transport')
         # PT_SOLVER region settings and TR.DAT boundaries are input metadata.
         # Store them once in the assembled core_transport code record, while
         # leaving the native TIME3/X/XB output grids in the typed model nodes.
-        self._pt_region_plan = (build_pt_region_plan(self.im.input_inventory())
-                                if hasattr(self.im, 'input_inventory') else None)
+        self._pt_region_plan = (build_pt_region_plan(self.namelist.input_inventory())
+                                if hasattr(self.namelist, 'input_inventory') else None)
         if self._pt_region_plan is not None:
             ct.code.parameters = append_pt_regions_xml(ct.code.parameters,
                                                        self._pt_region_plan)
@@ -421,22 +446,21 @@ class imas_core_transport:
         # namelist is available.  Channels of a run without a PT plan are kept only when they hold
         # nonzero data (all-zero channels exist in every CDF).
         ct.code.parameters = append_runtime_diagnostics_xml(
-            ct.code.parameters, getattr(self.im, 'nc', None),
+            ct.code.parameters, getattr(self.cdf, 'nc', None),
             record_inactive=self._pt_region_plan is not None)
         ct.ids_properties.homogeneous_time=1
         ct.time=np.asarray(self.time,dtype=np.float64)
-        self.im.fill_vac_tor_field(ct)
+        self.fill.fill_vac_tor_field(ct)
 
         # Important: resizing an IMAS array of structures after populating it
         # can recreate *all* children, including the combined model. Allocate
         # the FINAL number of slots once, BEFORE filling any model.
-        plans = build_theory_plans(self.im.nc)
+        plans = build_theory_plans(self.cdf.nc)
         channels = plans['neoclassical']
-        solver_present = (any(self.im.check_var_name(n) for n in
-                              ('EPTR_MOD', 'EETR_MOD', 'IETR_MOD', 'PTRH_MOD',
-                               'PTRD_MOD', 'PTRT_MOD', 'PTRHE3_MOD', 'PTR3_MOD',
-                               'PTRHE4_MOD', 'PTR4_MOD'))
-                          or self._has_nonzero('AMTR_MOD'))
+        solver_present = any(self._has_nonzero(n) for n in
+                             ('EPTR_MOD', 'EETR_MOD', 'IETR_MOD', 'AMTR_MOD', 'PTRH_MOD',
+                              'PTRD_MOD', 'PTRT_MOD', 'PTRHE3_MOD', 'PTR3_MOD',
+                              'PTRHE4_MOD', 'PTR4_MOD'))
         nc_present = bool(channels['particles'] or channels['heat'])
         classical_present = bool(channels['heat_nc_classical'])
         theory_slots = []
@@ -491,7 +515,7 @@ class imas_core_transport:
             raise RuntimeError('Combined core_transport model lost its time profiles')
         if ct.model[0].identifier.name != 'combined':
             raise RuntimeError('Combined core_transport model identifier was lost')
-        if self.im.check_var_name('IPTR_MOD'):
+        if self.cdf.check_var_name('IPTR_MOD'):
             self.logger.info('core_transport: IPTR_MOD present but aggregate total-ion particle flux has no IMAS core_transport node')
         self.logger.info(f'core_transport: combined model, {nobs} observed ion particle species')
         if has_solver:
@@ -503,31 +527,32 @@ class imas_core_transport:
         # Occurrence 0 is the complete assembled/effective TRANSP result.
         # Region occurrences are additional views with two *model slots*,
         # populated only when matching native CDF output channels exist.
-        if hasattr(self.im, 'putdb_imas_profile'):
-            self.im.putdb_imas_profile(ct, 0)
-            self._write_region_occurrences(plans)
-        else:
-            self.im.putdb_imas(ct)
+        if self.ctx.supports_occurrences:
+            return [(ct, 0)] + self._region_occurrences(plans)
+        return [ct]
 
     # Native TRANSP output channels exist for these anomalous model families only.
     NATIVE_ANOMALOUS_FAMILIES = {'glf23': 'glf23', 'mmm': 'mmm07'}
 
-    def _write_region_occurrences(self, plans):
+    def _region_occurrences(self, plans):
+        """``[(ids, occurrence)]`` for the region view occurrences (1, 2, ...)."""
+        occurrences = []
         for occurrence, item in enumerate(occurrence_region_models(self._pt_region_plan), 1):
-            regional = self.im.new_ids('core_transport')
-            regional = self.im.fill_properties(regional)
-            self.im.fill_code_properties(regional)
+            regional = self.dd.new_ids('core_transport')
+            regional = self.fill.fill_properties(regional)
+            self.fill.fill_code_properties(regional)
             regional.code.parameters = region_occurrence_xml(
                 self._pt_region_plan, item, occurrence)
             regional.ids_properties.homogeneous_time = 1
             regional.time = np.asarray(self.time, dtype=np.float64)
-            self.im.fill_vac_tor_field(regional)
+            self.fill.fill_vac_tor_field(regional)
             channels = plans['neoclassical']
             slots = regional_model_slots(item, bool(channels['particles'] or channels['heat']))
             regional.model.resize(len(slots))          # final size, once, before filling
             for index, (node, spec) in enumerate(zip(regional.model, slots), 1):
                 self._fill_regional_slot(node, index, item, spec, plans)
-            self.im.putdb_imas_profile(regional, occurrence)
+            occurrences.append((regional, occurrence))
+        return occurrences
 
     def _fill_regional_slot(self, slot, index, item, spec, plans):
         category, selected = spec['category'], spec['selected']

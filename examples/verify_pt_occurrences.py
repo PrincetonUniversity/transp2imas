@@ -34,7 +34,7 @@ class TestOccurrences(unittest.TestCase):
         cls = next(x for x in module.body if isinstance(x, ast.ClassDef)
                    and x.name == 'imas_core_transport')
         create = next(x for x in cls.body if isinstance(x, ast.FunctionDef)
-                      and x.name == 'create_ids')
+                      and x.name == 'build')
         text = ast.get_source_segment(source, create)
         self.assertEqual(text.count('ct.model.resize('), 1)
         self.assertIn('ct.model.resize(expected_models)', text)

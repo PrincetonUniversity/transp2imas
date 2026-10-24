@@ -9,6 +9,9 @@ import numpy as np
 
 import imas
 
+from dd_adapter import DDAdapter, parse_dd_version, resolve_dd_version
+from imas_store import ImasStore, WriteRequest
+
 
 class imas_connection:
     def __init__(self, db:str, shot:int, run:int=0, backend:str=None,
@@ -23,17 +26,8 @@ class imas_connection:
         # Select the target Data Dictionary explicitly when requested.  This is
         # independent of the installed IMAS-Python version: modern IMAS-Python
         # can create/write IDS objects for several DD versions in one environment.
-        requested_dd = None if dd_version in (None, '', 'auto') else str(dd_version)
-        env_dd = os.getenv('IMAS_VERSION') or os.getenv('IMAS_DD_VERSION')
-        if requested_dd:
-            self.dd_version = requested_dd
-        elif env_dd:
-            self.dd_version = env_dd
-        else:
-            # Use the actual IMAS-Python default instead of assuming DD4.
-            self.dd_version = str(imas.IDSFactory().version)
-        self.dd_version_tuple = self._parse_dd_version(self.dd_version)
-        self.dd_major_version = str(self.dd_version_tuple[0])
+        self.dd_version = resolve_dd_version(dd_version, lambda: imas.IDSFactory().version)
+        self._set_dd(self.dd_version)
         self.ids = None
         # Updated only after IMAS DBEntry.put() accepts an IDS.
         self._written_ids = []
@@ -47,27 +41,28 @@ class imas_connection:
     @staticmethod
     def _parse_dd_version(version):
         """Convert a DD version string such as 3.39.0 or 4.1.1 to a tuple."""
-        vals = []
-        for token in str(version).split('.')[:3]:
-            digits = ''.join(ch for ch in token if ch.isdigit())
-            vals.append(int(digits) if digits else 0)
-        while len(vals) < 3:
-            vals.append(0)
-        return tuple(vals)
+        return parse_dd_version(version)
+
+    def _set_dd(self, version):
+        """Keep the version adapter and the legacy attributes (tuple, major) in step."""
+        self.dd_version = str(version)
+        self.dd = DDAdapter(self.dd_version)
+        self.dd_version_tuple = self.dd.tuple
+        self.dd_major_version = self.dd.major
 
     def dd_at_least(self, major, minor=0, patch=0):
-        return self.dd_version_tuple >= (int(major), int(minor), int(patch))
+        return self.dd.at_least(major, minor, patch)
 
     def dd_before(self, major, minor=0, patch=0):
-        return self.dd_version_tuple < (int(major), int(minor), int(patch))
+        return self.dd.before(major, minor, patch)
 
     @property
     def is_dd4(self):
-        return self.dd_version_tuple[0] >= 4
+        return self.dd.is_dd4
 
     @property
     def is_dd3(self):
-        return self.dd_version_tuple[0] == 3
+        return self.dd.is_dd3
 
     def print_debug(self, msg:str='', force=False):
         print(msg)
@@ -133,9 +128,7 @@ class imas_connection:
                 )
                 # Keep the converter's schema switches synchronized with the
                 # actual factory used by the DBEntry.
-                self.dd_version = str(self.ids.factory.version)
-                self.dd_version_tuple = self._parse_dd_version(self.dd_version)
-                self.dd_major_version = str(self.dd_version_tuple[0])
+                self._set_dd(self.ids.factory.version)
             except Exception as exc:
                 raise RuntimeError(
                     f'Error initializing IMAS database for DD {self.dd_version}'
@@ -169,34 +162,57 @@ class imas_connection:
             raise TypeError('database entry is not valid')
         return self.ids.factory.new(ids_name)
 
-    def _record_accepted_put(self, ids, occurrence):
+    @property
+    def store(self):
+        """Queue of write requests; built on first use so a bare connection object still works."""
+        store = self.__dict__.get('_imas_store')
+        if store is None:
+            store = self._imas_store = ImasStore()
+        return store
+
+    def defer_writes(self, deferred=True):
+        """Hold submitted IDSs until ``flush_writes`` (the conversion runner does this per writer)."""
+        self.store.deferred = bool(deferred)
+
+    def flush_writes(self):
+        self.store.flush(self._write_request)
+
+    def discard_writes(self):
+        return self.store.discard()
+
+    def _write_request(self, request):
+        """Put one IDS; record it as accepted only after the backend took it."""
+        self.ids.put(request.ids, occurrence=request.occurrence)
+        self._record_accepted_put(request)
+
+    def _record_accepted_put(self, request):
         """Keep a readback manifest; never record a failed database write."""
-        name = self._active_writer
+        name = request.writer
         if name is None:
-            metadata = getattr(ids, 'metadata', None)
-            name = getattr(metadata, 'name', None) or getattr(ids, '_name', None)
+            metadata = getattr(request.ids, 'metadata', None)
+            name = getattr(metadata, 'name', None) or getattr(request.ids, '_name', None)
         self._written_ids.append({'ids': str(name or 'unknown'),
-                                  'occurrence': int(occurrence)})
+                                  'occurrence': int(request.occurrence)})
+
+    def _submit(self, ids, occurrence):
+        self.store.submit(WriteRequest(ids, int(occurrence), self._active_writer), self._write_request)
 
     def putdb_imas(self, ids):
         if ids is None:
             raise TypeError('ids not valid')
-        self.ids.put(ids, occurrence=self.occur)
-        self._record_accepted_put(ids, self.occur)
+        self._submit(ids, self.occur)
 
     def putdb_imas_(self, ids):
         if ids is None:
             raise TypeError('ids not valid')
         for i in range(3):
-            self.ids.put(ids, occurrence=i)
-            self._record_accepted_put(ids, i)
+            self._submit(ids, i)
 
     def putdb_imas_profile(self, ids, occur):
         """Write an explicit occurrence without changing self.occur."""
         if ids is None or not isinstance(occur, int):
             raise TypeError('ids/occur not valid')
-        self.ids.put(ids, occurrence=occur)
-        self._record_accepted_put(ids, occur)
+        self._submit(ids, occur)
 
     def close_imas_database(self):
         if self.ids:

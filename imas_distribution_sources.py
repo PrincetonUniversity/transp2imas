@@ -6,11 +6,11 @@ import re
 import numpy as np
 from scipy import constants
 
-from nc2imas import nc2imas
 from utilities import append_successful_entries
+from writer_base import IdsWriter
 
 
-class imas_distribution_sources:
+class imas_distribution_sources(IdsWriter):
     """Export NUBEAM fast-ion birth/deposition sources to distribution_sources.
 
     TRANSP's BDEPnn_TOT and BDEPnn_E1/E2/E3 profiles are particle birth
@@ -27,13 +27,11 @@ class imas_distribution_sources:
 
     NBI_IDENTIFIER_INDEX = 1
 
-    def __init__(self, ncimas: nc2imas):
-        self.im = ncimas
-        self.logger = ncimas.logger
-        self.time = np.asarray(self.im.get_ncvar('TIME3'), dtype=np.float64)
-        self.dvol = np.asarray(self.im.get_ncvar('DVOL', self.im.vconv), dtype=np.float64)
+    def _load_grid(self):
+        """Read the profile time base and zone volumes (done in ``build``, not at construction)."""
+        self.time = np.asarray(self.cdf.get_ncvar('TIME3'), dtype=np.float64)
+        self.dvol = np.asarray(self.cdf.get_ncvar('DVOL', self.grid.vconv), dtype=np.float64)
         self.nt = len(self.time)
-        self.create_ids()
 
     @staticmethod
     def _beam_number(name):
@@ -41,15 +39,17 @@ class imas_distribution_sources:
         return int(match.group(1)) if match else None
 
     def _beam_numbers(self):
-        names = self.im.get_var_names_re_('^BDEP\\d{2}_TOT$')
+        names = self.cdf.get_var_names_re_('^BDEP\\d{2}_TOT$')
         nums = sorted({self._beam_number(name) for name in names})
         return [value for value in nums if value is not None and value > 0]
 
     def _get(self, name, mult=None):
-        values = self.im.get_ncvar(name)
-        if not self.im.is_valid(values):
+        values = self.cdf.get_ncvar(name)
+        if not self.fill.is_valid(values):
             return np.array([])
         values = np.asarray(values, dtype=np.float64)
+        if self.dvol.ndim == 2:                                  # wrong radial size: broken mapping
+            values = np.asarray(self.fill.check_profile_shape(name, values, self.nt, self.dvol.shape[1]))
         if mult is not None:
             values = values * float(mult)
         return values
@@ -65,29 +65,29 @@ class imas_distribution_sources:
         """
         target = f'source[{int(ib)}]/species'
         try:
-            value = self.im.get_namelist_var(name, float, ind=int(ib) - 1)
+            value = self.namelist.get_namelist_var(name, float, ind=int(ib) - 1)
         except (KeyError, ValueError, TypeError, IndexError) as exc:
-            self.im.mapping.skipped(f'namelist value unavailable: {type(exc).__name__}: {exc}',
+            self.ctx.mapping.skipped(f'namelist value unavailable: {type(exc).__name__}: {exc}',
                                     source=name, target=target)
             return None
         if value is None:
-            self.im.mapping.skipped('namelist value not set', source=name, target=target)
+            self.ctx.mapping.skipped('namelist value not set', source=name, target=target)
             return None
         try:
             # get_namelist_var normally returns a scalar for ind>=0, but be
             # defensive in case an older parser returns a length-one array.
             arr = np.asarray(value)
             if arr.size != 1:
-                self.im.mapping.skipped(f'namelist value has {arr.size} elements, expected 1',
+                self.ctx.mapping.skipped(f'namelist value has {arr.size} elements, expected 1',
                                         source=name, target=target)
                 return None
             value = float(arr.reshape(-1)[0])
             if not np.isfinite(value):
-                self.im.mapping.skipped('namelist value is not finite', source=name, target=target)
+                self.ctx.mapping.skipped('namelist value is not finite', source=name, target=target)
                 return None
             return value
         except (ValueError, TypeError) as exc:
-            self.im.mapping.skipped(f'namelist value is not numeric: {exc}', source=name, target=target)
+            self.ctx.mapping.skipped(f'namelist value is not numeric: {exc}', source=name, target=target)
             return None
 
     @staticmethod
@@ -116,7 +116,7 @@ class imas_distribution_sources:
             if a is not None:
                 element.a = float(a)
             if z_n is not None:
-                self.im.set_nuclear_charge(element, z_n)
+                self.fill.set_nuclear_charge(element, z_n)
             element.atoms_n = 1
         if z_n is not None:
             # The kinetic source represented by BDEP is the ion born after
@@ -125,7 +125,7 @@ class imas_distribution_sources:
             # a charge state from nuclear charge alone.
             if int(round(z_n)) == 1:
                 ion.z_ion = 1.0
-        self.im.set_species_name(ion, self._species_name(a, z_n))
+        self.fill.set_species_name(ion, self._species_name(a, z_n))
 
     @staticmethod
     def _set_process(process, ib):
@@ -148,7 +148,7 @@ class imas_distribution_sources:
         stn = f'{ib:02d}'
         terms = []
         for k in (1, 2, 3):
-            bdep = self._get(f'BDEP{stn}_E{k}', self.im.vol_inv)
+            bdep = self._get(f'BDEP{stn}_E{k}', self.grid.vol_inv)
             energy = self._get(f'EINJ{stn}_E{k}')
             if bdep.ndim == 2 and energy.ndim == 1 and bdep.shape[0] == len(energy):
                 terms.append(bdep * energy[:, None] * constants.e)
@@ -185,7 +185,7 @@ class imas_distribution_sources:
 
     def _fill_source(self, source, ib):
         stn = f'{ib:02d}'
-        particle_source = self._get(f'BDEP{stn}_TOT', self.im.vol_inv)
+        particle_source = self._get(f'BDEP{stn}_TOT', self.grid.vol_inv)
         if particle_source.ndim != 2 or particle_source.shape[0] != self.nt:
             return False
         if not np.any(np.isfinite(particle_source) & (particle_source != 0.0)):
@@ -203,7 +203,7 @@ class imas_distribution_sources:
 
         source.profiles_1d.resize(self.nt)
         source.global_quantities.resize(self.nt)
-        self.im.fill_profiles1d_grid(source)
+        self.fill.fill_profiles1d_grid(source)
 
         energy_source = self._energy_source(ib)
         have_energy = (
@@ -211,9 +211,9 @@ class imas_distribution_sources:
         )
         # TQTOTnn is the total toroidal beam torque density for the NBI unit
         # in N*m/cm^3. Convert to N/m^2 and orient with the IMAS phi sign.
-        torque_source = self._get(f'TQTOT{stn}', self.im.vol_inv)
+        torque_source = self._get(f'TQTOT{stn}', self.grid.vol_inv)
         if torque_source.ndim == 2 and torque_source.shape == particle_source.shape:
-            torque_source = self.im.toroidal_rotation_sign * torque_source
+            torque_source = self.signs.toroidal_rotation_sign * torque_source
         else:
             torque_source = np.array([])
         particle_global = np.sum(particle_source * self.dvol, axis=1)
@@ -226,12 +226,12 @@ class imas_distribution_sources:
         for it in range(self.nt):
             profile = source.profiles_1d[it]
             profile.time = float(self.time[it])
-            self.im.fill_data(profile.particles, particle_source, ind=it, chk=nx)
+            self.fill.fill_data(profile.particles, particle_source, ind=it, chk=nx)
             if have_energy:
-                self.im.fill_data(profile.energy, energy_source, ind=it, chk=nx)
+                self.fill.fill_data(profile.energy, energy_source, ind=it, chk=nx)
             if torque_source.size:
-                mom = profile.momentum_phi if self.im.dd_at_least(3, 42, 0) else profile.momentum_tor
-                self.im.fill_data(mom, torque_source, ind=it, chk=nx)
+                mom = profile.momentum_phi if self.dd.dd_at_least(3, 42, 0) else profile.momentum_tor
+                self.fill.fill_data(mom, torque_source, ind=it, chk=nx)
 
             glob = source.global_quantities[it]
             glob.time = float(self.time[it])
@@ -239,7 +239,7 @@ class imas_distribution_sources:
             if power_global.size:
                 glob.power = float(power_global[it])
             if torque_global.size:
-                if self.im.dd_at_least(3, 42, 0):
+                if self.dd.dd_at_least(3, 42, 0):
                     glob.torque_phi = float(torque_global[it])
                 else:
                     glob.torque_tor = float(torque_global[it])
@@ -249,40 +249,41 @@ class imas_distribution_sources:
                 glob.shinethrough.particles = float(shine_particles[it])
         return True
 
-    def create_ids(self):
+    def build(self):
+        self._load_grid()
         self.logger.info('\ndistribution_sources')
         beam_numbers = self._beam_numbers()
         if not beam_numbers:
             self.logger.info('distribution_sources: no BDEPnn_TOT NBI birth profiles; skipping')
-            return
+            return []
         if self.dvol.ndim != 2 or self.dvol.shape[0] != self.nt:
             self.logger.warning('distribution_sources: DVOL/TIME3 mismatch; skipping')
-            return
+            return []
 
         try:
-            ids = self.im.new_ids('distribution_sources')
+            ids = self.dd.new_ids('distribution_sources')
         except ValueError as exc:          # imas.exception.IDSNameError: not in this DD
-            self.im.mapping.unavailable_in_dd('distribution_sources', str(exc))
+            self.ctx.mapping.unavailable_in_dd('distribution_sources', str(exc))
             self.logger.warning(f'distribution_sources is unavailable in target DD: {exc}')
-            return
+            return []
 
-        ids = self.im.fill_properties(ids)
-        self.im.fill_code_properties(ids)
+        ids = self.fill.fill_properties(ids)
+        self.fill.fill_code_properties(ids)
         if hasattr(ids.ids_properties, 'homogeneous_time'):
             ids.ids_properties.homogeneous_time = 1
-        self.im.fill_vac_tor_field(ids)
+        self.fill.fill_vac_tor_field(ids)
         if hasattr(ids, 'time'):
-            self.im.fill_data(ids.time, self.time)
+            self.fill.fill_data(ids.time, self.time)
 
         used = append_successful_entries(
-            lambda: self.im.new_ids('distribution_sources'), ids, 'source',
+            lambda: self.dd.new_ids('distribution_sources'), ids, 'source',
             [lambda source, ib=ib: self._fill_source(source, ib) for ib in beam_numbers])
 
         if used == 0:
             self.logger.info('distribution_sources: no supported NBI sources after validation; skipping')
-            return
-        self.im.putdb_imas(ids)
-        self.logger.info(f'distribution_sources: wrote {used} NBI unit source(s)')
+            return []
+        self.logger.info(f'distribution_sources: built {used} NBI unit source(s)')
+        return [ids]
 
 
 if __name__ == '__main__':

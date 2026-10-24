@@ -10,6 +10,8 @@ from netCDF4 import Dataset
 from typing import List, Dict, Tuple, Union
 
 from mapping_status import MappingLedger, RecordingDataset
+from name_patterns import make_re_pattern, make_re_pattern_quest
+
 class netcdf_connection:
     def __init__(self, ncfile:str, machine:str):
         self.nc = None
@@ -90,56 +92,12 @@ class netcdf_connection:
 
     def make_re_pattern(self, name:str, nd1:int=0, nd2:int=0, nch1:int=0,
           nch2:int=0, nd:int=0, nch:int=0, dig_last:bool=False, step:int=-1) -> str:
-        r'''
-          nd1=digit_begin nd2=digit_end. same for char:nch1,nch2.
-          nd, nch for fixed number; override nd1,nd2,nch1,nch2
-          Used for specified ranges of # of digits and chars
-          step=-1 :  add ^ + pattern + $;
-          step!=-1 string including 1st '?' after replacing ? by pattern.
-          eg: get_var_names_re('VV_PF?', cut='VV_', nd=1, nch1=1, nch2=2).
-
-          #step call
-          p = make_re_pattern('NAME\(?,?\)', nd1=1, nd2=3, step=1) => NAME\(\d{1,3}[A-z]{0,0}
-          #second of the step call
-          make_re_pattern(fr'{p},?\)', nd1=1, nd2=3)  #p is pat from 1st call= \d{1,3}[A-z]{0,0}
-                        => NAME\(\d{1,3}[A-z]{0,0},\d{1,3}[A-z]{0,0}\)
-          NOTE: escape ().  Error: NAME(?,?)
-          For non-regex don't do escape
-        '''
-        ind = name.find('?') #only 1st position of '?''
-        if ind < 0:
-            raise Exception(f'Error in pattern build of {name} : missing "?"')
-
-        nd1 = nd if nd>0 else nd1
-        nd2 = nd if nd>0 else nd2
-        nch1 = nch if nch>0 else nch1
-        nch2 = nch if nch>0 else nch2
-        pat = f'{name[:ind]}'
-        if dig_last:
-            pat =  pat + r'[A-z]{' + f'{str(nch1)},{str(nch2)}'+ r'}' + \
-                 r'\d{' + f'{str(nd1)},{str(nd2)}' + r'}'
-        else:
-            pat =  pat + r'\d{' + f'{str(nd1)},{str(nd2)}' + r'}' + \
-                r'[A-z]{' + f'{str(nch1)},{str(nch2)}' + r'}'
-
-        if step == -1:
-            pat = pat + rf'{name[ind+1:]}' + '$'
-
-        return pat
+        """Regex for a name with a '?' placeholder; see ``name_patterns.make_re_pattern``."""
+        return make_re_pattern(name, nd1, nd2, nch1, nch2, nd, nch, dig_last, step)
 
     def make_re_pattern_quest(self, name:str) -> str:
-        r'''
-         Requires at least one '?' in name
-         All '?' are replaced by \w+
-         BSTH_?4_P? converted to BSTH_\w+4_P\w+
-        '''
-        inds = [ind for ind, ch in enumerate(name.lower()) if '?' == ch]
-        if len(inds) < 1:
-            raise Exception(f'Error in pattern build of {name} : missing "?"')
-        pat = rf'{name[:inds[0]]}\w+'
-        for i in range(1,len(inds)):
-            pat += rf'{name[inds[i-1]+1:inds[i]]}\w+'
-        return pat + name[inds[-1]+1:] + '$'
+        """Regex with every '?' as ``\\w+``; see ``name_patterns.make_re_pattern_quest``."""
+        return make_re_pattern_quest(name)
 
     def get_var_names_re_(self, pat, cut:str='', length:bool=False):
         matches = [self.vars_[i] for i,s in enumerate(self.vars_) if re.match(pat, s)]
@@ -337,6 +295,40 @@ class netcdf_connection:
             pass
         return runid, device, year, cdf_date, build_date, tglf, glf
 
+
+    def get_ncattr_text(self, name:str, default:str=''):
+        """Return a CDF attribute as stripped text.
+
+        netCDF readers may expose character attributes as ``str``, ``bytes``,
+        NumPy byte/string scalars, or small character arrays.  Metadata writers
+        should not depend on a reader-private decoding helper, so normalize the
+        common representations here.
+        """
+        try:
+            value = self.get_ncattr(name)
+        except (AttributeError, KeyError, RuntimeError):      # closed/unreadable dataset: attribute not available
+            return default
+        if value is None:
+            return default
+        if isinstance(value, (bytes, np.bytes_)):
+            return bytes(value).decode('ISO-8859-1', errors='replace').strip()
+        if isinstance(value, np.ndarray):
+            if value.size == 0:
+                return default
+            if value.size == 1:
+                value = value.reshape(-1)[0]
+                if isinstance(value, (bytes, np.bytes_)):
+                    return bytes(value).decode('ISO-8859-1', errors='replace').strip()
+                return str(value).strip()
+            if value.dtype.kind in ('S', 'U'):
+                parts = []
+                for item in value.reshape(-1):
+                    if isinstance(item, (bytes, np.bytes_)):
+                        parts.append(bytes(item).decode('ISO-8859-1', errors='replace'))
+                    else:
+                        parts.append(str(item))
+                return ''.join(parts).strip()
+        return str(value).strip()
 
     def print_ncattributes(self, key):
         nc_attrs = self.nc.ncattrs()

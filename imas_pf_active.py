@@ -25,22 +25,21 @@ from nc2imas import nc2imas
 from pf_active_mapping import (
     all_time_coordinates, build_active_plan, populate_active_ids,
 )
+from writer_base import IdsWriter
 
 
-class imas_pf_active:
+class imas_pf_active(IdsWriter):
     """Create pf_active if actual CDF waveforms or machine geometry exist."""
 
     def __init__(self, ncimas: nc2imas, geometry_path: str | None = None):
-        self.im = ncimas
-        self.logger = ncimas.logger
+        super().__init__(ncimas)
         self.geometry_path = geometry_path
-        self.create_ids()
 
-    def create_ids(self):
+    def build(self):
         """Write with correct per-signal time bases and optional sourced geometry."""
         self.logger.info("\npf_active")
         plan = build_active_plan(
-            self.im.nc, geometry_path=self.geometry_path, machine=self.im.device,
+            self.cdf.nc, geometry_path=self.geometry_path, machine=self.cdf.device,
         )
         if plan.ignored_targets:
             self.logger.warning(
@@ -61,17 +60,17 @@ class imas_pf_active:
             )
         if not plan.coils and not plan.supplies:
             self.logger.info("pf_active: no KK/VV/VS channels or sourced machine geometry; IDS not written")
-            return
+            return []
         if plan.manifest_path is None:
             self.logger.warning(
                 "pf_active: CDF-only PF waveforms; coil cross-sections, winding "
                 "polarity, supply association and circuit connectivity are "
                 "UNVERIFIED. Not suitable for magnetic-field reconstruction."
             )
-        pfc = self.im.new_ids("pf_active")
-        self.im.fill_properties(pfc)
-        self.im.fill_code_properties(pfc)
-        dd_major = int(self.im.dd_major_version)
+        pfc = self.dd.new_ids("pf_active")
+        self.fill.fill_properties(pfc)
+        self.fill.fill_code_properties(pfc)
+        dd_major = int(self.dd.dd_major_version)
         traces = all_time_coordinates(plan, dd_major)
         if traces:
             same = all(np.array_equal(traces[0], t) for t in traces[1:])
@@ -81,7 +80,7 @@ class imas_pf_active:
             else:
                 # Dynamic nodes each contain their own exact time arrays.
                 # Generic pf_active.time serves only as a reference.
-                generic = self.im.get_ncvar("TIME")
+                generic = self.cdf.get_ncvar("TIME")
                 pfc.time = (np.asarray(generic, dtype=np.float64)
                             if len(generic) else np.asarray(traces[0], dtype=np.float64))
         else:
@@ -114,15 +113,15 @@ class imas_pf_active:
                 except (ET.ParseError, TypeError, ValueError) as exc:
                     self.logger.warning("pf_active: cannot embed machine provenance: %s", exc)
 
-        self.im.putdb_imas(pfc)
         self.logger.info(
-            "pf_active: wrote %d coils, %d supplies, %d circuits, "
+            "pf_active: built %d coils, %d supplies, %d circuits, "
             "%d coil currents, %d coil voltages, %d supply currents, "
             "%d supply voltages",
             len(plan.coils), len(plan.supplies), count["circuits"],
             count["coil_current"], count["coil_voltage"],
             count["supply_current"], count["supply_voltage"],
         )
+        return [pfc]
 
 
 if __name__ == "__main__":

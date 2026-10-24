@@ -17,9 +17,11 @@ make verify-end-to-end PYTHON=python3 DD_VERSION=4.1.1 BACKEND=HDF5
 ```
 
 This discovers **every existing** `examples/data/**/*.CDF` recursively. The
-complete local example set currently contains 10 CDFs, including the large
-NSTX 142202U01 file; the GitHub checkout contains 9 when that locally supplied
-CDF has not been installed. Tests do not silently invent or silently omit
+number of cases is whatever is installed (it is printed, and recorded as
+`examples_discovered` in `summary.json`): large CDFs that are supplied locally,
+such as NSTX 142202U01 and 120967E03, are included when present and absent from
+a plain GitHub checkout, and companion CDFs such as `120967E03PH.CDF` are listed
+but not converted. Tests do not silently invent or silently omit
 cases. Conversion failures are reported as `FAIL`, even if some earlier IDSs
 were already saved and can still be read back.
 

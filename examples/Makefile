@@ -2,6 +2,9 @@ SHELL := /bin/bash
 
 ROOT := $(abspath ..)
 PYTHON ?= python3
+# Target Data Dictionary of the end-to-end check: `auto` means 4.1.1 here (not the IMAS-Python default,
+# which is DD 3.39 in some installations); set DD_VERSION=3.39.0 for the DD3 family.
+DD_VERSION ?= auto
 DATA_ROOT ?= $(CURDIR)/data/nstx
 CASE ?= 141711Y01
 CASES ?= 141711Y01 141711Y02
@@ -45,6 +48,10 @@ help:
 	@echo "  make verify-pf-active  Validate PF coil/supply/circuit source mappings"
 	@echo "  make verify-isolver    Require BOTH real ITER/NSTX ISolver sources; write PF reports"
 	@echo "  make verify-dd   Inspect DD 3.39.0 and DD 4.1.1 schemas"
+	@echo "  make verify-readback  Registry values read back from HDF5 for ITER and DIII-D T16 (DD 4.1.1 and 3.39.0)"
+	@echo "  make verify-aos  Alias for verify-readback"
+	@echo "  make verify-nubeam-fi  Verify the NUBEAM fast-ion distributions writer"
+	@echo "  make coverage    Report measured reads against the registry from build/end-to-end journals"
 	@echo "  make audit       Write full CDF mapping-coverage reports for CASE"
 	@echo "  make inspect     Write a q-profile plot to PLOT"
 	@echo "  make plot-ids    Show the converted-IDS plotting example usage"
@@ -52,6 +59,15 @@ help:
 
 quick:
 	$(PYTHON) -m py_compile $(wildcard *.py)
+	$(PYTHON) verify_conversion_runner.py
+	$(PYTHON) verify_cocos_signs.py
+	$(PYTHON) verify_code_provenance.py
+	$(PYTHON) verify_ids_assignment.py
+	$(PYTHON) verify_writer_interface.py
+	$(PYTHON) verify_conversion_context.py
+	$(PYTHON) verify_conversion_services.py
+	$(PYTHON) verify_equilibrium_boundary_trace.py
+	$(PYTHON) verify_radial_interpolation.py --quick
 	$(PYTHON) verify_mapping_registry.py --quick
 	$(PYTHON) verify_writer_api.py
 	$(PYTHON) verify_pf_passive_mapping.py
@@ -110,6 +126,8 @@ verify-inputs:
 	$(PYTHON) verify_input_provenance.py
 
 verify-readback verify-aos:
+	$(PYTHON) verify_radial_interpolation.py
+	$(PYTHON) verify_registry_values.py
 	$(PYTHON) verify_mapping_registry.py --journals "$(ROOT)/build/end-to-end"
 	$(PYTHON) verify_aos_serialization.py
 	$(PYTHON) verify_vacuum_field.py

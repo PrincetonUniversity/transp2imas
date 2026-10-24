@@ -34,6 +34,8 @@ from scipy import constants
 from nubeam_fi import (NubeamInputError, McGrid, read_fast_ion_snapshots,
                        species_moments)
 from nubeam_outputs import discover_nubeam_outputs
+from ids_identity import IdentityHelper
+from writer_base import IdsWriter
 
 # GGD / coordinate identifier indices (DD utilities identifiers).
 COORD_R, COORD_Z, COORD_ENERGY, COORD_PITCH = 4, 3, 301, 403
@@ -65,24 +67,13 @@ def regrid_to_rows(values, zone_edges, weights, nrows):
     return out
 
 
-class StandaloneHelper:
+class StandaloneHelper(IdentityHelper):
     """Minimal DD-version helper used when no ``nc2imas`` instance is available."""
 
     def __init__(self, dd_version):
         parts = [int(re.sub(r"\D", "", token) or 0) for token in str(dd_version).split(".")[:3]]
         self.dd_version_tuple = tuple(parts + [0] * (3 - len(parts)))
-
-    def dd_at_least(self, major, minor=0, patch=0):
-        return self.dd_version_tuple >= (major, minor, patch)
-
-    def set_species_name(self, node, value):
-        if self.dd_at_least(3, 42, 0):
-            node.name = str(value)
-        else:
-            node.label = str(value)
-
-    def set_nuclear_charge(self, node, value):
-        node.z_n = int(round(value)) if self.dd_at_least(4, 0, 0) else float(value)
+        super().__init__(lambda major, minor=0, patch=0: self.dd_version_tuple >= (major, minor, patch))
 
 
 def pitch_to_field_direction(pitch_edges, nsjdotb):
@@ -366,48 +357,43 @@ class DistributionsBuilder:
             prof.pressure_fast_perpendicular = w_total - w_par
 
 
-class imas_distributions:
+class imas_distributions(IdsWriter):
     """Writer registered as the ``distributions`` IDS in ``convert.py``."""
 
-    def __init__(self, ncimas):
-        self.im = ncimas
-        self.logger = ncimas.logger
-        self.create_ids()
-
     def _locate_case(self):
-        cdf = Path(self.im.ncfile)
+        cdf = Path(self.cdf.ncfile)
         run_id = re.sub(r"\.cdf$", "", cdf.name, flags=re.I)
         return cdf.parent, run_id
 
-    def create_ids(self):
+    def build(self):
         self.logger.info("\ndistributions")
         case_dir, run_id = self._locate_case()
         trdat = case_dir / f"{run_id}TR.DAT"
         if not trdat.is_file():
             self.logger.info(f"distributions: {trdat.name} not found next to the CDF; skipping")
-            self.im.mapping.skipped(f'{trdat.name} not found next to the CDF', target='distributions')
-            return
+            self.ctx.mapping.skipped(f'{trdat.name} not found next to the CDF', target='distributions')
+            return []
         try:
             discover_nubeam_outputs(case_dir, run_id, trdat)
         except FileNotFoundError as exc:
             self.logger.warning(f"distributions: requested NUBEAM output unavailable ({exc}); skipping")
-            self.im.mapping.skipped(f'requested NUBEAM output unavailable: {exc}', target='distributions')
-            return
+            self.ctx.mapping.skipped(f'requested NUBEAM output unavailable: {exc}', target='distributions')
+            return []
         except ValueError as exc:
             self.logger.info(f"distributions: no NUBEAM fast-ion output requested ({exc}); skipping")
-            self.im.mapping.skipped(f'no NUBEAM fast-ion output requested: {exc}', target='distributions')
-            return
+            self.ctx.mapping.skipped(f'no NUBEAM fast-ion output requested: {exc}', target='distributions')
+            return []
         snapshots = read_fast_ion_snapshots(case_dir, run_id, trdat, logger=self.logger)
         if not snapshots:
             self.logger.warning("distributions: no DATA/FI_TAR pair shares an output time; skipping")
-            self.im.mapping.skipped('no DATA/FI_TAR pair shares an output time', target='distributions')
-            return
+            self.ctx.mapping.skipped('no DATA/FI_TAR pair shares an output time', target='distributions')
+            return []
         snapshots.sort(key=lambda snap: snap.time)
 
-        ids = self.im.new_ids("distributions")
-        ids = self.im.fill_properties(ids)
-        self.im.fill_code_properties(ids)
-        builder = DistributionsBuilder(self.im)
+        ids = self.dd.new_ids("distributions")
+        ids = self.fill.fill_properties(ids)
+        self.fill.fill_code_properties(ids)
+        builder = DistributionsBuilder(IdentityHelper(self.dd.dd_at_least))
         builder.fill(ids, snapshots)
         self._fill_machine_fields(ids, snapshots)
         self._fill_cdf_power_losses(ids, snapshots, builder.meta)
@@ -419,16 +405,16 @@ class imas_distributions:
             f"{', '.join(f'{snap.time:g}' for snap in snapshots)} s; pitch = v_parallel/v along B "
             f"(NUBEAM pitch is along Ip; nsjdotb={sign:+d} from {snapshots[0].nsjdotb_source}); "
             "expansion_fd3v = f*d3v in m^-3 on the 4d_hypervolumes subset (zone fastest, then energy, pitch)")
-        self.im.putdb_imas(ids)
-        self.logger.info(f"distributions: wrote {len(ids.distribution)} distribution(s) "
+        self.logger.info(f"distributions: built {len(ids.distribution)} distribution(s) "
                          f"at {len(snapshots)} time(s)")
+        return [ids]
 
     def _cdf_at(self, name, times):
         """CDF ``TIME``-dependent scalar interpolated to ``times``; ``None`` if absent."""
-        values = self.im.get_ncvar(name)
-        if not self.im.is_valid(values):
+        values = self.cdf.get_ncvar(name)
+        if not self.fill.is_valid(values):
             return None
-        return np.interp(times, self.im.timesc, np.asarray(values, dtype=np.float64))
+        return np.interp(times, self.grid.timesc, np.asarray(values, dtype=np.float64))
 
     @staticmethod
     def _sole_beam(meta):
@@ -481,11 +467,11 @@ class imas_distributions:
 
     def _cdf_profile_at(self, name, times):
         """CDF ``(TIME3, X)`` profile linearly interpolated in time to ``times``."""
-        values = self.im.get_ncvar(name)
-        if not self.im.is_valid(values):
+        values = self.cdf.get_ncvar(name)
+        if not self.fill.is_valid(values):
             return None
         values = np.asarray(values, dtype=np.float64)
-        time3 = np.asarray(self.im.get_ncvar("TIME3"), dtype=np.float64)
+        time3 = np.asarray(self.cdf.get_ncvar("TIME3"), dtype=np.float64)
         if values.ndim != 2 or values.shape[0] != time3.size:
             return None
         return np.array([[np.interp(t, time3, values[:, ix]) for ix in range(values.shape[1])] for t in times])
@@ -493,8 +479,8 @@ class imas_distributions:
     def _cdf_grid(self, times):
         """``(zone_edges, DVOL, DAREA)`` of the TRANSP grid at ``times``, or ``None``."""
         dvol, darea = self._cdf_profile_at("DVOL", times), self._cdf_profile_at("DAREA", times)
-        xb = self.im.get_ncvar("XB")
-        if dvol is None or darea is None or not self.im.is_valid(xb):
+        xb = self.cdf.get_ncvar("XB")
+        if dvol is None or darea is None or not self.fill.is_valid(xb):
             return None
         xb = np.asarray(xb, dtype=np.float64)
         return np.concatenate([[0.0], np.asarray(xb[0] if xb.ndim == 2 else xb)]), dvol, darea
@@ -611,7 +597,7 @@ class imas_distributions:
                     self._set_first(g_el, ("torque_thermal_phi", "torque_thermal_tor"), float(t_e[it]))
                 if p_i is not None or t_i is not None:
                     g_coll.ion.resize(1)
-                    self.im.set_species_name(g_coll.ion[0], "thermal ions (all species)")
+                    self.fill.set_species_name(g_coll.ion[0], "thermal ions (all species)")
                     if p_i is not None:
                         g_coll.ion[0].power_thermal = float(p_i[it])
                     if t_i is not None:
@@ -623,7 +609,7 @@ class imas_distributions:
                     self._set_first(p_el, ("torque_thermal_phi", "torque_thermal_tor"), row(tq_e, 1.0e6))
                 if q_i is not None or tq_i is not None:
                     pr.collisions.ion.resize(1)
-                    self.im.set_species_name(pr.collisions.ion[0], "thermal ions (all species)")
+                    self.fill.set_species_name(pr.collisions.ion[0], "thermal ions (all species)")
                     if q_i is not None:
                         pr.collisions.ion[0].power_thermal = row(q_i, 1.0e6)
                     if tq_i is not None:
@@ -676,7 +662,7 @@ class imas_distributions:
         times = np.array([snap.time for snap in snapshots])
         ids.magnetic_axis.r = np.array([snap.flux_map.r_axis for snap in snapshots])
         ids.magnetic_axis.z = np.array([snap.flux_map.z_axis for snap in snapshots])
-        reference = self.im.vacuum_field_reference(times)
+        reference = self.signs.vacuum_field_reference(times)
         if reference is not None:
             ids.vacuum_toroidal_field.r0, ids.vacuum_toroidal_field.b0 = reference
 

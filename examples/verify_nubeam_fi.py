@@ -14,6 +14,7 @@ import argparse
 import io
 import math
 import sys
+import os
 import tarfile
 import tempfile
 import unittest
@@ -48,6 +49,8 @@ SAMPLE_ARGS = {"dir": SAMPLE_DIR}
 
 
 # ---------------------------------------------------------------- AC encoders
+# Registry entries exercised here: dist_orbit_cx_losses, dist_collisions, dist_thermalization, dist_nbi_source,
+# dist_trapped_density, dist_torque_current
 def b64(value, width):
     out = ""
     for _ in range(width):
@@ -497,6 +500,83 @@ def make_cdf(path, multi=False):
     return series, profiles
 
 
+class ArchivePrefetchTests(unittest.TestCase):
+    """Several FI_TAR archives are read at once but consumed strictly in order."""
+
+    def test_results_come_back_in_input_order_whatever_the_completion_order(self):
+        import threading
+        import time
+
+        def reader(name):
+            time.sleep({"a": 0.15, "b": 0.0, "c": 0.05, "d": 0.0}[name])     # a finishes last
+            return name.upper()
+        self.assertEqual(list(nf.read_archives_in_order(["a", "b", "c", "d"], workers=4, reader=reader)),
+                         ["A", "B", "C", "D"])
+
+    def test_an_error_is_raised_at_its_turn_after_the_earlier_results(self):
+        def reader(name):
+            if name == "bad":
+                raise nf.NubeamInputError("no equilibrium member")
+            return name
+        got = []
+        with self.assertRaisesRegex(nf.NubeamInputError, "no equilibrium"):
+            for item in nf.read_archives_in_order(["x", "bad", "y"], workers=3, reader=reader):
+                got.append(item)
+        self.assertEqual(got, ["x"])
+
+    def test_at_most_twice_the_workers_are_read_ahead(self):
+        import threading
+        started, lock = [], threading.Lock()
+        gate = threading.Event()
+
+        def reader(index):
+            with lock:
+                started.append(index)
+            gate.wait(timeout=5)
+            return index
+        generator = nf.read_archives_in_order(list(range(20)), workers=2, reader=reader)
+        gate.set()
+        self.assertEqual(next(generator), 0)
+        with lock:
+            ahead = len(started)
+        self.assertLessEqual(ahead, 2 * 2 + 1)            # window of 4 plus the one being consumed
+        self.assertEqual(list(generator), list(range(1, 20)))
+
+    def test_single_worker_and_single_archive_are_sequential(self):
+        order = []
+
+        def reader(index):
+            order.append(index)
+            return index
+        self.assertEqual(list(nf.read_archives_in_order([1, 2, 3], workers=1, reader=reader)), [1, 2, 3])
+        self.assertEqual(order, [1, 2, 3])
+        self.assertEqual(list(nf.read_archives_in_order([9], workers=4, reader=reader)), [9])
+
+    def test_worker_count_follows_the_environment_and_the_archive_count(self):
+        with mock.patch.dict(os.environ, {"TRANSP2IMAS_FI_WORKERS": "1"}):
+            self.assertEqual(nf.archive_workers(10), 1)
+        with mock.patch.dict(os.environ, {"TRANSP2IMAS_FI_WORKERS": "16"}):
+            self.assertEqual(nf.archive_workers(3), 3)
+            self.assertEqual(nf.archive_workers(100), 16)
+        env = {k: v for k, v in os.environ.items() if k != "TRANSP2IMAS_FI_WORKERS"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertTrue(1 <= nf.archive_workers(100) <= 4)
+            self.assertEqual(nf.archive_workers(0), 1)
+
+    @unittest.skipIf(netCDF4 is None, 'synthetic archives need netCDF4')
+    def test_parallel_and_sequential_snapshots_agree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run, _dists, _volumes = make_case(tmp, outtim=(0.1, 0.2, 0.3), fi_outtim=(0.3, 0.1, 0.2))
+            with mock.patch.dict(os.environ, {"TRANSP2IMAS_FI_WORKERS": "1"}):
+                sequential = nf.read_fast_ion_snapshots(tmp, run)
+            with mock.patch.dict(os.environ, {"TRANSP2IMAS_FI_WORKERS": "3"}):
+                parallel = nf.read_fast_ion_snapshots(tmp, run)
+        self.assertEqual([round(s.time, 6) for s in sequential], [round(s.time, 6) for s in parallel])
+        for a, b in zip(sequential, parallel):
+            np.testing.assert_array_equal(a.flux_map.r_geo, b.flux_map.r_geo)
+            self.assertEqual((a.nsjdotb, a.b_axis_vac), (b.nsjdotb, b.b_axis_vac))
+
+
 class CdfShim:
     """Just enough of ``nc2imas`` for the distributions writer, backed by a real CDF."""
 
@@ -607,7 +687,9 @@ class MultiSpeciesTests(unittest.TestCase):
         run, _d, _v = make_case(tmp.name, outtim=(0.1, 0.2), fi_outtim=(0.1, 0.2), species=species)
         make_cdf(Path(tmp.name) / f"{run}.CDF", multi=multi)
         shim = CdfShim(Path(tmp.name) / f"{run}.CDF", dd_version)
-        idm.imas_distributions(shim)
+        writer = idm.imas_distributions(shim)
+        self.assertIsNone(shim.written, 'constructing the writer must not write')
+        writer.run()
         self.assertIsNotNone(shim.written)
         shim.written.validate()
         return shim.written, nf.read_fast_ion_snapshots(tmp.name, run)
@@ -691,7 +773,7 @@ class WriterCdfQuantityTests(unittest.TestCase):
         run, _dists, _vol = make_case(tmp.name, outtim=(0.1, 0.2), fi_outtim=(0.1, 0.2))
         series, profiles = make_cdf(Path(tmp.name) / f"{run}.CDF")
         shim = CdfShim(Path(tmp.name) / f"{run}.CDF", dd_version)
-        idm.imas_distributions(shim)
+        idm.imas_distributions(shim).run()
         self.assertIsNotNone(shim.written, "writer produced no IDS")
         shim.written.validate()
         return shim.written, series, profiles

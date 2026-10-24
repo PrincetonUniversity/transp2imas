@@ -86,10 +86,12 @@ def check_cdfs(entries, data_root):
         present |= cdf_variables(cdf)
     problems = []
     for entry in entries:
-        for pattern in entry.get('source') or ():
-            if not any(reg.matches(pattern, name) for name in present):
-                if entry['kind'] in reg.TYPED_KINDS:
-                    problems.append(f'{entry["id"]}: source {pattern} matches no variable in any bundled CDF')
+        patterns = entry.get('source') or ()
+        unmatched = [p for p in patterns if not any(reg.matches(p, name) for name in present)]
+        if entry['kind'] in reg.TYPED_KINDS and patterns and len(unmatched) == len(patterns):
+            problems.append(f'{entry["id"]}: no source matches a variable in any bundled CDF ({", ".join(patterns)})')
+        elif unmatched and entry['kind'] in reg.TYPED_KINDS:
+            print(f'note {entry["id"]}: not in the bundled CDFs (species-dependent): {", ".join(unmatched)}')
     print(f'checked sources against {len(cdfs)} CDF file(s)')
     return problems
 

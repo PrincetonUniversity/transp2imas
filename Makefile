@@ -34,7 +34,7 @@ help:
 	@echo "  make check        Enforce Python headers, compile-check Python, and run fast regressions"
 	@echo "  make verify       Run source diagnostics for CASE"
 	@echo "  make verify-all   Verify EVERY bundled CDF automatically (all physics families)"
-	@echo "  make verify-examples  Alias for verify-all (10 current CDF examples)"
+	@echo "  make verify-examples  Alias for verify-all (every bundled CDF example)"
 	@echo "  make verify-deep  Run additional legacy numeric diagnostics for every CDF"
 	@echo "  make verify-waves Validate EC/IC waves mappings on ALL bundled CDF files"
 	@echo "  make verify-theory Verify MMM07, GLF23, and TGLF status on ALL bundled CDFs"
@@ -51,7 +51,9 @@ help:
 	@echo "  make verify-pf-active  Test KK/VV/VS coil/supply mappings without IMAS"
 	@echo "  make verify-isolver    Require both real ITER/NSTX ISolver PF-current fixtures (local)"
 	@echo "  make verify-dd    Check supported IMAS Data Dictionary layouts"
-	@echo "  make verify-end-to-end  Convert/read back EVERY bundled CDF using real IMAS-Python"
+	@echo "  make verify-readback  Registry values read back from HDF5 (ITER + DIII-D T16, DD 4.1.1 and 3.39.0), AoS, vacuum field"
+	@echo "  make verify-nubeam-fi Verify the NUBEAM fast-ion distributions writer (DD 4.1.1; full run needs the local NSTX sample)"
+	@echo "  make verify-end-to-end  Convert/read back every available bundled case (12 with the local NSTX samples) with real IMAS-Python; DD 4.1.1 unless DD_VERSION is set"
 	@echo "  make verify-end-to-end-plan  List examples without claiming real IMAS verification"
 	@echo "  make audit        Write CDF mapping-coverage reports for CASE"
 	@echo "  make inspect      Plot the final six q profiles from CDF"
@@ -59,6 +61,8 @@ help:
 	@echo "  make fortran      Build the optional Fortran Access Layer verifier"
 	@echo "  make clean        Remove generated local build/example artifacts"
 	@echo
+	@echo "DD_VERSION=auto (the default) picks \$$IMAS_VERSION / \$$IMAS_DD_VERSION, else the IMAS-Python default (3.39.0 on many"
+	@echo "installs), except in verify-end-to-end, where it means 4.1.1. Pass DD_VERSION=4.1.1 or 3.39.0 to be explicit."
 	@echo "Overrides: CASE, CASES, DATA_ROOT, CDF, TRDAT, OUTPUT_DIR, BACKEND, DD_VERSION, PF_PASSIVE_GEOMETRY, PF_ACTIVE_GEOMETRY, PYTHON"
 
 venv:

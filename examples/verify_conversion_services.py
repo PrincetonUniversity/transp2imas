@@ -1,0 +1,320 @@
+#!/usr/bin/python
+"""Verify the services extracted from ``nc2imas``: namelist, time/radial grid, IDS identity, provenance.
+
+Pure tests (no IMAS, no CDF) of ``namelist_reader``, ``name_patterns``, ``grid_services``, ``ids_identity``
+and ``conversion_provenance``.  The same behaviour end to end is covered by ``compare_conversions.py``
+(identical IDS output before and after the extraction) and by the verifiers that drive ``nc2imas``.
+
+    python examples/verify_conversion_services.py
+"""
+
+import logging
+from pathlib import Path
+import sys
+import tempfile
+import types
+import unittest
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import grid_services as gs
+import ids_identity as ii
+import name_patterns as npat
+import namelist_reader as nl
+import plasma_betas as pb
+from conversion_plan import ConversionJournal
+from conversion_provenance import ProvenanceRecorder
+from mapping_status import MappingLedger
+
+LOG = logging.getLogger('verify-conversion-services')
+
+
+class NamelistTests(unittest.TestCase):
+    def test_logicals_parse_case_insensitively_and_unknown_is_none(self):
+        for text, expected in (('T', True), ('.true.', True), ('no', False), ('.F.', False), (1, True), (0, False)):
+            self.assertIs(nl.parse_bool_value(text), expected, text)
+        self.assertIsNone(nl.parse_bool_value('maybe'))
+        self.assertIsNone(nl.parse_bool_value(None))
+
+    def test_get_bool_finds_a_key_whatever_its_case(self):
+        self.assertTrue(nl.get_bool({'nljccw': '.T.'}, 'NLJCCW'))
+        self.assertEqual(nl.get_bool({}, 'NLJCCW', default='dflt'), 'dflt')
+        self.assertEqual(nl.get_bool({'A': 'maybe'}, 'A', default=7), 7)
+
+    def test_arithmetic_in_values(self):
+        self.assertEqual(nl.parse_number('2*3', float), 6.0)
+        self.assertEqual(nl.parse_number('1.0E-3', float), 1.0e-3)       # the sign after E is not an operator
+        self.assertEqual(nl.parse_number('1.5E+3', float), 1500.0)
+        self.assertEqual(nl.parse_number('2*3+1', float), 7.0)
+        self.assertEqual(nl.parse_number(5, int), 5)
+
+    def test_load_casts_numbers_and_skips_comments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'TR.DAT'
+            path.write_text("! comment\n&INNML\nNLJCCW = T\nAIMP = 12.0d0 ! carbon\nNLBCCW=1\nFREQ(1) = 1.5E9\n/\n",
+                            encoding='ISO-8859-1')
+            data = nl.load_namelist(str(path), LOG)
+        self.assertEqual(data['AIMP'], 12.0)
+        self.assertEqual(data['NLBCCW'], 1)
+        self.assertEqual(data['NLJCCW'], 'T')
+        self.assertEqual(data['FREQ(1)'], 1.5e9)
+        self.assertNotIn('&INNML', data)
+
+    def test_missing_file_gives_an_empty_namelist_and_no_path_gives_none(self):
+        self.assertEqual(nl.load_namelist('/nonexistent/TR.DAT', LOG), {})
+        self.assertIsNone(nl.load_namelist(None, LOG))
+
+    def test_scalar_array_and_indexed_values(self):
+        data = {'A': 2.5, 'B(1)': 1.0, 'B(2)': 2.0, 'C': '1.0 2.0 3.0'}
+        self.assertEqual(nl.get_vars(data, LOG, 'A', float), 2.5)
+        np.testing.assert_array_equal(nl.get_vars(data, LOG, 'B', float), [1.0, 2.0])
+        self.assertEqual(nl.get_vars(data, LOG, 'B', float, ind=1), 2.0)
+        np.testing.assert_array_equal(nl.get_var_(data, LOG, 'C', float), [1.0, 2.0, 3.0])
+        self.assertIsNone(nl.get_var_(data, LOG, 'MISSING'))
+        self.assertEqual(nl.count_vars(data, LOG, 'B?'), 2)
+        self.assertEqual(nl.count_vars(None, LOG, 'B?'), 0)
+
+    def test_scale_and_resize(self):
+        self.assertEqual(nl.get_var_({'A': 2.0}, LOG, 'A', float, scale=3.0), 6.0)
+        np.testing.assert_array_equal(nl.get_vars({'A': 2.0}, LOG, 'A', float, size=3, resize=True), [2.0, 2.0, 2.0])
+        with self.assertRaises(Exception):
+            nl.get_vars({'B(1)': 1.0, 'B(2)': 2.0}, LOG, 'B', float, size=3)
+
+    def test_keys_by_pattern_and_text_between_markers(self):
+        keys = nl.keys_re({'XECECH1': 1, 'XECECH12': 2, 'XECECH': 3, 'OTHER': 4}, 'XECECH?', nd1=1, nd2=2)
+        self.assertEqual(sorted(keys), ['XECECH1', 'XECECH12'])
+        # the text starts one character after the first marker and ends at the next separator after it
+        self.assertEqual(nl.extract_str_between(LOG, 'AA(Bxyz,rest)', '(', ',', 'dflt'), 'xyz')
+        self.assertIsNone(nl.extract_str_between(LOG, 'no markers', '(', ',', 'dflt'))
+
+
+class PatternTests(unittest.TestCase):
+    def test_a_name_needs_a_placeholder(self):
+        with self.assertRaises(Exception):
+            npat.make_re_pattern('NOQUEST')
+
+    def test_digit_ranges_and_two_placeholders(self):
+        self.assertEqual(npat.make_re_pattern('VV_PF?', nd=1, nch1=1, nch2=2), r'VV_PF\d{1,1}[A-z]{1,2}$')
+        self.assertEqual(npat.make_re_pattern_quest('BSTH_?4_P?'), r'BSTH_\w+4_P\w+$')
+        self.assertEqual(npat.make_namelist_re_pattern(r'NAME\(?,?\)', nd1=1, nd2=3),
+                         r'NAME\(\d{1,3}[A-z]{0,0},\d{1,3}[A-z]{0,0}\)$')
+
+
+class GridTests(unittest.TestCase):
+    @staticmethod
+    def valid(*values, ind=0, name=''):
+        return all(v is not None and np.size(v) > ind for v in values)
+
+    def test_time_bases_need_two_samples_of_each(self):
+        data = {'TIME': np.array([0.0, 1.0, 2.0]), 'TIME3': np.array([0.0, 1.0, 2.0]), 'X': np.zeros((3, 4))}
+        get = lambda name: data[name]
+        timesc, ntimes, timep, ntimep = gs.read_time_bases(get, LOG)
+        self.assertEqual((ntimes, ntimep), (3, 3))
+        data['TIME3'] = np.array([0.0])
+        with self.assertRaises(Exception):
+            gs.read_time_bases(get, LOG)
+
+    def test_interp_time_compares_coordinates_not_lengths(self):
+        time = np.array([0.0, 1.0, 2.0])
+        values = np.array([0.0, 10.0, 20.0])
+        np.testing.assert_allclose(gs.interp_time(self.valid, np.array([0.0, 0.5, 2.0]), time, values), [0.0, 5.0, 20.0])
+        self.assertIs(gs.interp_time(self.valid, time, time, values), values)       # same coordinates: untouched
+        self.assertEqual(gs.interp_time(self.valid, np.array([]), time, values), [])
+
+    def test_history_on_time_uses_the_declared_dimension(self):
+        var = lambda dim: types.SimpleNamespace(dimensions=(dim,))
+        nc = types.SimpleNamespace(variables={'A': var('TIME'), 'B': var('TIME3'), 'P': types.SimpleNamespace(dimensions=('TIME3', 'X'))})
+        timesc, timep = np.array([0.0, 1.0, 2.0]), np.array([0.0, 0.5, 2.0])
+        get = lambda name, scale=1.0: scale * np.array([0.0, 10.0, 20.0])
+        np.testing.assert_allclose(gs.history_on_time(nc, get, timesc, timep, 'A'), [0.0, 5.0, 20.0])
+        np.testing.assert_allclose(gs.history_on_time(nc, get, timesc, timep, 'B', target='TIME'), [0.0, 40.0 / 3.0, 20.0])
+        self.assertEqual(gs.history_on_time(nc, get, timesc, timep, 'MISSING').size, 0)
+        with self.assertRaises(ValueError):
+            gs.history_on_time(nc, get, timesc, timep, 'P')                 # a profile is not a history
+        with self.assertRaises(ValueError):
+            gs.history_on_time(nc, get, timesc, timep, 'A', target='OTHER')
+
+    def test_zone_quantities_accumulate_to_enclosed_values(self):
+        np.testing.assert_array_equal(gs.cumulative_zone_quantity([[1.0, 2.0, 3.0]]), [[1.0, 3.0, 6.0]])
+        self.assertEqual(gs.cumulative_zone_quantity([]).size, 0)
+
+    def test_radial_gradient_of_a_parabola_and_of_unusable_input(self):
+        x = np.tile(np.linspace(0.0, 1.0, 21), (2, 1))
+        grad = gs.radial_gradient(x ** 2, x)
+        np.testing.assert_allclose(grad, 2.0 * x, atol=1e-9)
+        self.assertEqual(gs.radial_gradient(x, x[:1]).size, 0)              # shape mismatch
+        bad = x.copy()
+        bad[0] = np.nan
+        self.assertTrue(np.all(np.isnan(gs.radial_gradient(x ** 2, bad)[0])))
+
+
+class Node:
+    pass
+
+
+class IdentityTests(unittest.TestCase):
+    @staticmethod
+    def at(version):
+        return lambda major, minor=0, patch=0: version >= (major, minor, patch)
+
+    def test_species_text_is_label_before_3_42_and_name_after(self):
+        old, new = Node(), Node()
+        ii.set_species_name(self.at((3, 39, 0)), old, 'D')
+        ii.set_species_name(self.at((4, 1, 1)), new, 'D')
+        self.assertEqual((old.label, new.name), ('D', 'D'))
+        self.assertFalse(hasattr(old, 'name') or hasattr(new, 'label'))
+
+    def test_z_n_is_integer_from_dd4_and_float_before(self):
+        old, new = Node(), Node()
+        ii.set_nuclear_charge(self.at((3, 39, 0)), old, 5.0)
+        ii.set_nuclear_charge(self.at((4, 1, 1)), new, 5.0)
+        self.assertIsInstance(old.z_n, float)
+        self.assertIsInstance(new.z_n, int)
+
+    def test_beam_and_unit_identity_swap_roles_between_dd3_and_dd4(self):
+        for setter, label in ((ii.set_ec_beam_identity, 'beam'), (ii.set_nbi_unit_identity, 'unit')):
+            dd3, dd4 = Node(), Node()
+            setter(self.at((3, 39, 0)), dd3, 'ID', 'long text')
+            setter(self.at((4, 1, 1)), dd4, 'ID', 'long text')
+            self.assertEqual((dd3.identifier, dd3.name), ('ID', 'long text'), label)
+            self.assertEqual((dd4.name, dd4.description), ('ID', 'long text'), label)
+
+    def test_ec_mode_by_dd_version(self):
+        dd3, dd4 = Node(), Node()
+        dd4.polarization = Node()
+        ii.set_ec_mode(self.at((3, 39, 0)), dd3, 0.8, [0.0, 1.0])
+        self.assertEqual(dd3.mode, 1)
+        ii.set_ec_mode(self.at((3, 39, 0)), dd3, 0.2, [0.0, 1.0])
+        self.assertEqual(dd3.mode, -1)
+        ii.set_ec_mode(self.at((4, 1, 1)), dd4, 1.7, [0.0, 1.0])            # clipped to 1
+        np.testing.assert_array_equal(dd4.polarization.o_mode_fraction, [1.0, 1.0])
+
+    def test_helper_binds_the_predicate(self):
+        node = Node()
+        ii.IdentityHelper(self.at((4, 1, 1))).set_species_name(node, 'T')
+        self.assertEqual(node.name, 'T')
+
+
+class ProvenanceTests(unittest.TestCase):
+    def source(self):
+        return types.SimpleNamespace(nml_name=None, ncfile='x.CDF', device='ITER', shot=1, run=2, occur=0, dd_version='4.1.1',
+                                     signs=None, logger=LOG, mapping=None,
+                                     get_ncattr=lambda key: None, get_ncattr_text=lambda key, default='': default)
+
+    def test_the_inventory_is_cached_until_reset(self):
+        recorder = ProvenanceRecorder(self.source(), '0.0.0')
+        first = recorder.input_inventory()
+        self.assertIs(recorder.input_inventory(), first)
+        recorder.reset()
+        self.assertIsNot(recorder.input_inventory(), first)
+
+    def test_code_properties_name_the_converter_and_skip_ids_without_a_code_node(self):
+        recorder = ProvenanceRecorder(self.source(), '9.9.9')
+        recorder._code_parameters_xml = '<transp2imas_parameters/>'
+        ids = types.SimpleNamespace(code=Node())
+        ids.code.description = ids.code.version = ids.code.repository = ids.code.parameters = ''   # the optional nodes
+        recorder.fill_code_properties(ids)
+        self.assertEqual((ids.code.name, ids.code.version, ids.code.parameters),
+                         ('transp2imas', '9.9.9', '<transp2imas_parameters/>'))
+        bare = Node()
+        self.assertIs(recorder.fill_code_properties(bare), bare)
+        self.assertEqual(recorder.fill_external_model_inputs(bare, 'toric'), [])
+
+
+class BetaTests(unittest.TestCase):
+    """The IMAS beta definitions on cases with a closed form."""
+
+    nt, nx = 3, 5
+
+    def case(self, pressure=2.0e5, dvol=2.0, b0=5.0, r0=6.0, ip=1.0e7, a=2.0):
+        return (np.full((self.nt, self.nx), pressure), np.full((self.nt, self.nx), dvol),
+                np.full(self.nt, b0), r0, np.full(self.nt, ip), np.full(self.nt, a))
+
+    def test_beta_tor_is_twice_mu0_p_over_b0_squared_for_uniform_pressure(self):
+        result = pb.imas_betas(*self.case())
+        np.testing.assert_allclose(result['beta_tor'], 2 * pb.MU0 * 2.0e5 / 5.0 ** 2, rtol=1e-14)
+
+    def test_beta_pol_uses_the_integral_of_p_and_r0(self):
+        result = pb.imas_betas(*self.case())
+        integral = 2.0e5 * 2.0 * self.nx                                  # int p dV in J
+        np.testing.assert_allclose(result['beta_pol'], 4 * integral / (6.0 * pb.MU0 * (1.0e7) ** 2), rtol=1e-14)
+
+    def test_normalised_beta_follows_the_dd_formula(self):
+        result = pb.imas_betas(*self.case())
+        np.testing.assert_allclose(result['beta_tor_norm'], 100 * result['beta_tor'] * 2.0 * 5.0 / 10.0, rtol=1e-14)
+
+    def test_beta_pol_and_beta_tor_ignore_the_signs_but_the_normalised_beta_keeps_them(self):
+        base = pb.imas_betas(*self.case())
+        flipped = pb.imas_betas(*self.case(b0=-5.0, ip=-1.0e7))
+        np.testing.assert_allclose(flipped['beta_tor'], base['beta_tor'])
+        np.testing.assert_allclose(flipped['beta_pol'], base['beta_pol'])
+        np.testing.assert_allclose(flipped['beta_tor_norm'], base['beta_tor_norm'])       # B0/Ip keeps its sign
+        counter = pb.imas_betas(*self.case(b0=-5.0))
+        np.testing.assert_allclose(counter['beta_tor_norm'], -base['beta_tor_norm'])
+
+    def test_a_fixed_radius_scales_the_betas_as_the_definitions_say(self):
+        # same BZXR = r0*b0: beta_tor goes as r0^2 (b0 = BZXR/r0), beta_pol as 1/r0
+        a = pb.imas_betas(*self.case(b0=36.0 / 6.0, r0=6.0))
+        b = pb.imas_betas(*self.case(b0=36.0 / 7.0, r0=7.0))
+        np.testing.assert_allclose(b['beta_tor'] / a['beta_tor'], (7.0 / 6.0) ** 2, rtol=1e-13)
+        np.testing.assert_allclose(b['beta_pol'] / a['beta_pol'], 6.0 / 7.0, rtol=1e-13)
+
+    def test_inputs_that_do_not_fit_give_nothing(self):
+        pressure, dvol, b0, r0, ip, a = self.case()
+        self.assertEqual(pb.imas_betas(pressure, dvol[:, :-1], b0, r0, ip, a), {})
+        self.assertEqual(pb.imas_betas(pressure, dvol, b0[:-1], r0, ip, a), {})
+        self.assertEqual(pb.imas_betas(pressure[0], dvol[0], b0, r0, ip, a), {})
+
+    def test_minor_radius_of_a_shifted_ellipse_is_its_half_width(self):
+        moments = np.array([[1.7, 1.8], [0.5, 0.6]])                       # R = R0 + a cos(theta), two times
+        np.testing.assert_allclose(pb.boundary_minor_radius(moments), [0.5, 0.6], rtol=1e-4)
+        np.testing.assert_allclose(pb.boundary_minor_radius(moments + np.array([[3.0], [0.0]])), [0.5, 0.6], rtol=1e-4)
+
+    def test_minor_radius_with_a_triangular_sin_harmonic(self):
+        # R = R0 + a cos(theta + delta sin(theta)) has half-width a exactly; its first Fourier moments approximate it
+        theta, a, delta = np.linspace(0, 2 * np.pi, 4000, endpoint=False), 0.6, 0.3
+        radius = 1.7 + a * np.cos(theta + delta * np.sin(theta))
+        cos = np.array([[np.mean(radius * np.cos(k * theta)) * (1 if k == 0 else 2)] for k in range(8)])
+        sin = np.array([[np.mean(radius * np.sin(k * theta)) * 2] for k in range(8)])
+        self.assertAlmostEqual(float(pb.boundary_minor_radius(cos, sin)[0]), a, places=3)
+
+
+class ReadCountTests(unittest.TestCase):
+    def test_reads_are_counted_per_writer_and_the_set_of_names_is_unchanged(self):
+        ledger = MappingLedger()
+        ledger.writer = 'a'
+        for _ in range(30):
+            ledger.consume('DAREA')
+        ledger.consume('X')
+        ledger.consume('X')
+        ledger.writer = 'b'
+        ledger.consume('TE')
+        self.assertEqual(ledger.read_summary('a'), {'total': 32, 'variables': 2, 'most_repeated': {'DAREA': 30}})
+        self.assertEqual(ledger.read_summary('b'), {'total': 1, 'variables': 1, 'most_repeated': {}})
+        self.assertEqual(ledger.read_summary('absent'), {})
+        self.assertEqual(ledger.consumed('a'), ['DAREA', 'X'])
+
+    def test_only_variables_read_often_are_listed_most_first_and_capped(self):
+        ledger = MappingLedger()
+        ledger.writer = 'w'
+        for k in range(8):
+            for _ in range(11 + k):
+                ledger.consume(f'V{k}')
+        listed = ledger.read_summary('w', listed=3)['most_repeated']
+        self.assertEqual(list(listed), ['V7', 'V6', 'V5'])
+
+    def test_the_journal_carries_reads_only_when_there_are_some(self):
+        journal = ConversionJournal.__new__(ConversionJournal)
+        journal.data = {'writers': [], 'written_ids': []}
+        journal.record_writer('a', [], 0.1, reads={'total': 3, 'variables': 1, 'most_repeated': {}})
+        journal.record_writer('b', [], 0.1, reads={})
+        self.assertEqual(journal.data['writers'][0]['reads']['total'], 3)
+        self.assertNotIn('reads', journal.data['writers'][1])
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=1)

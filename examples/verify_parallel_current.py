@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# registry ids verified here (mapping_registry.yaml): equilibrium_rho_tor, core_profiles_rho_tor, j_parallel_core_profiles, j_parallel_equilibrium, core_sources_current_drive_ohmic_nbi
 """Verify the B0 used to normalize parallel current densities and rho_tor.
 
 IMAS defines ``j_parallel = average(J.B)/B0`` and ``rho_tor = sqrt(phi/(pi*B0))`` with B0 the
@@ -6,8 +7,8 @@ IDS's own ``vacuum_toroidal_field/b0``.  The converter divided by TRANSP's ``BZ`
 at a fixed radius, which differs from ``BZXR/r0`` by up to ~40% in the bundled cases), so the
 exported ``j_parallel`` and ``rho_tor`` did not match the exported ``b0``.
 
-1. static policy: ``BZ`` is read only for the three ``beta_tor_norm`` calculations, whose beta
-   is TRANSP's own definition (``BZXR**2 * <1/R**2>``) and is a separate, open question,
+1. static policy: ``BZ`` is read by no writer (the betas, its last users, are computed against the exported
+   b0 by ``plasma_betas``),
 2. (not with ``--quick``) a real conversion of NSTX 142202U01 (the axis moves 17%) read back
    from HDF5 in DD 4.1.1 (and 3.39.0 for core_sources/core_profiles): the invariants that do
    not depend on the normalization choice hold with the IDS's own ``b0`` -
@@ -37,12 +38,12 @@ except ImportError:      # pragma: no cover - environment dependent
     imas = None
 
 RUN = {'quick': False}
-# beta_tor_norm keeps TRANSP's BZ: its beta_tor is TRANSP's own (BZXR^2 <1/R^2>) quantity.
-BZ_READS_ALLOWED = {'imas_core_profiles.py': 1, 'imas_equilibrium.py': 1, 'imas_summary.py': 1}
+# BZ is read by no writer: the betas are computed against the exported b0 (plasma_betas), not TRANSP's BZ.
+BZ_READS_ALLOWED = {}
 
 
 class StaticPolicyTests(unittest.TestCase):
-    def test_bz_is_only_read_for_beta_tor_norm(self):
+    def test_bz_is_read_by_no_writer(self):
         counts = {}
         for path in sorted(ROOT.glob('*.py')):
             text = path.read_text(encoding='utf-8')

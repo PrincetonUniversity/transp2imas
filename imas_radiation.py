@@ -5,9 +5,10 @@ import re
 import numpy as np
 from nc2imas import *
 from utilities import append_successful_entries
+from writer_base import IdsWriter
 
 
-class imas_radiation:
+class imas_radiation(IdsWriter):
     """Translate spatial TRANSP radiation outputs to the IMAS radiation IDS.
 
     Radiation quantities in this IDS are emitted power/emissivity and are
@@ -22,25 +23,24 @@ class imas_radiation:
         'recombination': (11, 'Emission from recombination'),
     }
 
-    def __init__(self, ncimas:nc2imas):
-        self.im = ncimas
-        self.logger = ncimas.logger
-        self.time = np.asarray(self.im.get_ncvar('TIME3'), dtype=np.float64)
-        self.x = np.asarray(self.im.get_ncvar('X'), dtype=np.float64)
-        self.xb = np.asarray(self.im.get_ncvar('XB'), dtype=np.float64)
-        self.dvol = np.asarray(self.im.get_ncvar('DVOL', self.im.vconv), dtype=np.float64)
+    def _load_grid(self):
+        """Read the time and radial grids the processes are written on (done in ``build``, not at construction)."""
+        self.time = np.asarray(self.cdf.get_ncvar('TIME3'), dtype=np.float64)
+        self.x = np.asarray(self.cdf.get_ncvar('X'), dtype=np.float64)
+        self.xb = np.asarray(self.cdf.get_ncvar('XB'), dtype=np.float64)
+        self.dvol = np.asarray(self.cdf.get_ncvar('DVOL', self.grid.vconv), dtype=np.float64)
         self.nt = len(self.time)
         self.nx = self.x.shape[1] if self.x.ndim == 2 else 0
-        self.create_ids()
 
     def _has(self, name):
-        return self.im.check_var_name(name)
+        return self.cdf.check_var_name(name)
 
     def _get(self, name, mult=None):
-        arr = self.im.get_ncvar(name)
-        if not self.im.is_valid(arr):
+        arr = self.cdf.get_ncvar(name)
+        if not self.fill.is_valid(arr):
             return np.array([])
         arr = np.asarray(arr, dtype=np.float64)
+        arr = np.asarray(self.fill.check_profile_shape(name, arr, self.nt, self.nx))   # wrong radial size: broken mapping
         return arr if mult is None else arr * mult
 
     @staticmethod
@@ -57,7 +57,7 @@ class imas_radiation:
 
     def _inside_boundary(self, emissivity):
         """Cumulative emitted power at TRANSP XB zone boundaries."""
-        if not self.im.is_valid(emissivity, self.dvol):
+        if not self.fill.is_valid(emissivity, self.dvol):
             return np.array([])
         emissivity = np.asarray(emissivity, dtype=np.float64)
         if emissivity.shape != self.dvol.shape:
@@ -69,7 +69,7 @@ class imas_radiation:
         inside_b = self._inside_boundary(emissivity)
         if not inside_b.size:
             return np.array([])
-        return self.im.interp_radial_profiles(inside_b, self.xb, self.x, axis_value=0.0)
+        return self.grid.interp_radial_profiles(inside_b, self.xb, self.x, axis_value=0.0)
 
     def _integral(self, emissivity):
         inside_b = self._inside_boundary(emissivity)
@@ -89,7 +89,7 @@ class imas_radiation:
         self._set_process_identifier(process, name)
         process.global_quantities.resize(self.nt)
         process.profiles_1d.resize(self.nt)
-        self.im.fill_profiles1d_grid(process)
+        self.fill.fill_profiles1d_grid(process)
         for it in range(self.nt):
             process.global_quantities[it].time = float(self.time[it])
             process.profiles_1d[it].time = float(self.time[it])
@@ -111,7 +111,7 @@ class imas_radiation:
                 g.power_electrons = float(electron[it])
 
     def _fill_electron_process(self, process, name, var):
-        emissivity = self._get(var, self.im.vol_inv)
+        emissivity = self._get(var, self.grid.vol_inv)
         if not emissivity.size:
             return False
         self._prepare_process(process, name)
@@ -120,8 +120,8 @@ class imas_radiation:
         self._fill_globals(process, power, electron=power)
         for it in range(self.nt):
             p = process.profiles_1d[it]
-            self.im.fill_data(p.electrons.emissivity, emissivity, ind=it, chk=self.nx)
-            self.im.fill_data(p.electrons.power_inside, inside, ind=it, chk=self.nx)
+            self.fill.fill_data(p.electrons.emissivity, emissivity, ind=it, chk=self.nx)
+            self.fill.fill_data(p.electrons.power_inside, inside, ind=it, chk=self.nx)
         self.logger.info(f'radiation: {name} <- {var}')
         return True
 
@@ -131,23 +131,23 @@ class imas_radiation:
         try:
             return token, atom_base(token)
         except KeyError:
-            self.im.mapping.skipped(f'unknown species token {token!r}', target='process/ion')
+            self.ctx.mapping.skipped(f'unknown species token {token!r}', target='process/ion')
             return token, None
 
     def _fill_element_identity(self, node, token, z_ion=None):
         key, atom = self._atom_for_token(token)
         if atom is None:
-            self.im.set_species_name(node, key)
+            self.fill.set_species_name(node, key)
             if z_ion is not None:
                 node.z_ion = float(z_ion)
             return
         node.element.resize(1)
         node.element[0].a = float(atom.a)
-        self.im.set_nuclear_charge(node.element[0], atom.z_n)
+        self.fill.set_nuclear_charge(node.element[0], atom.z_n)
         node.element[0].atoms_n = int(atom.atoms_n)
         if z_ion is not None:
             node.z_ion = float(z_ion)
-        self.im.set_species_name(node, atom.label.strip())
+        self.fill.set_species_name(node, atom.label.strip())
 
     def _single_impurity_token(self):
         """Infer the single impurity element from TRANSP AIMP/XZIMP.
@@ -158,15 +158,15 @@ class imas_radiation:
         and nuclear charge.  Resolve that pair against ``atom_base.entries``
         only when it identifies a unique physical element closely enough.
         """
-        if not getattr(self.im, 'nmlist', None):
+        if not getattr(self.namelist, 'nmlist', None):
             return None
 
         def scalar(name):
-            key = next((k for k in self.im.nmlist
+            key = next((k for k in self.namelist.nmlist
                         if str(k).strip().upper() == name), None)
             if key is None:
                 return None
-            value = self.im.nmlist[key]
+            value = self.namelist.nmlist[key]
             if isinstance(value, (list, tuple, np.ndarray)):
                 if len(value) != 1:
                     return None
@@ -174,7 +174,7 @@ class imas_radiation:
             if isinstance(value, str):
                 value = re.split(r'[\s,;]+', value.strip())[0]
             try:
-                return float(self.im.parse_number(value, float))
+                return float(self.namelist.parse_number(value, float))
             except (ValueError, TypeError):
                 try:
                     return float(str(value).replace('D', 'E').replace('d', 'e'))
@@ -219,7 +219,7 @@ class imas_radiation:
         totals = {}
         states = {}
         ignored = {'TOK', 'SINGL'}
-        for name in getattr(self.im, 'vars_', []):
+        for name in getattr(self.cdf, 'vars_', []):
             m = re.fullmatch(r'PRLS_([A-Z0-9]+)', name)
             if m:
                 sp = m.group(1)
@@ -255,9 +255,9 @@ class imas_radiation:
         species = sorted(set(totals) | set(states))
         for sp in species:
             if sp in totals:
-                arr = self._get(totals[sp], self.im.vol_inv)
+                arr = self._get(totals[sp], self.grid.vol_inv)
             else:
-                arr = self._sum_valid(*[self._get(name, self.im.vol_inv)
+                arr = self._sum_valid(*[self._get(name, self.grid.vol_inv)
                                         for _z, name in states.get(sp, [])])
             if arr.size:
                 pieces.append(arr)
@@ -265,7 +265,7 @@ class imas_radiation:
 
     def _fill_line_radiation(self, process):
         totals, states = self._line_inventory()
-        total_emissivity = self._get('PRAD_LI', self.im.vol_inv)
+        total_emissivity = self._get('PRAD_LI', self.grid.vol_inv)
         if not total_emissivity.size:
             total_emissivity = self._line_total_from_species(totals, states)
         if not total_emissivity.size:
@@ -282,39 +282,49 @@ class imas_radiation:
         species = sorted(set(totals) | set(states))
         species_data = []
         for sp in species:
-            state_data = [(z, name, self._get(name, self.im.vol_inv))
+            state_data = [(z, name, self._get(name, self.grid.vol_inv))
                           for z, name in states.get(sp, [])]
             state_data = [(z, name, arr) for z, name, arr in state_data if arr.size]
             if sp in totals:
-                sp_total = self._get(totals[sp], self.im.vol_inv)
+                sp_total = self._get(totals[sp], self.grid.vol_inv)
             else:
                 sp_total = self._sum_valid(*[arr for _z, _name, arr in state_data])
             if sp_total.size or state_data:
                 species_data.append((sp, sp_total, state_data))
 
+        # Everything below that does not depend on the time slice is computed once: the enclosed power of each
+        # species and charge state (a cumulative sum and a radial interpolation of the whole time-by-radius
+        # array) and the species label.  They used to be recomputed for every slice.
+        species_inside = []
+        for sp, sp_total, state_data in species_data:
+            _, atom = self._atom_for_token(sp)
+            species_inside.append({
+                'ion': self._inside(sp_total) if sp_total.size else None,
+                'base': atom.label.strip() if atom is not None else sp,
+                'states': [self._inside(state_prof) for _charge, _name, state_prof in state_data]})
+
         for it in range(self.nt):
             p = process.profiles_1d[it]
-            self.im.fill_data(p.emissivity_ion_total, total_emissivity, ind=it, chk=self.nx)
-            self.im.fill_data(p.power_inside_ion_total, total_inside, ind=it, chk=self.nx)
+            self.fill.fill_data(p.emissivity_ion_total, total_emissivity, ind=it, chk=self.nx)
+            self.fill.fill_data(p.power_inside_ion_total, total_inside, ind=it, chk=self.nx)
             p.ion.resize(len(species_data))
             for ji, (sp, sp_total, state_data) in enumerate(species_data):
                 ion = p.ion[ji]
+                cached = species_inside[ji]
                 self._fill_element_identity(ion, sp)
                 ion.multiple_states_flag = 1 if state_data else 0
                 if sp_total.size:
-                    self.im.fill_data(ion.emissivity, sp_total, ind=it, chk=self.nx)
-                    self.im.fill_data(ion.power_inside, self._inside(sp_total), ind=it, chk=self.nx)
+                    self.fill.fill_data(ion.emissivity, sp_total, ind=it, chk=self.nx)
+                    self.fill.fill_data(ion.power_inside, cached['ion'], ind=it, chk=self.nx)
 
                 ion.state.resize(len(state_data))
                 for js, (charge, _name, state_prof) in enumerate(state_data):
                     state = ion.state[js]
                     state.z_min = float(charge)
                     state.z_max = float(charge)
-                    _, atom = self._atom_for_token(sp)
-                    base = atom.label.strip() if atom is not None else sp
-                    self.im.set_species_name(state, f'{base}+{charge}')
-                    self.im.fill_data(state.emissivity, state_prof, ind=it, chk=self.nx)
-                    self.im.fill_data(state.power_inside, self._inside(state_prof), ind=it, chk=self.nx)
+                    self.fill.set_species_name(state, f"{cached['base']}+{charge}")
+                    self.fill.fill_data(state.emissivity, state_prof, ind=it, chk=self.nx)
+                    self.fill.fill_data(state.power_inside, cached['states'][js], ind=it, chk=self.nx)
 
         detail = []
         if totals:
@@ -326,27 +336,28 @@ class imas_radiation:
         return True
 
 
-    def create_ids(self):
+    def build(self):
+        self._load_grid()
         self.logger.info('radiation')
-        ids = self.im.new_ids('radiation')
-        ids = self.im.fill_properties(ids)
-        self.im.fill_code_properties(ids)
+        ids = self.dd.new_ids('radiation')
+        ids = self.fill.fill_properties(ids)
+        self.fill.fill_code_properties(ids)
         ids.ids_properties.homogeneous_time = 1
         ids.time = np.asarray(self.time, dtype=np.float64)
-        self.im.fill_vac_tor_field(ids)
+        self.fill.fill_vac_tor_field(ids)
 
         builders = [
             lambda p: self._fill_electron_process(p, 'bremsstrahlung', 'PRAD_BR'),
             lambda p: self._fill_electron_process(p, 'synchrotron_radiation', 'PRAD_CY'),
             self._fill_line_radiation,
         ]
-        used = append_successful_entries(lambda: self.im.new_ids('radiation'), ids, 'process', builders)
+        used = append_successful_entries(lambda: self.dd.new_ids('radiation'), ids, 'process', builders)
 
         if used:
-            self.logger.info(f'radiation: wrote {used} emission processes')
-            self.im.putdb_imas(ids)
-        else:
-            self.logger.info('radiation: no supported CDF radiation profiles found; IDS not written')
+            self.logger.info(f'radiation: built {used} emission processes')
+            return [ids]
+        self.logger.info('radiation: no supported CDF radiation profiles found; IDS not written')
+        return []
 
 
 if __name__ == '__main__':

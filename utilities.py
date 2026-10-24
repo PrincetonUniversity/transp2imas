@@ -18,21 +18,27 @@ def check_file_exists(name:str)->bool:
         path_ = os.readlink(name)
     return os.path.isfile(path_)
 
-def vacuum_field_reference(raxis_m, bzxr_tm, bt_sign, times, source_times):
+def vacuum_field_reference(raxis_m, bzxr_tm, bt_sign, times, source_times, r0=None):
     """Reference radius ``r0`` and vacuum toroidal field ``b0(times)`` for IMAS.
 
     IMAS requires ``vacuum_toroidal_field.r0 * b0(t)`` to equal the TF IDS vacuum field
-    times radius (TRANSP ``BZXR`` with the toroidal-field sign applied).  ``r0`` is therefore
-    one constant radius, the mean of the first and last magnetic-axis radius of the source
-    time grid, and ``b0 = bt_sign * BZXR / r0``.  Dividing by the time-dependent axis radius
+    times radius (TRANSP ``BZXR`` with the toroidal-field sign applied), so ``r0`` is one
+    constant radius and ``b0 = bt_sign * BZXR / r0``.  Dividing by the time-dependent axis radius
     instead breaks the product whenever the axis moves (up to 17% in the NSTX examples).
 
-    ``raxis_m`` and ``bzxr_tm`` are on ``source_times``; ``b0`` is interpolated to ``times``.
-    Returns ``(r0, b0)``.
+    The Data Dictionary describes ``r0`` as "usually a fixed position such as the middle of the
+    vessel".  The caller passes that as ``r0`` (``nc2imas`` uses the middle of the limiter
+    ``RLIM``, which gives the machines' own reference fields: ITER 5.28 T at 6.22 m, DIII-D 1.67 T
+    at 1.69 m).  Without it, ``r0`` is the mean of the first and last magnetic-axis radius of the
+    source time grid, which depends on the plasma and can be 15% off the machine radius.
+
+    ``raxis_m`` (may be ``None`` when ``r0`` is given) and ``bzxr_tm`` are on ``source_times``;
+    ``b0`` is interpolated to ``times``.  Returns ``(r0, b0)``.
     """
-    raxis = np.asarray(raxis_m, dtype=np.float64)
     field_r = bt_sign * np.asarray(bzxr_tm, dtype=np.float64)
-    r0 = 0.5 * (raxis[0] + raxis[-1])
+    if r0 is None:
+        raxis = np.asarray(raxis_m, dtype=np.float64)
+        r0 = 0.5 * (raxis[0] + raxis[-1])
     if not np.array_equal(times, source_times):
         field_r = np.interp(times, source_times, field_r)
     return float(r0), field_r / r0
@@ -161,7 +167,9 @@ def get_args(argv=None):
         choices=['MDS','MDSPLUS', 'HDF', 'HDF5'], help='IMAS backend')
     parser.add_argument('-r', '--run', type=int,
         help='run number of o/p IDS (overrides default converted number: eg: Z10 -> 2610)')
-    parser.add_argument('-new', '--new-db', help='create new database', action='store_true')
+    parser.add_argument('-new', '--new-db', action='store_true',
+                        help='create a fresh entry for the selected database, pulse and run; the run number is '
+                             'not allocated automatically, and without -new an existing entry is opened')
     parser.add_argument('-o', '--occur', type=int, help='occurrence')
     parser.add_argument('-u', '--user', type=str, help='username or path of database')
     parser.add_argument('-m', '--machine', type=str, help='machine. eg: ITER')
