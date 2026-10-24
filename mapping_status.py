@@ -16,7 +16,8 @@ It has no IMAS or NetCDF dependency.
 MISSING_OPTIONAL = 'missing_optional'     # a source variable that is not in the CDF
 SKIPPED = 'skipped'                       # a field not written, with the reason
 UNAVAILABLE_IN_DD = 'unavailable_in_dd'   # an IDS or node that the target Data Dictionary lacks
-KINDS = (MISSING_OPTIONAL, SKIPPED, UNAVAILABLE_IN_DD)
+ADJUSTED = 'adjusted'                     # a field written after a documented adjustment of the source
+KINDS = (MISSING_OPTIONAL, SKIPPED, UNAVAILABLE_IN_DD, ADJUSTED)
 
 
 class MappingError(RuntimeError):
@@ -107,6 +108,7 @@ class MappingLedger:
         self.writer = None            # name of the writer currently running, set by the runner
         self._entries = {}            # (writer, kind, source, target, reason) -> count
         self._consumed = {}           # writer (None = before any writer) -> {CDF variable names read}
+        self._reads = {}              # writer (None = before any writer) -> {CDF variable name: number of reads}
 
     def record(self, kind, *, source=None, target=None, reason='', writer=None):
         if kind not in KINDS:
@@ -123,13 +125,33 @@ class MappingLedger:
     def unavailable_in_dd(self, target, reason):
         self.record(UNAVAILABLE_IN_DD, target=target, reason=reason)
 
+    def adjusted(self, reason, *, source=None, target=None):
+        """The field was written, but only after the source was adjusted (for example a level clamped into range)."""
+        self.record(ADJUSTED, source=source, target=target, reason=reason)
+
     def consume(self, source):
         """Record that the CDF variable ``source`` was actually read (by the current writer)."""
-        self._consumed.setdefault(self.writer, set()).add(str(source))
+        name = str(source)
+        self._consumed.setdefault(self.writer, set()).add(name)
+        counts = self._reads.setdefault(self.writer, {})
+        counts[name] = counts.get(name, 0) + 1
 
     def consumed(self, writer=None):
         """Sorted names of CDF variables read by ``writer`` (``None``: before any writer ran)."""
         return sorted(self._consumed.get(writer, ()))
+
+    def read_summary(self, writer=None, *, repeated_over=10, listed=5):
+        """``{'total', 'variables', 'most_repeated'}`` of the CDF reads of ``writer``, or ``{}`` without reads.
+
+        ``most_repeated`` lists up to ``listed`` variables read more than ``repeated_over`` times, most
+        first: where a read sits inside a loop, which is what a caching decision needs to see.
+        """
+        counts = self._reads.get(writer, {})
+        if not counts:
+            return {}
+        repeated = sorted(((n, name) for name, n in counts.items() if n > repeated_over), reverse=True)
+        return {'total': sum(counts.values()), 'variables': len(counts),
+                'most_repeated': {name: n for n, name in repeated[:listed]}}
 
     def entries(self, writer=None):
         """``[{'kind', 'source', 'target', 'reason', 'count'}]`` for one writer (all if ``None``)."""

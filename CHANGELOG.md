@@ -4,6 +4,93 @@ Notable changes to transp2imas are recorded here. Future entries and GitHub
 releases are managed automatically by Release Please from Conventional Commit
 messages.
 
+- Verify the registry on a second case, DIII-D 147634T16. `examples/verify_registry_values.py` now runs on ITER
+  (strict) and on 147634T16 (runs what its data allow, skips the rest with the reason): 425 tests at DD 4.1.1 and
+  3.39.0. 147634T16 is the MMM07 reference, so `ct_mmm07_diffusivities` and `ct_theory_auxiliary_xml` are now
+  readback-verified (all five MMM07 models); only `wv_ec_frequency` remains unverified. The new test of the 2-D flux
+  checks that the boundary outline is a contour of `profiles_2d/psi` at `boundary/psi` (ITER: to 1e-7 of the span).
+- Fix the LCFS outline of equilibria whose PSIRZ does not reach the contour level. The rectangular PSIRZ of
+  DIII-D 147634T16 is clamped 0.1-0.2% below the transport-edge flux `PLFLXA`, so no contour exists at that level and
+  whether a curve was found depended on the sign convention and on the contouring library: DD 4.1.1 got an outline,
+  DD 3.39 got a 5-point fragment, rejected, and no outline. `trace_boundary` now uses the nearest level inside the data
+  range, which traces the edge of the clamped region (identical outline in both DDs, within 0.14 mm of the earlier
+  DD 4.1.1 result), and records it as an `adjusted` entry of the mapping journal (a new status kind next to
+  `skipped`). Cases whose level is in range are unchanged.
+- Start changing the writer interface so that constructing a writer does not do its work. `writer_base.IdsWriter` has
+  `build()`, which returns a list of the IDS objects to write (or `(ids, occurrence)` pairs), and `run()`, which
+  submits them; `run_writer` runs migrated writers through `run()` and leaves unmigrated ones alone, so
+  `convert.make_writers` wraps every writer in it. All 22 writers are migrated, with unchanged stored output
+  (`tf`, `wall`, `lh_antennas`, `ic_antennas`, `nbi`, `ec_launchers`, `sawteeth`, `dataset_fair`, `workflow`,
+  `summary`, `transport_solver_numerics`, `pf_active`, `pf_passive`, `radiation`, `distribution_sources`,
+  `edge_sources`, `waves`, `core_sources`, `core_profiles`, `equilibrium`, `distributions`, `core_transport`).
+  Writers that read grids when constructed now read them at the start of `build()`; `core_transport` returns
+  occurrence 0 and the region view occurrences as `(ids, occurrence)` pairs; `equilibrium` keeps its timing around
+  `_build()`. A build that fails submits nothing. Tested by `examples/verify_writer_interface.py`, which also
+  requires that every writer `convert.py` imports is migrated; the mock tests of the writers now check that
+  construction does not write and call `run()`. The `core_profiles`/`equilibrium`/`core_transport` structure tests
+  look for `build`/`_build`. The sawteeth, core-profiles and equilibrium time-grid verifiers skip companion CDFs
+  without a `TIME` coordinate.
+- Extend the radial-shape check to the readers of `waves`, `edge_sources`, `radiation` and `distribution_sources`.
+  A profile present in the CDF with a different radial size than the writer's grid used to be dropped silently by
+  those readers (indistinguishable from absent data); it is now a broken mapping that names the variable (strict:
+  `MappingError`, lenient: a skipped field with the reason), as in `core_sources`. The profile fills of
+  `core_profiles` (40) and `equilibrium` (33) now pass the radial size to `fill_data` too. Tested by corrupting one
+  variable per writer in a bundled case (`EveryReaderShapeTests` in `examples/verify_mapping_status.py`, six writers).
+- Fix documentation drift named in the review: the `pt_solver_regions` header said region settings are not separate
+  `core_transport` occurrences although region view occurrences are written (it now describes occurrence 0 as the
+  assembled solution and the region occurrences as views with no invented profiles); hard-coded example counts in
+  the Makefile help and the docs (10, 9) are replaced by "every bundled example"; and `-new` is documented, in
+  `--help` and the README, as creating a fresh entry for the selected database, pulse and run without allocating a
+  run number, an existing entry being opened when it is omitted.
+- Move the validity checks, array arithmetic and IDS-node assignment primitives out of `nc2imas` into
+  `ids_assignment.py` (`is_valid`, `sum_arrays`, `operate_arrays`, `np_multiply_sum`, `check_1dim`, `fill_value`,
+  `fill_data`), as functions that take the logger and the `MappingLedger` explicitly. The `nc2imas` methods of the
+  same names keep their signatures and delegate. Strict and lenient mapping behaviour is unchanged and now has direct
+  unit tests (`examples/verify_ids_assignment.py`, 19 tests, no IMAS needed).
+- Move conversion provenance out of `nc2imas` into `code_provenance.py`: the portable source-file records (name with
+  SHA-256, no absolute path, capped at 10), writing them into either DD layout, the `ids_properties/comment` text and
+  the `code.parameters` XML, all as functions of plain values. About 300 lines leave `nc2imas.py` (1384 to 1089),
+  including five unused legacy helpers (`_xml_safe_text`, `_clean_namelist_path`, `_resolve_input_file`,
+  `_read_parameter_file`, `_append_namelist_xml`) that `input_provenance.py` had already replaced. The `comment`,
+  `code.parameters` and provenance records stored for DD 4.1.1 and 3.39.0 are byte-identical to the previous code.
+- Move the COCOS/direction sign policy out of `nc2imas` into `cocos_signs.py` (`resolve_signs` returns an immutable
+  `CocosSigns`; `nc2imas` publishes the same attributes and prints the same line). Verified against a hand-written
+  table of all direction and DD3/DD4 combinations (`examples/verify_cocos_signs.py`).
+- Fix the default Data Dictionary of `make verify-end-to-end` run from `examples/`: with `DD_VERSION` unset it passed an
+  empty version and used the IMAS-Python default (DD 3.39), so the 12-case check was not exercising DD 4.1.1. It now
+  resolves `auto` to 4.1.1 like the root Makefile; `docs/testing.md` has a table of what each check covers.
+- Read the FI_TAR archives of a NUBEAM run in parallel. Each archive is a gzip stream of hundreds of MB that must be
+  decompressed to reach the equilibrium members, and they were read one after another. They are now read by up to
+  four `spawn` worker processes (a bounded window of at most twice the worker count is held in memory, results are
+  consumed in the original order and an error surfaces at its archive's turn); `TRANSP2IMAS_FI_WORKERS=1` restores
+  the sequential read. On NSTX 120967E03 the `distributions` writer fell from 40 s to 21 s with identical snapshots.
+- Record where conversion time goes and remove the largest cost in our own code. The journal now carries
+  `write_seconds` per writer (time in the backend: IMAS validation, put and compression) next to `seconds`; on CMOD
+  89846 the backend is about 60% of the run. Radial interpolation (`nc2imas.interp_radial_profiles`) now uses a
+  vectorized operator cached by the content of the two coordinate arrays (`radial_interpolation.py`), because the
+  `radiation` writer repeated the same X to XB mapping 2385 times with a per-time-slice `np.interp` loop. Grids that
+  are not strictly increasing or contain NaN use the original loop. All 32,898 interpolations of every radial
+  variable in the bundled CDFs equal the original to 1e-12, and the `radiation` build on CMOD fell from 5.4 s to 1.9 s.
+- Start the composition refactor behind the unchanged `nc2imas` interface: Data Dictionary version logic moves to
+  `dd_adapter.DDAdapter`, IDS puts become `WriteRequest` records queued by `ImasStore`, and the writer loop moves from
+  `convert.py` to `ConversionRunner`, which flushes each writer's IDSs after the writer returned. Constructing a writer
+  no longer writes to the database, and a writer that fails writes none of its own output (previously earlier puts of
+  the same writer stayed). Outputs of the 12 bundled cases are unchanged.
+- Fix mixed poloidal-flux references in `equilibrium`. `profiles_1d/psi` and `psi_magnetic_axis` are absolute
+  (axis value `PSI0_TR`), but `boundary/psi` was written from `PBPMHD` and `profiles_2d/psi` from `PSIRZ`, both of
+  which are relative to the magnetic axis (ITER: `boundary/psi` +75.4 Wb against -12.9 Wb at the profile edge).
+  `boundary/psi` is now the flux of the traced outline (the profile edge, equal to `global_quantities/psi_boundary`),
+  `profiles_2d/psi` is shifted by the axis value (the boundary is still traced on the relative field), and the DD3
+  `boundary_separatrix/psi` is the absolute bounding-point flux; DD4 no longer reads `PBPMHD`.
+- Register and read back the `equilibrium`, `summary`, `distribution_sources`, `waves` and the species-resolved,
+  global and remaining `core_profiles` mappings (209 readback tests on ITER 38530P94 for DD 4.1.1 and 3.39.0).
+- Grow the mapping registry to the hardware, heating, `core_profiles`, `core_transport` and `edge_sources` mappings and
+  read them back: `examples/verify_registry_values.py` converts ITER 38530P94 for DD 4.1.1 and 3.39.0 and compares
+  each registered value with an independent numpy computation from the CDF. A registry entry may only claim a
+  test that mentions its id, and the test file and registry must list the same ids. Writing it corrected the
+  registry's own over-claims (`PRAD_LI` is `emissivity_ion_total`, not electron emissivity; `VNDNC_E` is not an
+  ion velocity; fast-ion temperature is the mean energy `EBEAM`/`EFUSN`) and showed the species-resolved
+  `SIGF_*_*`/`SIRC_*_*` channels are read but not exported.
 - Add measured mapping coverage and a declarative mapping registry. The CDF dataset records which variables each
   writer actually read (`consumed` and `setup_reads` in the `--report-json` journal);
   `mapping_registry.yaml` lists typed, XML-only, input and deliberately deferred mappings with units, transform,

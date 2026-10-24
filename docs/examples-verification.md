@@ -8,7 +8,7 @@ From the repository root:
 
 ```bash
 make check                 # quick policy, writer, provenance and plot tests
-make verify-all            # all 10 example CDFs + both real ISolver PF cases
+make verify-all            # every bundled example CDF + both real ISolver PF cases
 make verify-waves          # run EC/IC closures for every CDF; N/A when absent
 make verify-core-profiles  # verify Te/Ti peaking on TIME/TIME3 in all CDFs
 make verify-inputs         # input XML preservation for every CDF
@@ -81,7 +81,7 @@ objects, and does not imply a completed IMAS DD4.1.1 write/readback.
 
 ### Generic theory-model transport (MMM07, GLF23 and future TGLF)
 
-`make verify-theory` inspects every available example. Of the ten current cases,
+`make verify-theory` inspects every available example. Of the bundled cases,
 DIII-D `147634T16` has nonzero MMM07 (Weiland, DRIBM/DRBM, ETG, MTM)
 outputs; ITER 38530P94 has nonzero GLF23 heat/momentum diffusivities.
 Other declared MMM/GLF23 source arrays are zero-filled placeholders.

@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# registry ids verified here (mapping_registry.yaml): pt_runtime_diagnostics_xml
 """Read back the PT_SOLVER runtime diagnostics stored in ``core_transport`` code parameters.
 
 The diagnostic channels (``NPTRITER``, ``PT_CPTIME``, ``PT_WTIME``) live on the native CDF ``TIME``

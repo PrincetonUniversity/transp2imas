@@ -15,6 +15,7 @@ mismatch only for time slice 0 and skipped the other slices silently).
 | Source data empty or invalid for a field | the field is skipped and recorded as `skipped` (`no source data`) |
 | Variable present but cannot be read, indexed, interpolated, shaped or assigned | **broken mapping**: `MappingError` naming the writer, the CDF variable and the IDS target |
 | IDS missing from the target DD (`IDSNameError`) | recorded as `unavailable_in_dd` |
+| A field written after a documented adjustment of the source | recorded as `adjusted` with the reason (the LCFS contour level clamped into the PSIRZ range, see below) |
 | A writer that writes nothing | always has a `skipped` entry with its reason |
 
 `MappingError` aborts the conversion (the journal status is `FAIL` and records the message). With
@@ -44,8 +45,21 @@ Counts are always complete; the listings are capped at 200 entries. The ledger i
 * `netcdf_class.get_ncvar`: absent variable -> `missing_optional`; any other failure -> `MappingError`.
 * `nc2imas.fill_data`: returns whether it wrote; absent data -> recorded skip; size mismatch (every
   time slice), scalar-for-array, shape or schema error -> `MappingError`.
-* `nc2imas.check_profile_shape` (used by the `core_sources` reader): a `TIME3 x radial` profile of
-  another radial size is a named broken mapping instead of a later numpy broadcast error.
+* `nc2imas.check_profile_shape`: a `TIME3 x radial` profile of another radial size is a named broken mapping
+  instead of a later numpy broadcast error or a silent drop.  `core_transport`, `summary`, `core_sources`, `waves`,
+  `edge_sources`, `radiation` and `distribution_sources` apply it to every radial profile they read, and
+  `core_profiles` and `equilibrium` to the radial profiles they combine before filling (`IdsWriter.profile`).
+  `core_transport`, `core_sources` and `radiation` also pass `chk=` to `fill_data`, and so do the profile fills of
+  `core_profiles` and `equilibrium` (the 2-D psi grid and the boundary scalars are not radial and are not checked
+  this way); there the error names the field being filled (for example `zeff`, `elong`) and its IDS path.  A central
+  check in `get_ncvar` was tried and removed: whether a variable is a radial profile is the reader's knowledge (a
+  dimension named `XGRID_NPHI` is not radial), and in a real CDF a profile on `X` or `XB` cannot differ in length from `X`.
+  Measured with one corrupted profile at a time under the strict policy on DIII-D 147634B13 (before -> after, of the
+  radial profiles each writer read): `core_transport` 35 -> 58 of 59 fail naming the CDF variable (the other is `XB`
+  itself); `summary` 0 -> 18 of 20 (the others are `X` and `XB`); `core_profiles` 12 -> 35 of 46, 10 still fail at fill
+  time naming the field and IDS path, and `ZIMPS_TOK` (read, never written) is the one silent case; `equilibrium` 0 -> 29
+  of 31 (the others are `X` and `XB`).  Before, 8 profiles (`UTHRM`, `UTOTL`, `CUROH`, `PTOWB`, `DRAV`, `DRAVFAC`, `GXI`,
+  `TRIANG`) were skipped by a shape comparison without any record.
 * 37 `except Exception` blocks were reduced to 8. Derivations that hid failures (parallel current,
   `rho_tor`, `rho_pol_norm`, `psi_norm`, beta, poloidal-field energy, thermal pressure, ...) now go
   through `mapping.broken`; metadata look-ups catch only what they can raise (`atom_base` raises
@@ -65,7 +79,7 @@ source, so a name that merely appears in a writer counts as covered. Two measure
 
 **Measured reads.** `netcdf_class` wraps the CDF dataset in `mapping_status.RecordingDataset`. Item access and
 `get` on `variables` record the variable name against the running writer; membership tests, iteration and
-`keys()` do not. The journal lists them per writer (`consumed`) and before any writer (`setup_reads`).
+`keys()` do not. The journal lists them per writer (`consumed`) and before any writer (`setup_reads`). Each writer's record also has `reads`: how often, not only which. `total` reads, `variables` (distinct), and `most_repeated`, the variables read more than ten times (up to five, most first). A variable read hundreds of times is a read inside a per-slice loop, which is what a caching decision needs to see.
 A variable being read is not an export: for example `core_profiles` reads `VPOLD_NC`/`VTORD_NC` and writes
 them only when they sit on the profile grid.
 
@@ -88,3 +102,25 @@ variables are still "read, unregistered" and are not claimed as verified exports
 
 Finding from the first measured run: the audit listed `VPOLD_NC`/`VTORD_NC` as deferred while `core_profiles`
 did read them; the registry now records both facts.
+
+### Second case: DIII-D 147634T16
+
+`verify_registry_values.py` runs the same tests on two cases. ITER 38530P94 is strict: a missing variable or IDS
+is a failure, and every registered mapping is verified there. DIII-D 147634T16 is the bundled MMM07 reference
+case; it runs the same tests where its data allow and skips, with the reason, what it does not contain (no NBI,
+EC or IC data, no fast-ion density). On it, DD 4.1.1 verifies 87 tests and skips 19. It is also the only bundled
+case that verifies `ct_mmm07_diffusivities` (all five MMM07 models: typed coefficients and auxiliary channels)
+and `ct_theory_auxiliary_xml`; ITER verifies the same XML check for its GLF23 `DIFFIGLF`. Findings from adding it:
+the aggregate impurity density comes from `NIMP` because `NIMPS_TOK` is an all-zero placeholder; impurity ions carry
+`TX`, which differs from `TI` here; all-zero GLF23 channels give no `glf23` model; and the 2-D flux is clamped just
+inside the transport-edge flux (`imas_equilibrium.trace_boundary` then traces the edge of the clamped region and records an `adjusted` entry), so the outline is known only to about one flux-map grid cell there, and the outline-versus-`boundary/psi`
+check uses 1e-6 of the flux span on ITER and 1e-2 on this case.
+
+### Verification levels
+
+`readback_verified` means the value was written to HDF5, read back and compared with an independent
+computation from the CDF; `writer_verified` and `unverified` are weaker or absent. The validator requires
+that a verified entry lists test scripts that mention its id. `examples/verify_registry_values.py` is the
+bulk readback test (ITER 38530P94, DD 4.1.1 and 3.39.0); a registry entry and a `@covers` test must agree
+both ways. Signs (`ip_sign`, `q_sign`, `toroidal_rotation_sign`) are tested as a global sign with exact
+magnitude; the sign choice itself belongs to the COCOS verifiers. The only entry still `unverified` is the EC frequency taken from the namelist (`wv_ec_frequency`). `pf_active`/`pf_passive` are not registered: they need a user-supplied geometry manifest and their tests use synthetic fixtures.

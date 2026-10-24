@@ -50,7 +50,8 @@ class TestEndToEndContract(unittest.TestCase):
         self.assertIn("parser.add_argument('--report-json'", source)
         source = (ROOT / 'convert.py').read_text()
         self.assertIn('ConversionJournal(', source)
-        self.assertIn('nci._written_ids[before:]', source)
+        self.assertIn('ConversionRunner(nci, writers, journal).run(selected)', source)
+        self.assertIn('nci._written_ids[before:]', (ROOT / 'conversion_plan.py').read_text())
 
     def test_journal_does_not_claim_attempts_as_writes(self):
         with tempfile.TemporaryDirectory() as td:

@@ -4,10 +4,10 @@
 import re
 import numpy as np
 
-from nc2imas import nc2imas
+from writer_base import IdsWriter
 
 
-class imas_waves:
+class imas_waves(IdsWriter):
     """Translate TRANSP RF deposition/current-drive output to the IMAS waves IDS.
 
     The writer is deliberately conservative.  It only creates a ``waves`` IDS
@@ -54,29 +54,28 @@ class imas_waves:
 
     W_PER_CM3_TO_W_PER_M3 = 1.0e6
 
-    def __init__(self, ncimas: nc2imas):
-        self.im = ncimas
-        self.logger = ncimas.logger
-        self.time = np.asarray(self.im.get_ncvar('TIME3'), dtype=np.float64)
-        self.scalar_time = np.asarray(self.im.get_ncvar('TIME'), dtype=np.float64)
-        self.rho = np.asarray(self.im.get_ncvar('X'), dtype=np.float64)
-        self.dvol_cm3 = np.asarray(self.im.get_ncvar('DVOL'), dtype=np.float64)
-        self.darea_cm2 = np.asarray(self.im.get_ncvar('DAREA'), dtype=np.float64)
+    def _load_grid(self):
+        """Read the profile grids the waves are written on (done in ``build``, not at construction)."""
+        self.time = np.asarray(self.cdf.get_ncvar('TIME3'), dtype=np.float64)
+        self.scalar_time = np.asarray(self.cdf.get_ncvar('TIME'), dtype=np.float64)
+        self.rho = np.asarray(self.cdf.get_ncvar('X'), dtype=np.float64)
+        self.dvol_cm3 = np.asarray(self.cdf.get_ncvar('DVOL'), dtype=np.float64)
+        self.darea_cm2 = np.asarray(self.cdf.get_ncvar('DAREA'), dtype=np.float64)
         self.nt = len(self.time)
         self.nx = self.rho.shape[1] if self.rho.ndim == 2 else 0
-        self.create_ids()
 
     # ------------------------------------------------------------------
     # CDF / namelist inventory helpers
     # ------------------------------------------------------------------
     def _has(self, name):
-        return bool(self.im.check_var_name(name))
+        return bool(self.cdf.check_var_name(name))
 
     def _profile(self, name, mult=1.0):
         """Return a TIME3 x X profile, otherwise an empty array."""
         if not self._has(name):
             return np.array([])
-        arr = np.asarray(self.im.get_ncvar(name), dtype=np.float64)
+        arr = np.asarray(self.cdf.get_ncvar(name), dtype=np.float64)
+        arr = np.asarray(self.fill.check_profile_shape(name, arr, self.nt, self.nx))   # wrong radial size: broken mapping
         if self.rho.ndim != 2 or arr.shape != self.rho.shape:
             return np.array([])
         return arr * float(mult)
@@ -85,7 +84,7 @@ class imas_waves:
         """Return a scalar-time CDF quantity interpolated to ``target_time``."""
         if not self._has(name):
             return np.array([])
-        arr = np.asarray(self.im.get_ncvar(name), dtype=np.float64)
+        arr = np.asarray(self.cdf.get_ncvar(name), dtype=np.float64)
         if arr.ndim == 0:
             arr = np.asarray([float(arr)], dtype=np.float64)
         if arr.ndim != 1 or arr.size == 0:
@@ -98,7 +97,7 @@ class imas_waves:
 
         dims = ()
         try:
-            dims = tuple(self.im.nc.variables[name].dimensions)
+            dims = tuple(self.cdf.nc.variables[name].dimensions)
         except (AttributeError, KeyError, TypeError):
             pass
         if dims and dims[0] == 'TIME3' and len(self.time) == len(arr):
@@ -128,12 +127,12 @@ class imas_waves:
 
     def _namelist_lookup(self, name):
         """Case-insensitive raw lookup of NAME and NAME(i) in the TR.DAT map."""
-        if not getattr(self.im, 'nmlist', None):
+        if not getattr(self.namelist, 'nmlist', None):
             return None, []
         target = str(name).upper()
         base = None
         indexed = []
-        for key, value in self.im.nmlist.items():
+        for key, value in self.namelist.nmlist.items():
             kup = str(key).strip().upper()
             if kup == target:
                 base = value
@@ -159,7 +158,7 @@ class imas_waves:
                 if not token:
                     continue
                 try:
-                    vals.append(float(self.im.parse_number(token, float)))
+                    vals.append(float(self.namelist.parse_number(token, float)))
                 except (ValueError, TypeError, ZeroDivisionError, IndexError):
                     try:
                         vals.append(float(token.replace('D', 'E').replace('d', 'e')))
@@ -207,7 +206,7 @@ class imas_waves:
             return int(default)
 
     def _discover_ec_indices(self):
-        names = getattr(self.im, 'vars_', [])
+        names = getattr(self.cdf, 'vars_', [])
         indices = self._indices_from_names(names, ('PEECH', 'ECCUR'))
         # PECIN is launch power only.  It can identify a gyrotron when a single
         # aggregate deposition/current profile is the only spatial result.
@@ -230,7 +229,7 @@ class imas_waves:
         return [1] if candidates == [1] else []
 
     def _discover_ic_indices(self):
-        names = getattr(self.im, 'vars_', [])
+        names = getattr(self.cdf, 'vars_', [])
         indices = self._indices_from_names(names, ('RFPWRAB', 'FREQA', 'PICHA', 'PIC_F'))
         # Require an absorbed-power trace/profile or, for a single antenna, an
         # aggregate total-heating profile. PICHA/FREQA alone are launcher data.
@@ -259,13 +258,13 @@ class imas_waves:
         j = np.asarray(current_density_a_cm2, dtype=np.float64)
         if j.ndim != 2 or self.darea_cm2.shape != j.shape:
             return np.array([])
-        sign = float(getattr(self.im, 'jphi_sign', getattr(self.im, 'ip_sign', 1.0)))
+        sign = float(getattr(self.signs, 'jphi_sign', getattr(self.signs, 'ip_sign', 1.0)))
         return sign * np.cumsum(j * self.darea_cm2, axis=1)
 
     def _nphi_grid(self):
         if not self._has('XGRID_NPHI'):
             return np.array([])
-        arr = np.asarray(self.im.get_ncvar('XGRID_NPHI'))
+        arr = np.asarray(self.cdf.get_ncvar('XGRID_NPHI'))
         if arr.ndim == 1:
             arr = np.tile(arr[None, :], (self.nt, 1))
         if arr.ndim != 2 or arr.shape[0] not in (1, self.nt):
@@ -283,17 +282,17 @@ class imas_waves:
         vals = np.rint(values[good]).astype(np.int64)
         if vals.size == 0:
             return
-        field = 'n_phi' if self.im.dd_at_least(3, 42, 0) else 'n_tor'
+        field = 'n_phi' if self.dd.dd_at_least(3, 42, 0) else 'n_tor'
         target = getattr(node, field)
         target.resize(len(vals), refcheck=False)
         target[:] = vals
 
     def _set_current_global(self, glob, value):
-        field = 'current_phi' if self.im.dd_at_least(3, 42, 0) else 'current_tor'
+        field = 'current_phi' if self.dd.dd_at_least(3, 42, 0) else 'current_tor'
         setattr(glob, field, float(value))
 
     def _set_current_inside(self, prof, values):
-        field = 'current_phi_inside' if self.im.dd_at_least(3, 42, 0) else 'current_tor_inside'
+        field = 'current_phi_inside' if self.dd.dd_at_least(3, 42, 0) else 'current_tor_inside'
         target = getattr(prof, field)
         vals = np.asarray(values, dtype=np.float64)
         target.resize(len(vals), refcheck=False)
@@ -346,7 +345,7 @@ class imas_waves:
             return
 
         wave.profiles_1d.resize(self.nt)
-        self.im.fill_profiles1d_grid(wave)
+        self.fill.fill_profiles1d_grid(wave)
         total_inside = self._power_inside(total_pd) if has_total else np.array([])
         e_inside = self._power_inside(electron_pd) if has_e else np.array([])
 
@@ -448,19 +447,20 @@ class imas_waves:
     # ------------------------------------------------------------------
     # IDS construction
     # ------------------------------------------------------------------
-    def create_ids(self):
+    def build(self):
+        self._load_grid()
         self.logger.info('\nwaves')
         if self.nt == 0 or self.rho.ndim != 2 or self.dvol_cm3.shape != self.rho.shape:
             self.logger.info('waves: invalid TIME3/X/DVOL profile grid; IDS not written')
-            return
+            return []
 
         ec_indices = self._discover_ec_indices()
         ic_indices = self._discover_ic_indices()
         if not ec_indices and not ic_indices:
             self.logger.info('waves: no supported EC/IC absorbed/deposited wave output found; IDS not written')
-            return
+            return []
 
-        ids = self.im.new_ids('waves')
+        ids = self.dd.new_ids('waves')
         ids.coherent_wave.resize(len(ec_indices) + len(ic_indices))
         iw = 0
         for index in ec_indices:
@@ -472,15 +472,15 @@ class imas_waves:
             self._build_ic_wave(ids.coherent_wave[iw], index, ic_indices, nphi)
             iw += 1
 
-        self.im.fill_vac_tor_field(ids)
-        ids = self.im.fill_properties(ids)
-        self.im.fill_code_properties(ids)
-        self.im.fill_external_model_inputs(ids, 'waves')
+        self.fill.fill_vac_tor_field(ids)
+        ids = self.fill.fill_properties(ids)
+        self.fill.fill_code_properties(ids)
+        self.fill.fill_external_model_inputs(ids, 'waves')
         ids.ids_properties.homogeneous_time = 1
         ids.time.resize(self.nt)
         ids.time[:] = self.time
-        self.im.putdb_imas(ids)
         self.logger.info(f'Done: {len(ec_indices)} EC + {len(ic_indices)} IC coherent wave(s)')
+        return [ids]
 
 
 if __name__ == '__main__':

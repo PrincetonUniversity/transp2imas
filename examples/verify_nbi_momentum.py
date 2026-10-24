@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# registry ids verified here (mapping_registry.yaml): nbi_momentum_source
 """Verify the NBI total toroidal momentum source written to ``core_sources``.
 
 TRANSP assembles its total input torque ``TQIN`` (xplbal.f90, ``TQINP``) from the beam terms

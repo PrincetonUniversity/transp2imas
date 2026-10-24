@@ -26,7 +26,11 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
 import re
+import os
 import tarfile
+from collections import deque
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+import multiprocessing
 
 import numpy as np
 
@@ -458,6 +462,60 @@ def read_archive_members(fi_archive):
     return found
 
 
+def archive_workers(count):
+    """Number of archives to read at once: at most 4, the CPU count and the archive count.
+
+    ``TRANSP2IMAS_FI_WORKERS=1`` reads them one after the other.
+    """
+    requested = os.environ.get("TRANSP2IMAS_FI_WORKERS")
+    limit = int(requested) if requested else min(4, os.cpu_count() or 1)
+    return max(1, min(limit, count))
+
+
+def _make_pool(workers, reader):
+    """Processes for the real archive reader, threads for anything else (or if processes fail).
+
+    Reading an FI_TAR member means decompressing most of a gzip stream of many hundreds of MB.
+    Threads share the GIL for the Python part of ``tarfile`` and gave only a 25% gain on two
+    archives; processes gave 2x.  The ``spawn`` start method is used so the child does not inherit
+    the open IMAS/HDF5 state of the converter.  Only the few MB of permitted members come back.
+    """
+    if reader is read_archive_members:
+        try:
+            return ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn"))
+        except (OSError, ValueError, NotImplementedError, ImportError):
+            pass
+    return ThreadPoolExecutor(max_workers=workers)
+
+
+def read_archives_in_order(paths, workers=None, reader=None):
+    """Yield ``read_archive_members(path)`` for each path, in order, reading several ahead.
+
+    At most ``2 * workers`` archives are held in memory.  An exception in an archive is raised when
+    that archive's turn comes, exactly as in a sequential loop; archives still pending are then
+    abandoned.
+    """
+    reader = reader or read_archive_members
+    paths = list(paths)
+    workers = archive_workers(len(paths)) if workers is None else max(1, int(workers))
+    if workers == 1 or len(paths) < 2:
+        for path in paths:
+            yield reader(path)
+        return
+    window = 2 * workers
+    with _make_pool(workers, reader) as pool:
+        pending, submitted = deque(), 0
+        try:
+            while submitted < len(paths) or pending:
+                while submitted < len(paths) and len(pending) < window:
+                    pending.append(pool.submit(reader, paths[submitted]))
+                    submitted += 1
+                yield pending.popleft().result()
+        finally:
+            for future in pending:
+                future.cancel()
+
+
 def _read_equilibrium(ps_bytes):
     import netCDF4
     with netCDF4.Dataset("ps_ts1_state.cdf", mode="r", memory=ps_bytes) as nc:
@@ -514,11 +572,11 @@ def read_fast_ion_snapshots(case_dir, run_id, trdat_file=None, logger=None):
         note(f"distributions: FI_TAR.GZ{out.index} (t={out.time:g} s) has no DATA snapshot at that time; skipped")
     run_nsjdotb = read_run_nsjdotb(trdat)
     snapshots = []
-    for data, fi in pairs:
+    archives = read_archives_in_order([fi.fi_archive for _data, fi in pairs])
+    for (data, fi), members in zip(pairs, archives):
         src = read_data_snapshot(data.data_file)
         if abs(src["time"] - data.time) > 1.0e-5:
             raise NubeamInputError(f"{data.data_file.name} time {src['time']:g} != TR.DAT {data.time:g}")
-        members = read_archive_members(fi.fi_archive)
         fmap, b_vac = _read_equilibrium(members["ps_ts1_state"])
         flag, source = run_nsjdotb, "TR.DAT NLJCCW/NLBCCW"
         if "xplasma" in members:

@@ -12,12 +12,18 @@ import ast
 import logging
 from pathlib import Path
 import re
+import sys
 
 import numpy as np
 from scipy.io import netcdf_file
 
 ROOT = Path(__file__).resolve().parent.parent
 HERE = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import grid_services
+from writer_base import IdsWriter
 
 
 def require(condition, message):
@@ -34,7 +40,7 @@ def extract_method(filename, classname, methodname):
     func = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
                 and n.name == methodname)
     isolated = ast.Module(body=[func], type_ignores=[])
-    namespace = {'np': np}
+    namespace = {'np': np, 'grid_services': grid_services}     # the delegates of the extracted methods (pure NumPy)
     exec(compile(ast.fix_missing_locations(isolated), str(path), 'exec'), namespace)
     return namespace[methodname]
 
@@ -87,10 +93,11 @@ CaseReader.interp1d_time = extract_method('nc2imas.py', 'nc2imas', 'interp1d_tim
 CaseReader.get_ncvar_on_time = extract_method('nc2imas.py', 'nc2imas', 'get_ncvar_on_time')
 
 
-class EquilibriumAdapter:
+class EquilibriumAdapter(IdsWriter):
+    """Host of the extracted equilibrium methods; the views (cdf, grid, fill) come from IdsWriter as in production."""
+
     def __init__(self, reader):
-        self.im = reader
-        self.logger = reader.logger
+        super().__init__(reader)
         self.rmcb = []
         self.rmsb = []
         self.ymcb = []
@@ -113,7 +120,7 @@ def writer_contract():
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef)
                and n.name == 'imas_equilibrium')
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
-                  and n.name == 'create_ids')
+                  and n.name == '_build')      # build() times _build(), which holds the mapping
     lines = ast.unparse(method)
     require('eqm.time_slice.resize(ntimep)' in lines,
             'equilibrium.time_slice must use TIME3 length')
@@ -122,7 +129,7 @@ def writer_contract():
     for name in ('elongb', 'triangb', 'triang_lob', 'triang_upb'):
         require(f'{name} = ' in lines and '[:, -1]' in lines,
                 f'{name}: missing TIME3 boundary shaping')
-    require('self.im.is_valid(psi, psi_axis, ind=ntimep - 1)' in lines,
+    require('self.fill.is_valid(psi, psi_axis, ind=ntimep - 1)' in lines,
             'psi_axis length validation must use ntimep, not scalar ntimes')
     require('self.convert_moments_bdry(nthetab, it)' in lines,
             'boundary moments must be converted for every TIME3 slice')
@@ -233,12 +240,18 @@ def main(argv=None):
         return 0
     files = sorted(args.data_root.rglob('*.CDF'))
     require(files, f'No CDF examples found under {args.data_root}')
+    checked = 0
     for file in files:
         with netcdf_file(str(file), 'r', mmap=False) as nc:
+            if 'TIME' not in nc.variables or 'TIME3' not in nc.variables:
+                print(f'{file.stem}: SKIP (companion CDF without TIME/TIME3)')
+                continue
             result = verify_case(nc, file.name)
+        checked += 1
         print(f'{file.stem}: TIME={result["TIME"]} TIME3={result["TIME3"]} '
               f'LCFS moments={result["moments"]}')
-    print(f'equilibrium TIME/TIME3 regression PASS ({len(files)}/{len(files)} CDFs)')
+    require(checked, 'no CDF with TIME and TIME3 to check')
+    print(f'equilibrium TIME/TIME3 regression PASS ({checked}/{checked} CDFs)')
     return 0
 
 

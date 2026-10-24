@@ -5,9 +5,10 @@ import re
 import numpy as np
 from nc2imas import *
 from utilities import append_successful_entries
+from writer_base import IdsWriter
 
 
-class imas_edge_sources:
+class imas_edge_sources(IdsWriter):
     """Translate TRANSP neutral gas/recycling source terms to edge_sources.
 
     TRANSP's ``N0SGF_*`` and ``N0SRC_*`` arrays are *neutral densities* and
@@ -64,25 +65,24 @@ class imas_edge_sources:
         },
     }
 
-    def __init__(self, ncimas:nc2imas):
-        self.im = ncimas
-        self.logger = ncimas.logger
-        self.time = np.asarray(self.im.get_ncvar('TIME3'), dtype=np.float64)
-        self.rho = np.asarray(self.im.get_ncvar('X'), dtype=np.float64)
+    def _load_grid(self):
+        """Read the profile time base and radial grid (done in ``build``, not at construction)."""
+        self.time = np.asarray(self.cdf.get_ncvar('TIME3'), dtype=np.float64)
+        self.rho = np.asarray(self.cdf.get_ncvar('X'), dtype=np.float64)
         self.nt = len(self.time)
         self.nx = self.rho.shape[1] if self.rho.ndim == 2 else 0
-        self.create_ids()
 
     def _has(self, name):
-        return bool(self.im.check_var_name(name))
+        return bool(self.cdf.check_var_name(name))
 
     def _get(self, name, mult=1.0):
         if not self._has(name):
             return np.array([])
-        arr = self.im.get_ncvar(name)
-        if not self.im.is_valid(arr):
+        arr = self.cdf.get_ncvar(name)
+        if not self.fill.is_valid(arr):
             return np.array([])
         arr = np.asarray(arr, dtype=np.float64)
+        arr = np.asarray(self.fill.check_profile_shape(name, arr, self.nt, self.nx))   # wrong radial size: broken mapping
         if arr.shape != self.rho.shape:
             return np.array([])
         return arr * float(mult)
@@ -112,21 +112,21 @@ class imas_edge_sources:
                 return key, None
             return key, atom
         except KeyError:
-            self.im.mapping.skipped(f'unknown species token {key!r}', target='source/ggd/ion')
+            self.ctx.mapping.skipped(f'unknown species token {key!r}', target='source/ggd/ion')
             return key, None
 
     def _fill_species_identity(self, node, token, ion=False):
         key, atom = self._atom(token)
         if atom is None:
-            self.im.set_species_name(node, key)
+            self.fill.set_species_name(node, key)
             if ion and hasattr(node, 'z_ion'):
                 node.z_ion = 1.0
             return False
         node.element.resize(1)
         node.element[0].a = float(atom.a)
-        self.im.set_nuclear_charge(node.element[0], atom.z_n)
+        self.fill.set_nuclear_charge(node.element[0], atom.z_n)
         node.element[0].atoms_n = int(atom.atoms_n)
-        self.im.set_species_name(node, atom.label.strip())
+        self.fill.set_species_name(node, atom.label.strip())
         if ion and hasattr(node, 'z_ion'):
             # Gas/recycling ionization creates a singly charged ion at birth.
             node.z_ion = 1.0
@@ -152,7 +152,7 @@ class imas_edge_sources:
 
     def _set_grid_coordinate_type(self, space):
         """Fill coordinates_type in both DD3 (INT_1D) and DD4 (identifier AoS)."""
-        if self.im.dd_at_least(4, 0, 0):
+        if self.dd.dd_at_least(4, 0, 0):
             space.coordinates_type.resize(1)
             self._set_identifier(
                 space.coordinates_type[0], 'rho_tor_norm', 12,
@@ -205,14 +205,14 @@ class imas_edge_sources:
     def _set_momentum_ggd(self, aos, values, it, sign=1.0):
         if not isinstance(values, np.ndarray) or not values.size:
             return False
-        field = 'phi' if self.im.dd_at_least(3, 42, 0) else 'toroidal'
+        field = 'phi' if self.dd.dd_at_least(3, 42, 0) else 'toroidal'
         aos.resize(1)
         q = aos[0]
         if any(str(c) for c in getattr(q, field).metadata.coordinates_same_as):
             # DD 3.39 ties the toroidal component's size to the radial one; filling radial with zeros
             # would assert a radial momentum source that TRANSP does not provide.
             aos.resize(0)
-            self.im.mapping.skipped(f'{field} momentum not written: the DD ties it to the radial component',
+            self.ctx.mapping.skipped(f'{field} momentum not written: the DD ties it to the radial component',
                                     target='source/ggd/*/momentum')
             return False
         q.grid_index = self.GRID_INDEX
@@ -226,7 +226,7 @@ class imas_edge_sources:
     def _neutral_tokens(self, spec):
         prefix = spec['electron_prefix']
         tokens = []
-        for name in getattr(self.im, 'vars_', []):
+        for name in getattr(self.cdf, 'vars_', []):
             if name.startswith(prefix):
                 token = name[len(prefix):]
                 if token and '_' not in token and self._atom(token)[1] is not None:
@@ -237,7 +237,7 @@ class imas_edge_sources:
         # Fallback to aggregate SISGF_G / SISRC_G outputs when old CDFs do not
         # contain the neutral-resolved electron aliases.
         prefix = spec['aggregate_ion_prefix']
-        for name in getattr(self.im, 'vars_', []):
+        for name in getattr(self.cdf, 'vars_', []):
             if name.startswith(prefix):
                 token = name[len(prefix):]
                 if token and '_' not in token and self._atom(token)[1] is not None:
@@ -249,7 +249,7 @@ class imas_edge_sources:
         prefix = spec['ion_prefix']
         pat = re.compile(rf'^{re.escape(prefix)}([A-Z0-9]+)_{re.escape(neutral_token)}$')
         outputs = []
-        for name in getattr(self.im, 'vars_', []):
+        for name in getattr(self.cdf, 'vars_', []):
             match = pat.fullmatch(name)
             if not match:
                 continue
@@ -454,7 +454,7 @@ class imas_edge_sources:
     def _recombination_tokens(self):
         """Return species resolved by S0V0G/SIV0G recombination diagnostics."""
         tokens = set()
-        for name in getattr(self.im, 'vars_', []):
+        for name in getattr(self.cdf, 'vars_', []):
             match = re.fullmatch(r'S0V0([A-Z0-9]+)', name)
             if not match:
                 match = re.fullmatch(r'SIV0([A-Z0-9]+)', name)
@@ -509,7 +509,7 @@ class imas_edge_sources:
                 # species split when TRANSP did not save it.
                 ggd.neutral.resize(1)
                 neutral = ggd.neutral[0]
-                self.im.set_species_name(neutral, 'recombination_neutral_total')
+                self.fill.set_species_name(neutral, 'recombination_neutral_total')
 
             self._set_scalar_ggd(neutral.particles, particles, it)
             self._set_scalar_ggd(neutral.energy, power, it)
@@ -597,11 +597,12 @@ class imas_edge_sources:
             '<- SFCXRECO/PCXRECO/TQCXRECO')
         return True
 
-    def create_ids(self):
+    def build(self):
+        self._load_grid()
         self.logger.info('\nedge_sources')
         if self.rho.ndim != 2 or self.nt == 0 or self.nx == 0:
             self.logger.info('edge_sources: missing TIME3/X radial grid; IDS not written')
-            return
+            return []
 
         inventory = []
         for origin in ('gas_flow', 'recycling'):
@@ -612,11 +613,11 @@ class imas_edge_sources:
                                   'SFCXRECO', 'PCXRECO', 'TQCXRECO'))
         if not inventory and not has_reco and not has_reco_recapture:
             self.logger.info('edge_sources: no supported gas/recycling/recombination source profiles found')
-            return
+            return []
 
-        es = self.im.new_ids('edge_sources')
-        es = self.im.fill_properties(es)
-        self.im.fill_code_properties(es)
+        es = self.dd.new_ids('edge_sources')
+        es = self.fill.fill_properties(es)
+        self.fill.fill_code_properties(es)
         es.ids_properties.homogeneous_time = 1
         es.time = np.asarray(self.time, dtype=np.float64)
 
@@ -641,13 +642,13 @@ class imas_edge_sources:
         if has_reco_recapture:
             builders.append(self._fill_recombination_recapture_ionization)
             builders.append(self._fill_recombination_charge_exchange)
-        used = append_successful_entries(lambda: self.im.new_ids('edge_sources'), es, 'source', builders)
+        used = append_successful_entries(lambda: self.dd.new_ids('edge_sources'), es, 'source', builders)
 
         if used:
-            self.im.putdb_imas(es)
-            self.logger.info(f'edge_sources: wrote {used} spatial source entries')
-        else:
-            self.logger.info('edge_sources: no populated source entries; IDS not written')
+            self.logger.info(f'edge_sources: built {used} spatial source entries')
+            return [es]
+        self.logger.info('edge_sources: no populated source entries; IDS not written')
+        return []
 
 
 if __name__ == '__main__':

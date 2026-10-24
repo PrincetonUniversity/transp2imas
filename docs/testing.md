@@ -115,6 +115,47 @@ is deliberately separate from the CI source-only suite. The output includes
 per-case JSON and Markdown reports; failures are never downgraded to skips.
 See [end-to-end instructions](end-to-end.md).
 
+### Tested matrix
+
+What each check actually runs against (last verified on IMAS-Python 2.1.0.post1, Python 3.12.3, netCDF4 1.7.4, numpy 2.4.1, HDF5 backend):
+
+| check | needs | DD 3.39.0 | DD 4.1.1 | backend |
+|---|---|---|---|---|
+| `make check` (CI) | numpy, scipy, matplotlib, PyYAML | source side only | source side only | none |
+| `make verify-dd` | IMAS-Python | metadata | metadata | none |
+| `make verify-readback` (includes `verify_registry_values.py`: 541 tests = 135 per case and DD on ITER 38530P94 and DIII-D 147634T16, plus the registry/test cross-check; about 15 s) | IMAS-Python, netCDF4 | yes | yes | HDF5 |
+| `make verify-end-to-end` (every available bundled case, 12 with the local NSTX samples) | IMAS-Python, netCDF4 | `DD_VERSION=3.39.0` | default | HDF5 |
+| `make verify-nubeam-fi` | IMAS-Python, netCDF4 (+ the local NSTX sample for the full run) | yes (synthetic and ITER cases) | yes | HDF5 |
+| `python examples/verify_mapping_registry.py` | IMAS-Python for the Data Dictionary path check | paths checked | paths checked | none |
+
+Tests that need a variable a case does not have skip with the reason instead of failing: ITER has no recombination
+neutrals (`N0V0_*`, `S0RECO`), no lumped single impurity (`NIMPS_TOK`) and no crash events, so those entries are
+verified on DIII-D 147634T16 or by the source-side scripts named in the registry.
+
+MDSplus is not tested. The access layer is IMAS-Python's own (`imas.DBEntry`); the legacy access-layer
+Python module is not used.
+
+#### Which Data Dictionary a command uses
+
+| command | `DD_VERSION` unset or `auto` | explicit `DD_VERSION=x` |
+|---|---|---|
+| `make verify-end-to-end` | 4.1.1 (pinned by the Makefile) | x |
+| `make convert`, `make test`, `make verify` | `$IMAS_VERSION` or `$IMAS_DD_VERSION` if set, else the IMAS-Python default (3.39.0 here) | x |
+| `python convert.py` without `--dd-version` | the same as the row above | x |
+
+The end-to-end check once passed an empty version and silently used the IMAS-Python default; it now always passes an
+explicit version, and the journals record it (`dd_version` in `build/end-to-end/*-conversion.json`). `make convert`
+still follows the environment, so check `IMAS target DD:` in its output, or pass `DD_VERSION` explicitly, before
+comparing results across DD versions.
+
+#### Environment pitfalls
+
+* An old Access Layer on `PYTHONPATH` (for example `AL-3.39.0/python/lib`) shadows IMAS-Python and fails with
+  `No module named 'imp'`. Run `unset PYTHONPATH` before activating the IMAS-Python environment (see the README).
+  `verify_mapping_registry.py` then prints `SKIP Data Dictionary check` instead of failing, so a registry
+  destination typo passes unnoticed: look for that line in the output.
+* `IMAS_VERSION` / `IMAS_DD_VERSION` in the environment select the DD for every command that does not pass one.
+
 ### 5. Legacy manual conversion
 
 `make test` performs the source checks and converts the active regression cases

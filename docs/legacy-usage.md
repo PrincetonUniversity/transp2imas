@@ -93,8 +93,8 @@ python convert.py  -i <runid> [ -b MDS/HDF -r <ids_run_num> -new ]
 #  Also used if available <runid>TR.DAT
 # machine name (eg. ITER, D3D) is retrieved from CDF file.
 
-Remember to use -new if creating fresh, to avoid accumulating old copies making the database huge.
-Excluding this option may causes error sometimes, which is being fixed.
+Use -new for the first conversion of a run: it creates the entry and, on the HDF5 backend (not checked for MDSplus), discards what an existing entry at the same database/pulse/run held.
+Without -new the entry must already exist (otherwise the run stops asking for -new); IDSs are then added to it, or replace the same IDS.
 
 All options:
 usage: convert.py [-h] [-i INPUT_CDF] [-d INPUT_DIR] [-b {MDS,MDSPLUS,HDF,HDF5}] [-r RUN] [-new] [-o OCCUR]  \
@@ -112,7 +112,7 @@ options:
   -b {MDS,MDSPLUS,HDF,HDF5}, --backend {MDS,MDSPLUS,HDF,HDF5}
                         IMAS backend
   -r RUN, --run RUN     run number of o/p IDS (overrides default converted number: eg: Z10 -> 2610)
-  -new, --new-db        create new database
+  -new, --new-db        create the entry for this database/pulse/run, discarding any IDS already stored there; without it the entry must exist and IDSs are added or replaced one by one
   -o OCCUR, --occur OCCUR
                         occurrence
   -u USER, --user USER  username or path of database

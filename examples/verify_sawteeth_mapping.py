@@ -24,6 +24,7 @@ from sawteeth_mapping import (IMAS_MISSING_FLOAT, build_sawteeth_plan,
                               populate_sawteeth_ids)
 
 
+# Registry entries exercised here: sawteeth_previous_crash_time, sawteeth_previous_period, sawteeth_q1_radius
 class FakeVariable:
     def __init__(self, values, dim):
         self.values = np.asarray(values)
@@ -152,14 +153,16 @@ class TestSawteethMapping(unittest.TestCase):
         wrapped.ids_properties.comment = types.SimpleNamespace(value='TRANSP')
         im.new_ids.return_value = wrapped
         im.new_ids.side_effect = None
-        imas_sawteeth(im)
+        writer = imas_sawteeth(im)
+        im.putdb_imas.assert_not_called()                        # construction does not write
+        writer.run()
         im.putdb_imas.assert_called_once()
         ids = im.putdb_imas.call_args[0][0]
         self.assertIn('new crash updates=1', ids.ids_properties.comment)
         self.assertEqual(len(ids.time), 4)
         im.putdb_imas.reset_mock()
         im.nc = FakeCDF([.1,.2,.3], [.05,.05,.05])
-        imas_sawteeth(im)
+        imas_sawteeth(im).run()
         im.putdb_imas.assert_not_called()
 
 
@@ -198,6 +201,10 @@ def main(argv=None):
     args.report_dir.mkdir(parents=True, exist_ok=True)
     rows = []
     for path in files:
+        with netcdf_file(str(path), 'r', mmap=False) as nc:
+            if 'TIME' not in nc.variables:
+                print(f"{path.relative_to(args.data_root)}: SKIP (companion CDF without a TIME coordinate)")
+                continue
         case = verify_case(path)
         case['cdf'] = str(path.relative_to(args.data_root))
         print(f"{case['cdf']}: PASS — observed new crashes={case['events']}, "

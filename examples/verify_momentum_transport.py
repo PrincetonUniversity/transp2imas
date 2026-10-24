@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# registry ids verified here (mapping_registry.yaml): momentum_flux_solver_model
 """Verify the predictive angular-momentum flux (AMTR_MOD) in the core_transport solver model.
 
 ``AMTR_MOD`` is a divergence of angular-momentum flux (N m cm^-3) on X, like the observed

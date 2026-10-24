@@ -43,6 +43,13 @@ class FakeConverter:
                                             warning=lambda *a, **k: None)
         self.written = None
 
+    def check_profile_shape(self, name, array, nt, nx):
+        """As ``nc2imas.check_profile_shape``, with the broken mapping raised (the real one follows the policy)."""
+        values = np.asarray(array)
+        if values.ndim == 2 and values.shape[0] == nt and values.shape[1] != nx:
+            raise ValueError(f'radial size mismatch {values.shape[1]} != {nx} for {name}')
+        return array
+
     def get_ncvar(self, name, scale=1., **kw):
         if name not in self.nc.variables:
             return np.array([])
@@ -120,11 +127,10 @@ def load_writer(name):
 def write_core_transport(nc):
     writer_cls=load_writer('core_transport')
     im=FakeConverter(nc)
-    writer=writer_cls.__new__(writer_cls)
-    writer.im, writer.logger=im,im.logger
+    writer=writer_cls(im)             # IdsWriter.__init__ attaches the context views over the fake
     writer.time,writer.x,writer.xb=(im.get_ncvar(k) for k in ('TIME3','X','XB'))
     writer.dvol=im.get_ncvar('DVOL', im.vconv)
     writer.surf=im.get_ncvar('SURF', im.aconv)
     writer.nt,writer.nx=len(writer.time),writer.xb.shape[1]
-    writer.create_ids()
+    writer.run()
     return im.written

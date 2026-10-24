@@ -214,14 +214,9 @@ def test_actual_nc2imas_xml_methods_without_imas():
     converter.run = 1694
     converter.occur = 0
     converter.dd_version = '4.1.1'
-    converter.target_cocos = 17
-    converter.nljccw = False
-    converter.nlbccw = False
-    converter.ip_sign = -1.0
-    converter.bt_sign = -1.0
-    converter.q_sign = 1.0
-    converter.psi_sign = 1.0
-    converter.phi_sign = -1.0
+    from cocos_signs import resolve_signs
+    converter.signs = resolve_signs('cw', 'cw', None, dd_major=4)      # Ip and Bphi clockwise, COCOS 17
+    assert (converter.signs.psi_sign, converter.signs.phi_sign, converter.signs.q_sign) == (1.0, -1.0, 1.0)
     converter._code_parameters_xml_cache = None
     converter._input_inventory_cache = None
     converter.logger = logging.getLogger('converter-input-xml')
@@ -288,7 +283,9 @@ def test_workflow_writer_without_imas():
             self.output = ids
 
     fake = Fake()
-    module.imas_workflow(fake)
+    writer = module.imas_workflow(fake)
+    assert fake.output is None, 'constructing the writer must not write'
+    writer.run()
     comps = fake.output.time_loop.component.items
     assert [c.name for c in comps] == ['TRANSP'] + inventory.models()
     for comp in comps[1:]:

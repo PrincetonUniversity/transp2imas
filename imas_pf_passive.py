@@ -19,26 +19,25 @@ import numpy as np
 
 from nc2imas import nc2imas
 from pf_passive_mapping import build_passive_plan, populate_passive_ids
+from writer_base import IdsWriter
 
 
-class imas_pf_passive:
+class imas_pf_passive(IdsWriter):
     """Create a passive-conductor IDS from available, validated source inputs."""
 
     def __init__(self, ncimas: nc2imas, geometry_path: str | None = None):
-        self.im = ncimas
-        self.logger = ncimas.logger
+        super().__init__(ncimas)
         self.geometry_path = geometry_path
-        self.create_ids()
 
-    def create_ids(self):
+    def build(self):
         """Write pf_passive only when passive currents or sourced geometry exist."""
         self.logger.info("\npf_passive")
         plan = build_passive_plan(
-            self.im.nc, geometry_path=self.geometry_path, machine=self.im.device
+            self.cdf.nc, geometry_path=self.geometry_path, machine=self.cdf.device
         )
         if not plan.loops:
             self.logger.info("pf_passive: no PS_n channels and no geometry; IDS not written")
-            return
+            return []
 
         if plan.geometry_path is None:
             self.logger.warning(
@@ -53,9 +52,9 @@ class imas_pf_passive:
                 len(plan.loops), plan.geometry_path,
             )
 
-        pfc = self.im.new_ids("pf_passive")
-        self.im.fill_properties(pfc)
-        self.im.fill_code_properties(pfc)
+        pfc = self.dd.new_ids("pf_passive")
+        self.fill.fill_properties(pfc)
+        self.fill.fill_code_properties(pfc)
 
         # IMAS pf_passive defines each current on loop[i].time, NOT simply on
         # the top-level pf_passive.time. Homogeneous_time can only be 1 if all
@@ -70,18 +69,18 @@ class imas_pf_passive:
             else:
                 # Top-level time is informational in the heterogeneous case;
                 # each dynamic quantity is explicitly coordinated by loop.time.
-                scalar_time = self.im.get_ncvar("TIME")
+                scalar_time = self.cdf.get_ncvar("TIME")
                 if len(scalar_time):
                     pfc.time = np.asarray(scalar_time, dtype=np.float64)
         else:
             # Geometry-only export is meaningful: it can provide the device
             # description even when a TRANSP run did not save passive currents.
             pfc.ids_properties.homogeneous_time = 1
-            scalar_time = self.im.get_ncvar("TIME")
+            scalar_time = self.cdf.get_ncvar("TIME")
             if len(scalar_time):
                 pfc.time = np.asarray(scalar_time, dtype=np.float64)
 
-        count = populate_passive_ids(pfc, plan, int(self.im.dd_major_version))
+        count = populate_passive_ids(pfc, plan, int(self.dd.dd_major_version))
 
         if plan.geometry_json is not None:
             digest = hashlib.sha256(plan.geometry_json.encode("utf-8")).hexdigest()
@@ -105,11 +104,11 @@ class imas_pf_passive:
         else:
             pfc.ids_properties.comment += "; pf_passive: CDF currents only; no conductor geometry"
 
-        self.im.putdb_imas(pfc)
         self.logger.info(
-            "pf_passive: wrote %d loops, %d current traces, %d defined geometries",
+            "pf_passive: built %d loops, %d current traces, %d defined geometries",
             len(plan.loops), count, sum(bool(loop.elements) for loop in plan.loops),
         )
+        return [pfc]
 
 
 if __name__ == "__main__":

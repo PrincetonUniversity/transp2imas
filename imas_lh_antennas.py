@@ -3,31 +3,27 @@
 
 
 from nc2imas import *
+from writer_base import IdsWriter
 
-class imas_lh_antennas:
-    def __init__(self, ncimas:nc2imas):
-        self.im = ncimas
-        self.logger = ncimas.logger
 
-        self.create_ids()
-
-    def create_ids(self):
-        self.im.logger.info('\nlh_antennas')
-        lha = self.im.new_ids('lh_antennas')
-        sgn = -1 if self.im.iter_ else 1
+class imas_lh_antennas(IdsWriter):
+    def build(self):
+        self.logger.info('\nlh_antennas')
+        lha = self.dd.new_ids('lh_antennas')
+        sgn = -1 if self.cdf.iter_ else 1
 
         #scalar time
-        timesc = self.im.get_ncvar('TIME')
+        timesc = self.cdf.get_ncvar('TIME')
         ntimes = len(timesc)
-        self.im.checkErrExit(timesc)
+        self.fill.checkErrExit(timesc)
 
-        lha = self.im.fill_properties(lha)
-        self.im.fill_code_properties(lha)
+        lha = self.fill.fill_properties(lha)
+        self.fill.fill_code_properties(lha)
         lha.ids_properties.homogeneous_time = 1
         lha.time.resize(ntimes)
         lha.time = timesc
 
-        nant = self.im.get_var_names_re('PLHANT?', nd1=1, nd2=2, length=True)
+        nant = self.cdf.get_var_names_re('PLHANT?', nd1=1, nd2=2, length=True)
         self.logger.info(f'lh antenna {nant}')
 
         lha.antenna.resize(nant)
@@ -36,8 +32,8 @@ class imas_lh_antennas:
             sta = f'{ia}'
 
             #frequency
-            freq = self.im.get_namelist_var('FREQLH', float, ind=ia-1)
-            if self.im.is_valid(freq):
+            freq = self.namelist.get_namelist_var('FREQLH', float, ind=ia-1)
+            if self.fill.is_valid(freq):
                 lha.antenna[i].frequency = freq
 
             # TRANSP does not know the difference between launched and forward power.
@@ -47,18 +43,19 @@ class imas_lh_antennas:
             # we need to write the 'input' power that is in the CDF file to both the launched and forward power.
             #power launched
             self.logger.info(f'Ant: {ia} PLHANT{ia}')
-            self.im.fill_data_nc(lha.antenna[i].power_launched.data, f'PLHANT{sta}')
+            self.fill.fill_data_nc(lha.antenna[i].power_launched.data, f'PLHANT{sta}')
 
             #power_forward. Forward power arriving to the back of the antenna
             self.logger.info(f'Ant: {ia} PLHANT{ia}')
-            self.im.fill_data_nc(lha.antenna[i].power_forward.data, f'PLHANT{sta}')
+            self.fill.fill_data_nc(lha.antenna[i].power_forward.data, f'PLHANT{sta}')
 
         if nant > 0:
             #power launched
-            self.im.fill_data_nc(lha.power_launched.data, 'PLH')
+            self.fill.fill_data_nc(lha.power_launched.data, 'PLH')
 
-            self.im.putdb_imas(lha)
             self.logger.info('Done')
+            return [lha]
+        return []
 
 
 if __name__ == '__main__':

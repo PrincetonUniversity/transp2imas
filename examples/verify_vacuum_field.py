@@ -55,6 +55,14 @@ class ReferenceFunctionTests(unittest.TestCase):
         r0, b0 = vacuum_field_reference(self.raxis, self.bzxr, -1.0, target, self.t)
         np.testing.assert_allclose(r0 * b0, -np.interp(target, self.t, self.bzxr), rtol=1e-14)
 
+    def test_a_given_fixed_radius_replaces_the_axis_mean_and_keeps_the_product(self):
+        r0, b0 = vacuum_field_reference(self.raxis, self.bzxr, 1.0, self.t, self.t, r0=0.9)
+        self.assertEqual(r0, 0.9)
+        np.testing.assert_allclose(r0 * b0, self.bzxr, rtol=1e-14)
+        np.testing.assert_allclose(b0, self.bzxr / 0.9, rtol=1e-14)
+        # the axis is not needed when the radius is given
+        self.assertEqual(vacuum_field_reference(None, self.bzxr, -1.0, self.t, self.t, r0=0.9)[0], 0.9)
+
     def test_the_old_formula_violated_the_requirement(self):
         r0 = 0.5 * (self.raxis[0] + self.raxis[-1])
         old_b0 = self.bzxr / self.raxis

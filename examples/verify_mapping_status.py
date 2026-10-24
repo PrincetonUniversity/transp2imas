@@ -33,7 +33,7 @@ if str(ROOT) not in sys.path:
 
 from conversion_plan import ConversionJournal
 import mapping_status
-from mapping_status import (KINDS, MISSING_OPTIONAL, SKIPPED, UNAVAILABLE_IN_DD, MappingError, MappingLedger,
+from mapping_status import (ADJUSTED, KINDS, MISSING_OPTIONAL, SKIPPED, UNAVAILABLE_IN_DD, MappingError, MappingLedger,
                             RecordingDataset)
 
 try:
@@ -66,7 +66,7 @@ class LedgerTests(unittest.TestCase):
     def test_unknown_kind_is_rejected(self):
         with self.assertRaises(ValueError):
             MappingLedger().record('maybe', source='X')
-        self.assertEqual(KINDS, (MISSING_OPTIONAL, SKIPPED, UNAVAILABLE_IN_DD))
+        self.assertEqual(KINDS, (MISSING_OPTIONAL, SKIPPED, UNAVAILABLE_IN_DD, ADJUSTED))
 
     def test_summary_is_compact_json_with_complete_counts(self):
         ledger = MappingLedger()
@@ -316,6 +316,60 @@ class ConvertedJournalTests(unittest.TestCase):
         mismatches = [f for f in skipped if 'size mismatch' in f['reason']]
         self.assertTrue(mismatches, skipped)
         self.assertIn('PBE', {f.get('source') for f in mismatches})
+
+
+D3D_CASE = ROOT / 'examples' / 'data' / 'd3d' / '147634B13' / '147634B13.CDF'
+# (writer, a profile variable it reads on TIME3 x X, a small bundled case that has it): one per reader that used
+# to drop a radial-size mismatch silently
+READER_VARIABLES = (('waves', 'PEECH1', D3D_CASE, 'PEECH1'), ('edge_sources', 'SEGF_D', D3D_CASE, 'SEGF_D'),
+                    ('radiation', 'PRAD_BR', D3D_CASE, 'PRAD_BR'),
+                    ('distribution_sources', 'BDEP01_TOT', CASE, 'BDEP01_TOT'),
+                    # core_profiles and equilibrium read radial profiles through IdsWriter.profile, which names the CDF
+                    # variable; core_transport and summary through the same check on their own grid
+                    ('core_profiles', 'ZEFFP', D3D_CASE, 'ZEFFP'), ('core_profiles', 'UTHRM', D3D_CASE, 'UTHRM'),
+                    ('core_profiles', 'CUROH', D3D_CASE, 'CUROH'), ('core_profiles', 'PTOWB', D3D_CASE, 'PTOWB'),
+                    ('equilibrium', 'ELONG', D3D_CASE, 'ELONG'), ('equilibrium', 'GXI', D3D_CASE, 'GXI'),
+                    ('equilibrium', 'TRIANG', D3D_CASE, 'TRIANG'), ('equilibrium', 'DRAV', D3D_CASE, 'DRAV'),
+                    ('core_transport', 'CONDE', D3D_CASE, 'CONDE'), ('core_transport', 'AMTR_OBS', D3D_CASE, 'AMTR_OBS'),
+                    ('summary', 'UTHRM', D3D_CASE, 'UTHRM'), ('summary', 'PTOWB', D3D_CASE, 'PTOWB'),
+                    ('summary', 'CUROH', D3D_CASE, 'CUROH'))
+
+
+@unittest.skipIf(imas is None or netCDF4 is None, 'netCDF4 and IMAS-Python are required')
+class EveryReaderShapeTests(unittest.TestCase):
+    """A present profile with the wrong radial size is a broken mapping in every writer's reader."""
+
+    def setUp(self):
+        if RUN['quick']:
+            self.skipTest('real conversions skipped (--quick)')
+
+    def conversions(self, ids, variable, case):
+        if not case.is_file():
+            self.skipTest(f'{case.name} not present')
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / case.name
+            corrupt_radial_length(case, bad, variable)
+            for source in case.parent.iterdir():
+                if source.suffix != '.CDF' and source.is_file():
+                    (Path(tmp) / source.name).write_bytes(source.read_bytes())
+            strict_report, lenient_report = Path(tmp) / 'strict.json', Path(tmp) / 'lenient.json'
+            strict = convert(bad, Path(tmp) / 'db_strict', ids=ids, report=strict_report)
+            lenient = convert(bad, Path(tmp) / 'db_lenient', '--lenient-mapping', ids=ids, report=lenient_report)
+            yield strict, json.loads(strict_report.read_text()), lenient, json.loads(lenient_report.read_text())
+
+    def test_strict_fails_naming_the_variable_and_lenient_records_it(self):
+        for ids, variable, case, named in READER_VARIABLES:
+            with self.subTest(writer=ids, variable=variable):
+                for strict, failed, lenient, journal in self.conversions(ids, variable, case):
+                    self.assertNotEqual(strict.returncode, 0, f'{ids}: {variable} was silently dropped')
+                    self.assertEqual(failed['status'], 'FAIL')
+                    self.assertIn(named, failed['error'])
+                    self.assertRegex(failed['error'], 'radial size mismatch|size mismatch')
+                    self.assertEqual(lenient.returncode, 0, lenient.stdout[-500:] + lenient.stderr[-500:])
+                    self.assertEqual(journal['mapping_policy'], 'lenient')
+                    skipped = journal['writers'][0]['mapping'][SKIPPED]['fields']
+                    hits = [f for f in skipped if f.get('source') == named and 'size mismatch' in f['reason']]
+                    self.assertTrue(hits, skipped)
 
 
 def main(argv=None):

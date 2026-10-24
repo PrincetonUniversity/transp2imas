@@ -2,11 +2,11 @@
 """Command-line TRANSP CDF -> IMAS converter with selectable IDS writers."""
 
 import sys
-import time
 from pathlib import Path
 
 import mapping_status
-from conversion_plan import ConversionJournal, select_ids
+from conversion_plan import ConversionJournal, ConversionRunner, select_ids
+from writer_base import run_writer
 from nc2imas import nc2imas, get_args, TRANSP2IMAS_VERSION
 from utilities import find_all_files
 from imas_summary import imas_summary
@@ -39,28 +39,28 @@ def make_writers(nci, moments, nzones, ec_nml_launch, pf_passive_geometry,
                  pf_active_geometry):
     """Map canonical IDS names to writers; preserve existing execution order."""
     return {
-        'workflow': lambda: imas_workflow(nci),
-        'wall': lambda: imas_wall(nci),
-        'tf': lambda: imas_tf(nci),
-        'lh_antennas': lambda: imas_lh_antennas(nci),
-        'ic_antennas': lambda: imas_ic_antennas(nci),
-        'ec_launchers': lambda: imas_ec_launchers(nci, ec_nml_launch=ec_nml_launch),
-        'nbi': lambda: imas_nbi(nci),
-        'distribution_sources': lambda: imas_distribution_sources(nci),
-        'distributions': lambda: imas_distributions(nci),
-        'pf_active': lambda: imas_pf_active(nci, geometry_path=pf_active_geometry),
-        'core_profiles': lambda: imas_core_profiles(nci),
-        'pf_passive': lambda: imas_pf_passive(nci, geometry_path=pf_passive_geometry),
-        'radiation': lambda: imas_radiation(nci),
-        'equilibrium': lambda: imas_equilibrium(nci, conv_moments=moments, nzones_in=nzones),
-        'summary': lambda: imas_summary(nci),
-        'core_sources': lambda: imas_core_sources(nci),
-        'waves': lambda: imas_waves(nci),
-        'core_transport': lambda: imas_core_transport(nci),
-        'transport_solver_numerics': lambda: imas_transport_solver_numerics(nci),
-        'sawteeth': lambda: imas_sawteeth(nci),
-        'edge_sources': lambda: imas_edge_sources(nci),
-        'dataset_fair': lambda: imas_dataset_fair(nci),
+        'workflow': lambda: run_writer(imas_workflow(nci)),
+        'wall': lambda: run_writer(imas_wall(nci)),
+        'tf': lambda: run_writer(imas_tf(nci)),
+        'lh_antennas': lambda: run_writer(imas_lh_antennas(nci)),
+        'ic_antennas': lambda: run_writer(imas_ic_antennas(nci)),
+        'ec_launchers': lambda: run_writer(imas_ec_launchers(nci, ec_nml_launch=ec_nml_launch)),
+        'nbi': lambda: run_writer(imas_nbi(nci)),
+        'distribution_sources': lambda: run_writer(imas_distribution_sources(nci)),
+        'distributions': lambda: run_writer(imas_distributions(nci)),
+        'pf_active': lambda: run_writer(imas_pf_active(nci, geometry_path=pf_active_geometry)),
+        'core_profiles': lambda: run_writer(imas_core_profiles(nci)),
+        'pf_passive': lambda: run_writer(imas_pf_passive(nci, geometry_path=pf_passive_geometry)),
+        'radiation': lambda: run_writer(imas_radiation(nci)),
+        'equilibrium': lambda: run_writer(imas_equilibrium(nci, conv_moments=moments, nzones_in=nzones)),
+        'summary': lambda: run_writer(imas_summary(nci)),
+        'core_sources': lambda: run_writer(imas_core_sources(nci)),
+        'waves': lambda: run_writer(imas_waves(nci)),
+        'core_transport': lambda: run_writer(imas_core_transport(nci)),
+        'transport_solver_numerics': lambda: run_writer(imas_transport_solver_numerics(nci)),
+        'sawteeth': lambda: run_writer(imas_sawteeth(nci)),
+        'edge_sources': lambda: run_writer(imas_edge_sources(nci)),
+        'dataset_fair': lambda: run_writer(imas_dataset_fair(nci)),
     }
 
 
@@ -94,31 +94,7 @@ def do_convert(argvs):
             print(f'IMAS target DD: {nci.dd_version} (schema family DD{nci.dd_major_version})')
             writers = make_writers(nci, moments, nzones, ec_nml_launch,
                                    pf_passive_geometry, pf_active_geometry)
-            for name in selected:
-                print(name)
-                before = len(nci._written_ids)
-                started = time.monotonic()
-                nci._active_writer = name
-                nci.mapping.writer = name
-                try:
-                    writers[name]()
-                except Exception as exc:
-                    journal.record_writer(name, nci._written_ids[before:],
-                                          time.monotonic() - started, error=exc,
-                                          mapping=nci.mapping.summary(name),
-                                          consumed=nci.mapping.consumed(name))
-                    raise
-                else:
-                    if len(nci._written_ids) == before and not nci.mapping.entries(name):
-                        # A writer that wrote nothing and recorded no reason of its own.
-                        nci.mapping.skipped('no IDS written; the writer logged its reason in the conversion log',
-                                            target=name)
-                    journal.record_writer(name, nci._written_ids[before:],
-                                          time.monotonic() - started,
-                                          mapping=nci.mapping.summary(name),
-                                          consumed=nci.mapping.consumed(name))
-                finally:
-                    nci._active_writer = None
+            ConversionRunner(nci, writers, journal).run(selected)
         journal.finish()
     except Exception as exc:
         journal.fail(exc)

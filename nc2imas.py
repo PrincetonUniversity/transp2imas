@@ -23,7 +23,20 @@ TRANSP2IMAS_VERSION = __version__
 import re
 import logging
 from netcdf_class import netcdf_connection
+from radial_interpolation import interpolate_radial_profiles
+from cocos_signs import direction_override, resolve_signs
+from ids_assignment import (check_1dim, fill_data, fill_value, is_valid, node_path, np_multiply_sum,
+                            operate_arrays, sum_arrays)
+from code_provenance import (TRANSP_METADATA_KEYS, attach_source_provenance, build_code_parameters_xml,
+                             properties_comment, source_file_records)
 from imas_class import imas_connection
+from conversion_context import ConversionContext
+import namelist_reader
+from plasma_betas import boundary_minor_radius, imas_betas
+from conversion_provenance import ProvenanceRecorder
+import grid_services
+import ids_identity
+from name_patterns import make_namelist_re_pattern
 from atoms_class import *
 from utilities import *
 
@@ -68,9 +81,22 @@ class nc2imas(imas_connection, netcdf_connection):
         self.debug = False if debug<1 else True
         self.debug_max = False if debug<2 else True
         self.get_nc_times()
-        self._code_parameters_xml_cache = None
-        self._provenance_file_records_cache = None
-        self._input_inventory_cache = None
+
+    @property
+    def context(self):
+        """The writers' view of this converter (``conversion_context``), built on first use."""
+        context = self.__dict__.get('_context')
+        if context is None:
+            context = self._context = ConversionContext(self)
+        return context
+
+    @property
+    def _provenance(self):
+        """Provenance blocks and their caches (``conversion_provenance``), built on first use."""
+        recorder = self.__dict__.get('_provenance_recorder')
+        if recorder is None:
+            recorder = self._provenance_recorder = ProvenanceRecorder(self, TRANSP2IMAS_VERSION)
+        return recorder
 
     def close_imas_database(self):
         """Close the IMAS entry and TRANSP CDF deterministically.
@@ -103,357 +129,81 @@ class nc2imas(imas_connection, netcdf_connection):
     @staticmethod
     def _parse_bool_value(value):
         """Parse TRANSP namelist logical values into Python bool."""
-        if isinstance(value, (bool, np.bool_)):
-            return bool(value)
-        if isinstance(value, (int, np.integer)):
-            return bool(value)
-        if value is None:
-            return None
-        text = str(value).strip().lower().replace('.', '')
-        if text in ('true', 't', 'yes', 'y', '1'):
-            return True
-        if text in ('false', 'f', 'no', 'n', '0'):
-            return False
-        return None
+        return namelist_reader.parse_bool_value(value)
 
     def get_namelist_bool(self, name:str, default=None):
-        """Return a scalar TRANSP logical from the loaded TR.DAT namelist.
+        """Return a scalar TRANSP logical from the loaded TR.DAT namelist (case-insensitive key)."""
+        return namelist_reader.get_bool(self.nmlist, name, default)
 
-        ``load_namelist`` preserves the spelling/case of keys.  Field-orientation
-        controls are important enough that lookup here is deliberately
-        case-insensitive.
-        """
-        if not self.nmlist:
-            return default
-        key = next((k for k in self.nmlist if k.strip().upper() == name.upper()), None)
-        if key is None:
-            return default
-        value = self._parse_bool_value(self.nmlist[key])
-        return default if value is None else value
-
-    def get_ncattr_text(self, name:str, default:str=''):
-        """Return a CDF attribute as stripped text.
-
-        netCDF readers may expose character attributes as ``str``, ``bytes``,
-        NumPy byte/string scalars, or small character arrays.  Metadata writers
-        should not depend on a reader-private decoding helper, so normalize the
-        common representations here.
-        """
-        try:
-            value = self.get_ncattr(name)
-        except (AttributeError, KeyError, RuntimeError):      # closed/unreadable dataset: attribute not available
-            return default
-        if value is None:
-            return default
-        if isinstance(value, (bytes, np.bytes_)):
-            return bytes(value).decode('ISO-8859-1', errors='replace').strip()
-        if isinstance(value, np.ndarray):
-            if value.size == 0:
-                return default
-            if value.size == 1:
-                value = value.reshape(-1)[0]
-                if isinstance(value, (bytes, np.bytes_)):
-                    return bytes(value).decode('ISO-8859-1', errors='replace').strip()
-                return str(value).strip()
-            if value.dtype.kind in ('S', 'U'):
-                parts = []
-                for item in value.reshape(-1):
-                    if isinstance(item, (bytes, np.bytes_)):
-                        parts.append(bytes(item).decode('ISO-8859-1', errors='replace'))
-                    else:
-                        parts.append(str(item))
-                return ''.join(parts).strip()
-        return str(value).strip()
+    # (get_ncattr_text lives in netcdf_class: reading a CDF attribute is a CDF concern)
 
     def set_species_name(self, node, value):
-        """Set the species/state text node for the selected DD version.
-
-        DD 3.39 uses ``label``.  The species/state nodes were renamed to
-        ``name`` in late DD3 (3.42) and remain ``name`` in DD4.
-        """
-        text = str(value)
-        if self.dd_at_least(3, 42, 0):
-            node.name = text
-        else:
-            node.label = text
+        """Set the species/state text node for the selected DD version (see ``ids_identity``)."""
+        ids_identity.set_species_name(self.dd_at_least, node, value)
 
     # Backward-compatible alias used by older converter modules.
     def set_name_or_label(self, node, value):
         self.set_species_name(node, value)
 
     def set_nuclear_charge(self, node, value):
-        """Set z_n using the DD-native scalar type.
-
-        z_n changed from FLT_0D to INT_0D in DD4.
-        """
-        z = float(value)
-        node.z_n = int(round(z)) if self.dd_at_least(4, 0, 0) else z
+        """Set z_n using the DD-native scalar type (see ``ids_identity``)."""
+        ids_identity.set_nuclear_charge(self.dd_at_least, node, value)
 
     def set_ec_beam_identity(self, beam, identifier, description=None):
-        """Populate EC beam identity without mixing DD3/DD4 semantics.
-
-        DD3.39: ``identifier`` is the short identifier and ``name`` is the
-        descriptive beam name.  DD4: ``name`` is the short identifier and
-        ``description`` carries descriptive text.
-        """
-        identifier = str(identifier)
-        description = str(description if description is not None else identifier)
-        if self.dd_at_least(4, 0, 0):
-            beam.name = identifier
-            beam.description = description
-        else:
-            beam.identifier = identifier
-            beam.name = description
+        """Populate EC beam identity for DD3.39 or DD4 (see ``ids_identity``)."""
+        ids_identity.set_ec_beam_identity(self.dd_at_least, beam, identifier, description)
 
     def set_nbi_unit_identity(self, unit, identifier, description=None):
-        """Populate NBI unit identity for DD3.39 or DD4."""
-        identifier = str(identifier)
-        description = str(description if description is not None else identifier)
-        if self.dd_at_least(4, 0, 0):
-            unit.name = identifier
-            unit.description = description
-        else:
-            unit.identifier = identifier
-            unit.name = description
+        """Populate NBI unit identity for DD3.39 or DD4 (see ``ids_identity``)."""
+        ids_identity.set_nbi_unit_identity(self.dd_at_least, unit, identifier, description)
 
     def set_ec_mode(self, beam, o_mode_fraction, times):
-        """Write EC launch mode/polarization using the target DD schema.
-
-        DD3 uses the integer ``mode`` node and, where available, the legacy
-        beam-level ``o_mode_fraction`` array.  In DD4.1+, ``mode`` is removed
-        and the fraction is stored under ``beam/polarization``.
-        """
-        frac = float(np.clip(float(o_mode_fraction), 0.0, 1.0))
-        times = np.asarray(times, dtype=np.float64)
-        vals = np.full(len(times), frac, dtype=np.float64)
-        if self.dd_at_least(4, 1, 0):
-            beam.polarization.time = times
-            beam.polarization.o_mode_fraction = vals
-        elif self.dd_at_least(4, 0, 0):
-            # DD4.0 was transitional.  Prefer polarization when available;
-            # fall back to the pre-4.1 beam-level fraction if present.
-            if hasattr(beam, 'polarization') and hasattr(beam.polarization, 'o_mode_fraction'):
-                if hasattr(beam.polarization, 'time'):
-                    beam.polarization.time = times
-                beam.polarization.o_mode_fraction = vals
-            elif hasattr(beam, 'o_mode_fraction'):
-                beam.o_mode_fraction = vals
-        else:
-            # DD3 mode is the *main* excited wave mode.  For a mixed launch,
-            # infer the dominant mode from the O-mode power fraction.
-            beam.mode = 1 if frac >= 0.5 else -1
-            if hasattr(beam, 'o_mode_fraction'):
-                beam.o_mode_fraction = vals
+        """Write EC launch mode/polarization for the target DD schema (see ``ids_identity``)."""
+        ids_identity.set_ec_mode(self.dd_at_least, beam, o_mode_fraction, times)
 
     @staticmethod
     def _direction_override(value:str):
-        if value is None:
-            return None
-        text = str(value).strip().lower()
-        if text == 'ccw':
-            return True
-        if text == 'cw':
-            return False
-        return None
+        return direction_override(value)
 
     def _init_cocos_signs(self, ip_direction:str='auto', bt_direction:str='auto'):
-        """Set physical direction and target COCOS signs.
+        """Set physical direction and target COCOS signs (policy in ``cocos_signs``).
 
-        TRANSP stores the field-orientation controls separately from many CDF
-        quantities.  ``NLJCCW`` says whether the plasma current is
-        counter-clockwise from above and ``NLBCCW`` says the same for the
-        toroidal magnetic field.  IMAS uses +phi counter-clockwise from above.
-
-        IMAS DD3 uses COCOS 11; DD4 uses COCOS 17.  COCOS 11 and 17 have the
-        same cylindrical/toroidal orientation and q sign convention, but the
-        poloidal-flux sign is reversed.  In particular, for positive Ip,
-        COCOS17 psi decreases from magnetic axis to boundary.
+        ``NLJCCW``/``NLBCCW`` come from the namelist unless overridden; the signs are published
+        as attributes (``ip_sign``, ``bt_sign``, ``psi_sign`` ...) and as ``self.signs``.
         """
-        jccw = self._direction_override(ip_direction)
-        bccw = self._direction_override(bt_direction)
-        if jccw is None:
-            jccw = self.get_namelist_bool('NLJCCW', default=None)
-        if bccw is None:
-            bccw = self.get_namelist_bool('NLBCCW', default=None)
-
-        missing = []
-        if jccw is None:
-            missing.append('NLJCCW')
-            jccw = True
-        if bccw is None:
-            missing.append('NLBCCW')
-            bccw = True
-
-        self.nljccw = bool(jccw)
-        self.nlbccw = bool(bccw)
-        self.ip_sign = 1.0 if self.nljccw else -1.0
-        self.bt_sign = 1.0 if self.nlbccw else -1.0
-
-        try:
-            dd_major = int(str(self.dd_major_version).split('.')[0])
-        except (ValueError, TypeError, AttributeError):
-            dd_major = 4
-        self.target_cocos = 17 if dd_major >= 4 else 11
-
-        # Physical/vector quantities in IMAS +phi (counter-clockwise) direction.
-        self.jphi_sign = self.ip_sign
-        self.jparallel_sign = self.ip_sign
-        self.phi_sign = self.bt_sign
-        self.f_sign = self.bt_sign
-        self.q_sign = self.ip_sign * self.bt_sign
-        self.vloop_sign = self.ip_sign
-        self.toroidal_rotation_sign = self.ip_sign
-        self.poloidal_field_sign = self.ip_sign
-
-        # COCOS 11 -> 17 reverses the sign of full poloidal flux while leaving
-        # Ip, Bphi and q physical sign definitions unchanged.
-        self.psi_sign = self.ip_sign if self.target_cocos == 11 else -self.ip_sign
-
-        # TRANSP moments use the geometrical atan2(Z-Zaxis,R-Raxis) angle
-        # (counter-clockwise in the R-Z plane).  DD4/COCOS17 uses
-        # theta=-atan2(...), clockwise.  This multiplier maps target theta to
-        # the raw TRANSP moment angle when evaluating the Fourier surfaces.
-        self.theta_raw_from_target = 1.0 if self.target_cocos == 11 else -1.0
-
-        if missing:
-            print('*** WARNING: missing TRANSP field-orientation control(s): ' + ', '.join(missing))
+        signs = resolve_signs(ip_direction, bt_direction,
+                              lambda name: self.get_namelist_bool(name, default=None),
+                              self.dd_major_version)
+        self.signs = signs
+        for name, value in signs.as_attributes().items():
+            setattr(self, name, value)
+        if signs.missing:
+            print('*** WARNING: missing TRANSP field-orientation control(s): ' + ', '.join(signs.missing))
             print('***          assuming CCW. Use --ip-direction/--bt-direction to override.')
-
-        print('COCOS/signs:'
-              f' target={self.target_cocos}'
-              f' NLJCCW={self.nljccw} (Ip sign {self.ip_sign:+.0f})'
-              f' NLBCCW={self.nlbccw} (Bphi sign {self.bt_sign:+.0f})'
-              f' q sign {self.q_sign:+.0f}'
-              f' psi sign {self.psi_sign:+.0f}')
+        print(signs.summary())
 
     def get_nc_times(self):
-        self.timesc = self.get_ncvar('TIME')
-        self.ntimes = len(self.timesc)
-        self.timep = self.get_ncvar('TIME3')
-        self.ntimep = len(self.timep)
-        if self.ntimes>1 and self.ntimep>1:
-            coords_x = self.get_ncvar('X')
-            sh = coords_x.shape[1] if coords_x.ndim>1 else coords_x.shape
-            self.logger.info(f' nprof {sh}: ntimes {self.ntimes}'
-               f' {self.timesc[0]} .. {self.timesc[-1]}')
-            self.logger.info(f' ntimep {self.ntimep} {self.timep[0]} .. {self.timep[-1]}')
-            self.logger.info(f' Dtimep {self.timep[1]-self.timep[0]};'
-               f' Dtimesc {self.timesc[1]-self.timesc[0]}')
-        else:
-            raise Exception(f'\tInvalid times prof:{self.ntimep} scalar {self.ntimes}')
+        self.timesc, self.ntimes, self.timep, self.ntimep = grid_services.read_time_bases(self.get_ncvar, self.logger)
 
 
     def check_1dim(self, dat):
-         if isinstance(dat, np.ndarray):
-            return dat.ndim==1
-         elif isinstance(dat, (list, tuple, set)):
-            return np.array(dat).ndim==1
-
+        return check_1dim(dat)
 
     #Don't call this using varargs forwarded by another function
+    #Don't call this using varargs forwarded by another function
     def is_valid(self, *variables, ind:int=0, name:str=''):
-        ii = ind+1
-        for var in variables:
-          if var is None:
-              if ind==1:
-                  self.logger.info(f'{name} is None')
-              return False
-          elif isinstance(var, np.ndarray):
-              #ndim=0; eg:np.array(5)
-              if var.ndim==0:
-                  return False
-              sh = var.shape
-              if sh[0]<ii or (len(sh)>1 and sh[1]==0):
-                  if ind==1:
-                      self.logger.info(f'{name} shape {sh}')
-                  return False
-          elif isinstance(var, (list, tuple, set)):
-              if len(var)<ii or not any(var):
-                  if ind==1:
-                      self.logger.info(f'{name} len: {len(var)}')
-                  return False
-        return True
+        return is_valid(*variables, ind=ind, name=name, logger=self.logger)
 
     def sum_arrays(self, *arrays):
-        """Return the element-wise sum of non-empty array-like inputs.
-
-        Shape/type errors are treated as invalid optional source data, while
-        programming and process-control exceptions are allowed to propagate.
-        """
-        res = []
-        init = False
-        try:
-            for arr in arrays:
-                if len(arr) == 0:
-                    continue
-                if init:
-                    res = res + arr
-                else:
-                    res = arr
-                    init = True
-        except (TypeError, ValueError) as exc:
-            self.logger.info(f' sum arrays error: {exc}')
-        return res
-
+        """Element-wise sum of the non-empty inputs (see ``ids_assignment.sum_arrays``)."""
+        return sum_arrays(*arrays, logger=self.logger)
 
     def operate_arrays(self, arr1, op:str, arr2=None, name1:str='', name2:str=''):
-        """Apply a supported element-wise operation with local NumPy error policy."""
-        unary = op == 'sqrt'
-        valid = self.is_valid(arr1) if unary else self.is_valid(arr1, arr2)
-        if not valid:
-            self.logger.info(f' operate_arrays error: {name1} {op} {name2}')
-            return np.array([])
-
-        try:
-            with np.errstate(divide='raise', invalid='raise', over='raise'):
-                if op == '-':
-                    return arr1 - arr2
-                if op == '+':
-                    return arr1 + arr2
-                if op == '/':
-                    a1 = np.asarray(arr1)
-                    a2 = np.asarray(arr2)
-                    dtype = np.result_type(a1.dtype, a2.dtype, np.float64)
-                    shape = np.broadcast_shapes(a1.shape, a2.shape)
-                    return np.divide(
-                        a1, a2,
-                        out=np.zeros(shape, dtype=dtype),
-                        where=a2 != 0,
-                    )
-                if op == '*':
-                    return arr1 * arr2
-                if op == 'sqrt':
-                    if isinstance(arr1, np.ndarray):
-                        return np.sqrt(arr1)
-                    if isinstance(arr1, list):
-                        return [math.sqrt(x) for x in arr1]
-                    if isinstance(arr1, set):
-                        return {math.sqrt(x) for x in arr1}
-                    if isinstance(arr1, tuple):
-                        return tuple(math.sqrt(x) for x in arr1)
-        except (TypeError, ValueError, FloatingPointError, OverflowError, ZeroDivisionError) as exc:
-            self.logger.info(f' operate_arrays error:: {name1} {op} {name2}: {exc}')
-            return np.array([])
-
-        self.logger.info(f' operate_arrays error:: unsupported operation {op!r}')
-        return np.array([])
+        """Apply a supported element-wise operation (see ``ids_assignment.operate_arrays``)."""
+        return operate_arrays(arr1, op, arr2, name1, name2, logger=self.logger)
 
     def np_multiply_sum(self, arr1, arr2, axis:int, name1:str='', name2:str='', scale=None):
-        if not self.is_valid(arr1, arr2):
-            mes = ' np_multiply_sum error'
-            s1, s2 = len(arr1), len(arr2)
-            if isinstance(arr1, np.ndarray) and isinstance(arr2, np.ndarray):
-               s1, s2 = arr1.shape, arr2.shape
-            self.logger.info(f'{mes}: {name1}:{s1} {name2}: {s2}')
-            return np.array([])
-        try:
-            with np.errstate(invalid='raise', over='raise'):
-                result = np.sum(np.multiply(arr1, arr2), axis=axis)
-                return result if scale is None else scale * result
-        except (TypeError, ValueError, FloatingPointError, OverflowError) as exc:
-            self.logger.info(f' np_multiply_sum error:: {name1} {name2}: {exc}')
-            return np.array([])
-
+        return np_multiply_sum(arr1, arr2, axis, name1, name2, scale, logger=self.logger)
 
     def checkErrExit(self, *variables, name:str=''):
         for var in variables:
@@ -464,80 +214,16 @@ class nc2imas(imas_connection, netcdf_connection):
 
 
     def interp1d_time(self, time_new, time, dat, ind1:int=None, ind2:int=None):
-        r'''
-        interpolate dat from time onto time_new
-        time_new: 1d times; output dat has this size.
-        dat: 2d (time, 1d)
-        time: 1d times (x axis); Same size of 1st dim or values or f(x) of dat
-        '''
-        #if dat is 2D, 1st dim should have len of len(time)
-        if self.is_valid(time_new) and self.is_valid(dat, time, ind=len(time)-1):
-           if isinstance(dat, np.ndarray) and dat.ndim==2:
-               if ind1 is not None and ind2 is None:
-                  dat = dat[ind1, :]
-               if ind1 is None and ind2 is not None:
-                  dat = dat[:, ind2]
-           # TIME and TIME3 may have *equal lengths but different sample
-           # locations*.  Comparing lengths is not sufficient to skip the
-           # interpolation; compare the actual coordinates instead.
-           if np.array_equal(np.asarray(time_new), np.asarray(time)):
-               return dat
-           if np.asarray(dat).ndim != 1 or len(dat) != len(time):
-               return []
-           return np.interp(time_new, time, dat)
-        else:
-           return []
+        r'''interpolate ``dat`` from ``time`` onto ``time_new`` (see ``grid_services.interp_time``).'''
+        return grid_services.interp_time(self.is_valid, time_new, time, dat, ind1, ind2)
 
     def get_ncvar_on_time(self, var: str, target: str = 'TIME3', scale: float = 1.0):
-        """Read a 1-D TRANSP time history on an explicitly selected time grid.
-
-        The CDF variable's declared leading dimension, not the array length,
-        identifies the source grid.  Interpolation is needed whenever the
-        numerical TIME and TIME3 coordinates differ, even at equal lengths.
-        This routine is deliberately restricted to 1-D histories; spatial
-        profiles must be handled on their native TIME3 grid.
-        """
-        if target not in ('TIME', 'TIME3'):
-            raise ValueError(f'Unsupported TRANSP target time coordinate: {target}')
-        try:
-            dimensions = self.nc.variables[var].dimensions
-        except KeyError:
-            return np.array([])
-        if len(dimensions) != 1 or dimensions[0] not in ('TIME', 'TIME3'):
-            raise ValueError(f'{var} is not a 1-D TIME/TIME3 history: {dimensions}')
-        source = np.asarray(self.timesc if dimensions[0] == 'TIME' else self.timep)
-        destination = np.asarray(self.timesc if target == 'TIME' else self.timep)
-        values = self.get_ncvar(var, scale=scale)
-        if values.ndim != 1 or values.shape != source.shape:
-            raise ValueError(f'{var} shape {values.shape} disagrees with {dimensions[0]} '
-                             f'coordinate {source.shape}')
-        if not np.all(np.isfinite(source)) or not np.all(np.diff(source) > 0):
-            raise ValueError(f'{var} has an invalid {dimensions[0]} time coordinate')
-        if not np.all(np.isfinite(destination)) or not np.all(np.diff(destination) > 0):
-            raise ValueError(f'{var} has an invalid {target} target time coordinate')
-        if np.array_equal(source, destination):
-            return values
-        return np.interp(destination, source, values)
+        """A 1-D TRANSP history on ``TIME`` or ``TIME3`` (see ``grid_services.history_on_time``)."""
+        return grid_services.history_on_time(self.nc, self.get_ncvar, self.timesc, self.timep, var, target, scale)
 
     #fill ids.value
     def fill_value(self, ids, dat, rsz:int=-1, mult:float=None, name:str=None):
-        name_ = name if name else 'data'
-        if not self.is_valid(dat):
-            #self.logger.info(f'{name} is None')
-            return
-
-        nresize = len(dat) if (not np.isscalar(dat) and rsz==-1) else rsz
-
-        if nresize > 0:
-            ids.value.resize(nresize, refcheck=False)
-        if mult is not None:
-            dat = mult*dat
-        if np.isscalar(dat):
-            ids.value = dat
-        else:
-            ids.value[:] = dat
-        #if self.src:
-        #    ids.source = self.src
+        return fill_value(ids, dat, rsz=rsz, mult=mult, logger=self.logger)
 
     def fill_value_nc(self, ids, var:str, rsz:int=-1, mult:float=None):
         dat = self.get_ncvar(var)
@@ -571,76 +257,23 @@ class nc2imas(imas_connection, netcdf_connection):
     @staticmethod
     def _node_path(node):
         """IDS path of ``node`` for status messages (never raises)."""
-        path = getattr(getattr(node, 'metadata', None), 'path', None)
-        return str(path) if path is not None else type(node).__name__
+        return node_path(node)
 
     def fill_data(self, ids, dat, mult:float=None, ind:int=-1, ind2:int=-1,
           interp:bool=False, name:str=None, resize:bool=True, chk:int=-1) -> bool:
-        """Assign ``dat`` to an array node; returns True if it was written.
+        """Assign ``dat`` to an array node; returns True if it was written (policy: ``ids_assignment``).
 
-        Absent source data (``is_valid`` false) is optional input: the field is skipped and recorded in
-        the mapping ledger.  Data that is present but cannot be assigned (radial size different from
-        ``chk``, a scalar for an array node, a shape or schema error) is a broken mapping, not absent
-        data: it raises ``MappingError`` (strict) or is recorded as skipped with the reason (lenient).
-        Before, a size mismatch was only reported for time slice 0 and silently skipped for the others.
+        Absent source data is a recorded skip; present data that cannot be assigned is a broken
+        mapping (``MappingError`` in strict mode, a skipped field with the reason in lenient mode).
         """
-        nm = name if name is not None else 'data'
-        target = self._node_path(ids)
-        if not self.is_valid(dat, name=nm):
-            self.mapping.skipped('no source data', target=target)
-            if ind==0:
-                self.logger.info(f'\t\t{nm} is invalid')
-            return False
-        try:
-            if (ind>= 0 and ind2>=0):
-               dat = dat[ind:ind2]
-            elif ind>= 0:
-               dat = dat[ind]
-
-            if chk>0 and not np.isscalar(dat) and len(dat)!=chk:
-               raise ValueError(f'size mismatch {len(dat)} != {chk}')
-            if np.isscalar(dat):
-               raise ValueError('cannot fill a scalar value into an array node')
-            if mult is not None:
-                dat = mult*dat
-            if interp is True and not np.array_equal(self.timesc, self.timep):
-                dat = np.interp(self.timep, self.timesc, dat)
-            if (not np.isscalar(dat)) and resize:
-                ids.resize(len(dat), refcheck=False)
-            ids[:] = dat
-        except (AttributeError, ValueError, TypeError, IndexError, FloatingPointError) as exc:
-            self.mapping.broken(f'{type(exc).__name__}: {exc}', source=nm, target=target)
-            return False
-        return True
+        return fill_data(ids, dat, self.mapping, self.logger, mult=mult, ind=ind, ind2=ind2,
+                         interp=interp, times=lambda: (self.timesc, self.timep), name=name,
+                         resize=resize, chk=chk)
 
     def load_namelist(self):
-        if self.nml_name is None:
-            print('**Error: namelist file not set')
-            return
-        self.nmlist = {}
-        if not check_file_exists(self.nml_name):
-            print(f'**WARNING: namelist file {self.nml_name} not found')
-            return
-
-        with open(self.nml_name, encoding = 'ISO-8859-1') as nmf:
-            self.logger.info(f'loading {self.nml_name}')
-            for line in nmf:
-                lns = line.strip()
-                if lns and (lns[0] not in ['!', '&', '/']):
-                    lns = lns.split('!',1)[0]
-                    kv = lns.split('=',1)
-                    if len(kv) == 2:
-                        val = kv[1].strip()
-                        #cast to int or float
-                        try:
-                            val = int(val)
-                        except ValueError:
-                            try:
-                                vv = val.upper().replace('D0','')
-                                val = float(vv)
-                            except ValueError:
-                                pass
-                        self.nmlist[kv[0].strip()] = val
+        loaded = namelist_reader.load_namelist(self.nml_name, self.logger)
+        if self.nml_name is not None:
+            self.nmlist = loaded
 
     def reload_namelist(self, fname:str):
         self.nml_name = fname
@@ -648,166 +281,40 @@ class nc2imas(imas_connection, netcdf_connection):
             self.nmlist.clear()
         self.load_namelist()
         # A changed TR.DAT must not retain XML/provenance for the prior file.
-        self._code_parameters_xml_cache = None
-        self._provenance_file_records_cache = None
-        self._input_inventory_cache = None
+        self._provenance.reset()
 
 
     #TODO move to utilities
     def parse_number(self, ss:str, tp):
-        if not isinstance(ss, str):
-            return tp(ss)
-
-        #replace exponential 10** if any
-        ss0 = ss
-        res= ss.find('10**')
-        if res >=0:
-            ss = ss.replace('10**', 'E')
-        opls = ['*', '/', '+', '-']
-        nn = []
-        ops = []
-        p = 0
-
-        #splitting into separate number strings
-        for i,a in enumerate(ss):
-            if a in opls and i>0 and ss[i-1].upper() !='E':
-                nn.append(ss[p:i])
-                ops.append(a)
-                p = i+1
-
-        if p<len(ss):
-            nn.append(ss[p:])
-        if len(ops)!=len(nn)-1:
-            raise Exception(f'Error in parsing string to number {ss0}')
-        n = 0
-        try:
-            n = tp(nn[0]) if len(nn)>0 else None
-            for i,s in enumerate(ops):
-                d = tp(nn[i+1])
-                if s=='*':
-                    n = n * d
-                elif s=='/':
-                    n = n/d
-                elif s=='+':
-                    n = n+d
-                elif s=='-':
-                    n = n-d
-        except (ValueError, TypeError, IndexError):
-            print(f'parse error: {ss0} extracted: {nn}')
-        return n
+        return namelist_reader.parse_number(ss, tp)
 
 
     #name's last character is discarded. Eg. XECECH?. () added separately
     def get_namelist_nvars(self, name:str, ndig:int=2):
-        if name[-1] != '?':
-            raise Exception(f'Error: {name} needs "?" as last char')
-        name = name[:-1]
-        pattern = rf'^{re.escape(name)}(?:\((\d{{1,{ndig}}})\))?$'
-        if self.nmlist is None:
-            self.logger.info(f'**Error: {name}: namelist not found')
-            return 0
-        try:
-            matches = [self.nmlist[k] for k in self.nmlist 
-                       if re.fullmatch(pattern, k)]
-            return len(matches)
-        except (AttributeError, TypeError):
-            self.logger.info(f'**Error: {name}: namelist not found')
-            return 0
+        return namelist_reader.count_vars(self.nmlist, self.logger, name, ndig)
 
 
     def make_namelist_re_pattern(self, name:str, nd1:int=0, nd2:int=0, nch1:int=0,
           nch2:int=0, nd:int=0, nch:int=0) -> str:
-        #only upto ?,? handled (two occurences)
-        nn = name.count('?')
-        st = 1 if nn>1 else -1
-        pat = self.make_re_pattern(name, nd1, nd2, nch1, nch2, nd, nch, step=st)
-        ii = name.find('?')
-
-        if nn > 1:
-            pat = self.make_re_pattern(fr'{pat}{name[ii+1:]}', nd1, nd2, nch1, nch2, nd, nch)
-        return pat
+        return make_namelist_re_pattern(name, nd1, nd2, nch1, nch2, nd, nch)
 
     def get_namelist_keys_re(self, name:str, cut:str='', nd1:int=0, nd2:int=0, nch1:int=0,
           nch2:int=0, nd:int=0, nch:int=0) -> List:
-        # name: regex need to be escaped \(
-        pat = self.make_namelist_re_pattern(name, nd1, nd2, nch1, nch2, nd, nch)
-
-        if pat is None:
-            return []
-        matches = [k for k in self.nmlist.keys() if re.search(pat, k)]
-        if cut:
-            matches = [s.split(cut,1)[1] for s in matches if len(s.split(cut,1))>1]
-        return matches
+        return namelist_reader.keys_re(self.nmlist, name, cut, nd1, nd2, nch1, nch2, nd, nch)
 
 
     #returns scalar or list
     def get_namelist_var_(self, name:str, tp=None, scale=1., ind:int=-1):
-        try:
-            val = self.nmlist[name]
-            if isinstance(val, str):
-               val = re.split(r'[\s,;]+', val)
-            if ind>=0:
-               val = val[ind]
-        except (KeyError, TypeError, IndexError, AttributeError):
-            #self.logger.info(f'** {name} NOT found in name list')
-            if self.nmlist is None:
-                self.logger.info(f'** {self.nmlist} is not set')
-            return None
-
-        narr = 0
-        try:
-            if ind==-1:
-               narr = len(val)
-        except TypeError:
-            pass
-
-        if tp in [int, float]:
-            if narr>0:
-               val =  [self.parse_number(val[i], tp) for i in range(narr)]
-               val = np.array(val)
-            else:
-               val = self.parse_number(val, tp)
-            if scale != 1.0:
-               val = scale*val
-        return val
+        """Scalar or list for one namelist key; ``None`` when absent."""
+        return namelist_reader.get_var_(self.nmlist, self.logger, name, tp, scale, ind)
 
     # Some scalar can stand for arrays, e.g: FREQECH, which causes error when
     #  an array is expected. So, call for array should handle single variable also.
     # Returns scalar for single, list for array on RHS
     def get_namelist_vars(self, name:str, tp=None, scale=1.0, ind:int=-1,
           size:int=1, resize:bool=False):
-        #name: don't escape (); only regex needs \(
-        # search for single or without () for array on rhs
-        res = self.get_namelist_var_(name, tp, scale, ind=ind)
-        n = 0
-        # search for index
-        if ind>=0 and res is None:
-           namei = f'{name}({ind+1})'
-           res = self.get_namelist_var_(namei, tp, scale)
-           n = 1
-        # search for array
-        elif res is None:
-           n = self.get_namelist_nvars(f'{name}?')
-           res = []
-           for i in range(n):
-              namei = f'{name}({i+1})'
-              val = self.get_namelist_var_(namei, tp, scale)
-              if val is not None:
-                 res.append(val)
-           res = np.array(res)
-
-        # resize only if scalar, not an array to different size
-        if res is not None and resize:
-           try:
-               n = len(res)
-           except TypeError:
-               pass
-           if n<=1:
-               res = np.full(size, res)
-
-        if size>1 and res is not None and len(np.array(res))!= size:
-            raise Exception(f'resize failed: size of {name} != {size}')
-        return res
+        """Scalar for a single value, array for an indexed list on the right-hand side."""
+        return namelist_reader.get_vars(self.nmlist, self.logger, name, tp, scale, ind, size, resize)
 
     def get_namelist_var(self, name:str, tp=None, scale=1.0, ind:int=-1, size:int=1):
         """Compatibility wrapper around :meth:`get_namelist_vars`."""
@@ -815,32 +322,9 @@ class nc2imas(imas_connection, netcdf_connection):
 
 
     def extract_str_between(self, name:str, pat1:str, pat2:str, default:str, tp=None):
-        res = None
-        try:
-            li = name.find(pat1) + len(pat1) + 1
-            #can have multiple occurences. eg: ','
-            ris = [s.start() for s in re.finditer(pat2, name)]
-            ri = [i for i in ris if i>li][0]
-            res = name[li:ri] if ri>li+1 else default
-            if tp is not None:
-                res = tp(res)
-        except (IndexError, ValueError, TypeError):
-            self.logger.debug(f'extract error: {name} doesnot have {pat1} and {pat2}')
-        return res
+        return namelist_reader.extract_str_between(self.logger, name, pat1, pat2, default, tp)
 
-    def fluxBdryToCenter(self, data, dat0=None):
-        dat = []
-        if not self.valid(data):
-            return dat
-
-        dat = dat.copy()
-        #average of consecutive columns, except first
-        dat[:,1:] += dat[:,:-1] #add previous column
-        if self.valid(dat0):
-            dat[:,0] += dat0
-        else:
-            dat[:,0] *= 2.
-        return dat/2.
+    # (fluxBdryToCenter removed: it called a non-existent ``self.valid`` and nothing used it)
 
     def set_logger(self, log:str = None):
         self.logger = logging.getLogger(__name__)
@@ -858,10 +342,7 @@ class nc2imas(imas_connection, netcdf_connection):
     @staticmethod
     def cumulative_zone_quantity(values):
         """Convert TRANSP per-zone geometry to an enclosed flux-surface quantity."""
-        arr = np.asarray(values)
-        if arr.ndim < 1 or arr.size == 0:
-            return arr
-        return np.cumsum(arr, axis=-1)
+        return grid_services.cumulative_zone_quantity(values)
 
     @staticmethod
     def interp_radial_profiles(values, x_from, x_to, axis_value=None):
@@ -870,39 +351,45 @@ class nc2imas(imas_connection, netcdf_connection):
         ``axis_value`` optionally adds an explicit point at rho=0 before
         interpolation.  This is important for TRANSP XB data because XB starts
         at the outer boundary of the first finite-volume zone, while X contains
-        the zone centre inside it.
+        the zone centre inside it.  The grid mapping is cached by coordinate
+        content (see ``radial_interpolation``).
         """
-        v = np.asarray(values)
-        xf = np.asarray(x_from)
-        xt = np.asarray(x_to)
-        if v.size == 0 or xf.size == 0 or xt.size == 0 or v.ndim != 2:
-            return v
-        if xf.ndim != 2 or xt.ndim != 2 or v.shape[0] != xf.shape[0] or v.shape[0] != xt.shape[0]:
-            return v
-        out = np.empty((v.shape[0], xt.shape[1]), dtype=np.float64)
-        av = None if axis_value is None else np.asarray(axis_value)
-        for it in range(v.shape[0]):
-            xx = xf[it]
-            yy = v[it]
-            if axis_value is not None and len(xx) and xx[0] > 0.0:
-                a0 = float(av[it] if av.ndim else av)
-                xx = np.concatenate(([0.0], xx))
-                yy = np.concatenate(([a0], yy))
-            out[it] = np.interp(xt[it], xx, yy)
-        return out
+        return interpolate_radial_profiles(values, x_from, x_to, axis_value)
+
+    def reference_radius(self):
+        """The fixed reference major radius ``r0`` in m: the middle of the limiter ``RLIM``, or ``None``.
+
+        The Data Dictionary asks for "a fixed position such as the middle of the vessel".  The limiter is
+        the machine's own first wall, so ``(Rmax + Rmin)/2`` of it is the same for every shot of a machine,
+        unlike the magnetic-axis radius, which moves with the plasma.  ``None`` when the CDF has no usable
+        limiter (fewer than three finite points).
+        """
+        rlim = self.get_ncvar('RLIM', self.cm2m)
+        if not self.is_valid(rlim):
+            return None
+        points = np.asarray(rlim[0] if rlim.ndim > 1 else rlim, dtype=np.float64)
+        points = points[np.isfinite(points) & (points > 0.0)]
+        if points.size < 3:
+            return None
+        return float(0.5 * (points.max() + points.min()))
 
     def vacuum_field_reference(self, times=None):
-        """``(r0, b0(times))`` of the vacuum toroidal field, or ``None`` without RAXIS/BZXR.
+        """``(r0, b0(times))`` of the vacuum toroidal field, or ``None`` without BZXR.
 
-        ``times`` defaults to the writer time grid ``timep``; see
-        :func:`utilities.vacuum_field_reference` for the convention.
+        ``times`` defaults to the writer time grid ``timep``; ``r0`` is :meth:`reference_radius`, else the
+        mean magnetic-axis radius (needs RAXIS); see :func:`utilities.vacuum_field_reference`.
         """
-        raxis = self.get_ncvar('RAXIS', self.cm2m)       # RAXIS(TIME) m
         bzxR = self.get_ncvar('BZXR', self.cm2m)         # BZXR(TIME) T m, vacuum field x radius
-        if not self.is_valid(raxis, bzxR):
+        r0 = self.reference_radius()
+        raxis = None
+        if r0 is None:
+            raxis = self.get_ncvar('RAXIS', self.cm2m)   # RAXIS(TIME) m
+            if not self.is_valid(raxis):
+                return None
+        if not self.is_valid(bzxR):
             return None
         return vacuum_field_reference(raxis, bzxR, self.bt_sign,
-                                      self.timep if times is None else times, self.timesc)
+                                      self.timep if times is None else times, self.timesc, r0=r0)
 
     def check_profile_shape(self, name, array, nt, nx):
         """``array`` if it is a ``(nt, nx)`` time-radius profile (or empty), else a broken mapping.
@@ -929,6 +416,41 @@ class nc2imas(imas_connection, netcdf_connection):
         """
         reference = self.vacuum_field_reference(times)
         return None if reference is None else np.abs(reference[1])
+
+    def boundary_minor_radius(self):
+        """Boundary minor radius ``(Rmax - Rmin)/2`` in m on ``TIME3`` from the ``RMCB<k>``/``RMSB<k>`` moments.
+
+        Empty without the moments.  This is the Data Dictionary's definition of the boundary minor radius and
+        agrees with the traced LCFS outline to 1-2%; ``sqrt(PAREA/pi)`` is 26-37% larger for the elongated
+        bundled plasmas.
+        """
+        cosine, sine = [], []
+        k = 0
+        while f'RMCB{k}' in self.nc.variables:
+            cosine.append(self.get_ncvar_on_time(f'RMCB{k}', scale=self.cm2m))
+            sine.append(self.get_ncvar_on_time(f'RMSB{k}', scale=self.cm2m) if k and f'RMSB{k}' in self.nc.variables
+                        else np.zeros_like(cosine[0]))
+            k += 1
+        if not cosine or not self.is_valid(cosine[0]):
+            return np.array([])
+        return boundary_minor_radius(np.array(cosine), np.array(sine))
+
+    def plasma_betas(self):
+        """``{'beta_tor', 'beta_pol', 'beta_tor_norm'}`` on ``TIME3`` by the IMAS definitions, or ``{}``.
+
+        From the total pressure ``PTOWB`` and zone volumes ``DVOL``, the exported ``b0`` and ``r0`` (see
+        :meth:`vacuum_field_reference`), the plasma current and :meth:`boundary_minor_radius`.  TRANSP's own
+        ``BTEQ``, ``BETAT`` and ``BPEQ`` use other normalisations (see ``plasma_betas``), so they are not copied.
+        """
+        reference = self.vacuum_field_reference()
+        pressure = self.get_ncvar('PTOWB')
+        dvol = self.get_ncvar('DVOL', self.vconv)
+        current = self.get_ncvar_on_time('PCURC')
+        minor = self.boundary_minor_radius()
+        if reference is None or not self.is_valid(pressure, dvol, current, minor):
+            return {}
+        r0, b0 = reference
+        return imas_betas(pressure, dvol, b0, r0, self.ip_sign * current, minor)
 
     def fill_vac_tor_field(self, ids):
         reference = self.vacuum_field_reference()
@@ -1004,380 +526,42 @@ class nc2imas(imas_connection, netcdf_connection):
             self.fill_data(gd.area, area_enclosed, ind=i)
             self.fill_data(gd.surface, surface, ind=i)
 
-    @staticmethod
-    def _iso8601_file_timestamp(path):
-        """Return a UTC ISO-8601 timestamp for a local provenance file."""
-        try:
-            ts = Path(path).stat().st_mtime
-            return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        except (OSError, ValueError, OverflowError):
-            return ''
-
     def _provenance_file_records(self):
-        """Return portable source-file records for IDS-level provenance.
-
-        Keep the whole-IDS provenance intentionally small (the DD caps the
-        reference list at 10). Full file contents and recursively referenced
-        templates remain preserved in ``code.parameters``.
-        """
-        if self._provenance_file_records_cache is not None:
-            return list(self._provenance_file_records_cache)
-
-        records = []
-        candidates = [('TRANSP CDF', self.ncfile)]
-        if self.nml_name:
-            candidates.append(('TRANSP TR.DAT', self.nml_name))
-        # Include resolved model/template files when present, up to the DD cap.
-        try:
-            for role, key, filename, resolved in self._collect_parameter_files():
-                if role == 'TRDAT':
-                    continue
-                if resolved is not None:
-                    candidates.append((f'{role}:{key}', str(resolved)))
-        except Exception as exc:          # best-effort provenance: never abort, but never silent either
-            self.mapping.skipped(f'could not collect model/template files: {type(exc).__name__}: {exc}',
-                                 target='ids_properties/provenance')
-        seen = set()
-        for role, filename in candidates:
-            if not filename:
-                continue
-            path = Path(filename).expanduser()
-            try:
-                resolved = path.resolve()
-            except (OSError, RuntimeError):
-                resolved = path
-            key = str(resolved)
-            if key in seen:
-                continue
-            seen.add(key)
-            digest = ''
-            try:
-                import hashlib
-                h = hashlib.sha256()
-                with open(resolved, 'rb') as stream:
-                    for chunk in iter(lambda: stream.read(1024 * 1024), b''):
-                        h.update(chunk)
-                digest = h.hexdigest()
-            except OSError:
-                pass            # unreadable provenance file: no digest (recorded as such below)
-            # Avoid embedding machine-specific absolute paths in the portable
-            # provenance string. The exact resolved path remains in code.parameters.
-            name = f'{role}:file:{Path(filename).name}'
-            if digest:
-                name += f'#sha256={digest}'
-            records.append((name, self._iso8601_file_timestamp(resolved)))
-            if len(records) >= 10:
-                break
-        self._provenance_file_records_cache = list(records)
-        return list(records)
+        """Portable source-file records for IDS-level provenance (see ``ProvenanceRecorder``)."""
+        return self._provenance.file_records()
 
     def _fill_source_provenance(self, ids):
-        """Attach source CDF/TR.DAT provenance to the whole IDS.
-
-        DD <=3.41 uses ``provenance/node/sources``. DD >=3.42 uses the
-        ``reference`` AoS with name/timestamp. The full original inputs are
-        additionally embedded in ``code.parameters`` wherever that node exists.
-        """
-        try:
-            provenance = ids.ids_properties.provenance
-            provenance.node.resize(1)
-            node = provenance.node[0]
-            if hasattr(node, 'path'):
-                node.path = ''
-            records = self._provenance_file_records()
-            if hasattr(node, 'reference'):
-                node.reference.resize(len(records))
-                for i, (name, timestamp) in enumerate(records):
-                    ref = node.reference[i]
-                    if hasattr(ref, 'name'):
-                        ref.name = name
-                    if timestamp and hasattr(ref, 'timestamp'):
-                        ref.timestamp = timestamp
-            elif hasattr(node, 'sources'):
-                node.sources = [name for name, _ in records]
-        except Exception as exc:          # best-effort provenance: never abort, but never silent either
-            self.logger.warning(f'Could not attach IDS provenance: {exc}')
-            self.mapping.skipped(f'could not attach IDS provenance: {type(exc).__name__}: {exc}',
-                                 target='ids_properties/provenance')
-        return ids
+        """Attach source CDF/TR.DAT provenance to the whole IDS (see ``ProvenanceRecorder``)."""
+        return self._provenance.fill_source_provenance(ids)
 
     def fill_properties(self, ids):
-        runid, device, year, cdf_date, build_date, tglf, glf = self.get_nc_global_atts()
-        comment = f'TRANSP results for run {runid} {device} year: {year} CDF date: {cdf_date}'
-        cocos = (f' DD={self.dd_version}; COCOS={self.target_cocos};'
-                 f' NLJCCW={self.nljccw}; NLBCCW={self.nlbccw};'
-                 f' Ip_sign={self.ip_sign:+.0f}; Bphi_sign={self.bt_sign:+.0f};'
-                 f' q_sign={self.q_sign:+.0f}; psi_sign={self.psi_sign:+.0f}')
-        ids.ids_properties.comment = comment + f' build: {build_date} tglf: {tglf} glf23: {glf}' + cocos
-        ids.ids_properties.creation_date = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        if hasattr(ids.ids_properties, 'name'):
-            ids.ids_properties.name = f'TRANSP {runid}'
-        ids = self._fill_source_provenance(ids)
-
-        # Do not fill the legacy top-level fields
-        #   ids_properties.data_dictionary
-        #   ids_properties.access_layer
-        # They are not present in current IMAS Data Dictionary versions (including
-        # DD 4.1.1).  In modern IMAS they live below ids_properties.version_put.
-        # More importantly, IMAS-Python/DBEntry.put() fills version_put from the
-        # Data Dictionary and backend actually used for the write.  Leaving this
-        # metadata to DBEntry therefore avoids stale or inconsistent version data
-        # and remains compatible with older DD versions as well.
-        return ids
+        """Fill ``ids_properties`` (comment, creation date, name, provenance); see ``ProvenanceRecorder``."""
+        return self._provenance.fill_properties(ids)
 
     @staticmethod
     def radial_gradient(values, coordinate):
-        """Return d(values)/d(coordinate) independently for each time slice.
-
-        TRANSP profiles can contain repeated/degenerate points near the axis in
-        some runs.  Use a conservative one-sided/central finite difference and
-        leave a slice empty (NaN) only when the coordinate is unusable.
-        """
-        y = np.asarray(values, dtype=np.float64)
-        x = np.asarray(coordinate, dtype=np.float64)
-        if y.ndim != 2 or x.ndim != 2 or y.shape != x.shape:
-            return np.array([])
-        out = np.full_like(y, np.nan, dtype=np.float64)
-        for it in range(y.shape[0]):
-            xx = x[it]
-            yy = y[it]
-            good = np.isfinite(xx) & np.isfinite(yy)
-            if np.count_nonzero(good) < 2:
-                continue
-            xxg = xx[good]
-            yyg = yy[good]
-            # np.gradient requires a strictly monotonic coordinate.  A tiny
-            # duplicate can occur through interpolation/roundoff, so retain the
-            # first occurrence and interpolate the derivative back if needed.
-            keep = np.concatenate(([True], np.diff(xxg) != 0.0))
-            xxu = xxg[keep]
-            yyu = yyg[keep]
-            if len(xxu) < 2:
-                continue
-            edge_order = 2 if len(xxu) > 2 else 1
-            grad = np.gradient(yyu, xxu, edge_order=edge_order)
-            out[it] = np.interp(xx, xxu, grad, left=grad[0], right=grad[-1])
-        return out
-
-    @staticmethod
-    def _xml_safe_text(text):
-        """Remove characters forbidden by XML 1.0 while preserving file text."""
-        if text is None:
-            return ''
-        return ''.join(ch if (ch in '\t\n\r' or ord(ch) >= 0x20) else '\ufffd'
-                       for ch in str(text))
-
-    @staticmethod
-    def _clean_namelist_path(value):
-        if value is None:
-            return ''
-        text = str(value).strip().rstrip(',').strip()
-        if len(text) >= 2 and text[0] in ("'", '"') and text[-1] == text[0]:
-            text = text[1:-1]
-        return text.strip()
-
-    def _resolve_input_file(self, filename):
-        """Resolve a TRANSP/template path relative to the TRANSP namelist."""
-        if not filename:
-            return None
-        candidate = Path(os.path.expandvars(str(filename))).expanduser()
-        if candidate.is_absolute() and candidate.exists():
-            return candidate.resolve()
-        roots = []
-        if self.nml_name:
-            try:
-                roots.append(Path(self.nml_name).expanduser().resolve().parent)
-            except (OSError, RuntimeError):
-                roots.append(Path(self.nml_name).expanduser().parent)
-        roots.append(Path.cwd())
-        for root in roots:
-            path = (root / candidate).resolve()
-            if path.exists():
-                return path
-        # Return the most meaningful unresolved location for provenance.
-        return (roots[0] / candidate).resolve() if roots else candidate
-
-    def _read_parameter_file(self, path, max_bytes=10 * 1024 * 1024):
-        """Read a text parameter file and return (text, sha256, status)."""
-        try:
-            path = Path(path)
-            if not path.exists() or not path.is_file():
-                return '', '', 'missing'
-            size = path.stat().st_size
-            if size > max_bytes:
-                return '', '', f'too_large:{size}'
-            raw = path.read_bytes()
-            digest = hashlib.sha256(raw).hexdigest()
-            try:
-                text = raw.decode('utf-8')
-            except UnicodeDecodeError:
-                text = raw.decode('ISO-8859-1')
-            return self._xml_safe_text(text), digest, 'embedded'
-        except Exception as exc:
-            return '', '', f'error:{type(exc).__name__}'
-
-    @staticmethod
-    def _append_namelist_xml(parent, text):
-        """Add a lightweight structured Fortran-namelist representation.
-
-        The original text is retained separately and remains authoritative.
-        This parser is intentionally conservative: it records groups and
-        assignment strings without trying to evaluate Fortran expressions.
-        Continuation text is appended to the preceding assignment.
-        """
-        parsed = ET.SubElement(parent, 'parsed_namelist')
-        group_name = 'GLOBAL'
-        group = ET.SubElement(parsed, 'group', {'name': group_name})
-        last_parameter = None
-
-        def strip_comment(line):
-            # Remove ! comments while respecting simple quoted strings.
-            quote = None
-            out = []
-            for ch in line:
-                if ch in ("'", '"'):
-                    if quote is None:
-                        quote = ch
-                    elif quote == ch:
-                        quote = None
-                if ch == '!' and quote is None:
-                    break
-                out.append(ch)
-            return ''.join(out)
-
-        for raw_line in str(text).splitlines():
-            line = strip_comment(raw_line).strip()
-            if not line:
-                continue
-            if line.startswith('&'):
-                group_name = line[1:].strip().split()[0] or 'GLOBAL'
-                group = ET.SubElement(parsed, 'group', {'name': group_name})
-                last_parameter = None
-                continue
-            if line == '/' or line.startswith('/ '):
-                group_name = 'GLOBAL'
-                group = ET.SubElement(parsed, 'group', {'name': group_name})
-                last_parameter = None
-                continue
-            if '=' in line:
-                name, value = line.split('=', 1)
-                name = name.strip()
-                if not name:
-                    continue
-                last_parameter = ET.SubElement(group, 'parameter', {
-                    'name': name,
-                    'value': value.strip(),
-                })
-            elif last_parameter is not None:
-                prior = last_parameter.get('value', '')
-                last_parameter.set('value', (prior + ' ' + line).strip())
+        """d(values)/d(coordinate) per time slice (see ``grid_services.radial_gradient``)."""
+        return grid_services.radial_gradient(values, coordinate)
 
     def input_inventory(self):
-        """Resolve and cache the run's TR.DAT and recursively referenced inputs.
-
-        Missing or oversized files remain explicit provenance records; they are
-        *not* silently counted as archived inputs.
-        """
-        if self._input_inventory_cache is None:
-            self._input_inventory_cache = InputInventory(
-                self.nml_name, runid=self.get_ncattr_text('Runid', default=''))
-            for item in self._input_inventory_cache.missing:
-                message = (f'Source input NOT embedded ({item.status}): '
-                           f'{item.key} -> {item.path}')
-                self.logger.warning(message)
-                print(f'*** WARNING: {message}')
-            if self._input_inventory_cache.truncated:
-                message = ('Source input discovery exceeded safety limits; '
-                           'input inventory is incomplete')
-                self.logger.warning(message)
-                print(f'*** WARNING: {message}')
-        return self._input_inventory_cache
+        """Resolve and cache the run's TR.DAT and referenced inputs (see ``ProvenanceRecorder``)."""
+        return self._provenance.input_inventory()
 
     def _collect_parameter_files(self):
         """Legacy API consumed by IDS-provenance summary; use new inventory."""
-        return [(item.role, item.key, item.reference, item.path)
-                for item in self.input_inventory().records]
+        return self._provenance.parameter_files()
 
     def fill_external_model_inputs(self, ids, family):
         """Attach model-specific XML to the appropriate IDS code libraries."""
-        if not hasattr(ids, 'code'):
-            return []
-        return fill_model_libraries(ids.code, self.input_inventory(), family)
+        return self._provenance.fill_external_model_inputs(ids, family)
 
     def build_code_parameters_xml(self):
-        """Build XML provenance for IMAS code.parameters.
-
-        IMAS defines code.parameters as code-specific parameters in XML format.
-        Preserve the complete TRANSP input and referenced model/template input
-        files verbatim (XML escaped), together with hashes and CDF metadata.
-        """
-        if self._code_parameters_xml_cache is not None:
-            return self._code_parameters_xml_cache
-
-        root = ET.Element('transp2imas_parameters', {
-            'format_version': '1',
-            'target_dd': str(self.dd_version),
-            'target_cocos': str(self.target_cocos),
-        })
-        run = ET.SubElement(root, 'run', {
-            'device': str(self.device),
-            'shot': str(self.shot),
-            'imas_run': str(self.run),
-            'occurrence': str(self.occur),
-        })
-        run.set('source_cdf', str(self.ncfile))
-        ET.SubElement(root, 'converter', {
-            'name': 'transp2imas',
-            'version': TRANSP2IMAS_VERSION,
-        })
-
-        metadata = ET.SubElement(root, 'transp_metadata')
-        for key in ('Runid', 'CDF_date', 'BUILD_date', 'TRANSP_version',
-                    'TRANSP_DOI', 'TGLF_hash', 'GLF23_hash'):
-            try:
-                value = self.get_ncattr(key)
-            except (AttributeError, KeyError, RuntimeError):
-                value = None
-            if value is None:
-                continue
-            if isinstance(value, bytes):
-                value = value.decode('ISO-8859-1', errors='replace')
-            ET.SubElement(metadata, 'item', {'name': key, 'value': str(value).strip()})
-
-        signs = ET.SubElement(root, 'coordinate_conventions')
-        for key, value in (
-            ('NLJCCW', self.nljccw), ('NLBCCW', self.nlbccw),
-            ('ip_sign', self.ip_sign), ('bphi_sign', self.bt_sign),
-            ('q_sign', self.q_sign), ('psi_sign', self.psi_sign),
-            ('phi_sign', self.phi_sign)):
-            ET.SubElement(signs, 'item', {'name': key, 'value': str(value)})
-
-        inventory = self.input_inventory()
-        inputs = ET.SubElement(root, 'input_files', {
-            'complete': str(not (inventory.missing or inventory.truncated)).lower(),
-            'discovery_truncated': str(inventory.truncated).lower(),
-        })
-        for record in inventory.records:
-            append_file_xml(inputs, record)
-
-        xml = ET.tostring(root, encoding='unicode')
-        self._code_parameters_xml_cache = xml
-        return xml
+        """XML for IMAS code.parameters; cached (see ``ProvenanceRecorder``)."""
+        return self._provenance.build_code_parameters_xml()
 
     def fill_code_properties(self, ids):
         """Fill common code provenance, if this IDS contains a code node."""
-        if not hasattr(ids, 'code'):
-            return ids
-        ids.code.name = 'transp2imas'
-        if hasattr(ids.code, 'description'):
-            ids.code.description = 'TRANSP CDF to IMAS converter'
-        if hasattr(ids.code, 'version'):
-            ids.code.version = TRANSP2IMAS_VERSION
-        if hasattr(ids.code, 'repository'):
-            ids.code.repository = 'https://github.com/PrincetonUniversity/transp2imas'
-        if hasattr(ids.code, 'parameters'):
-            ids.code.parameters = self.build_code_parameters_xml()
-        return ids
+        return self._provenance.fill_code_properties(ids)
 
 
 if __name__ == '__main__':

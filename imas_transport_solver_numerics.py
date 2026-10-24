@@ -21,26 +21,22 @@ DD 3.39.0 control parameters have no ``name`` (added in 3.42.0), so nothing is w
 import numpy as np
 
 from pt_solver_diagnostics import channel_coordinates, decode_channel, diagnostic_xml
+from writer_base import IdsWriter
 
 INTEGER_PARAMETERS = {'NPTRITER': 'newton_iterations'}
 REAL_PARAMETERS = {'PT_CPTIME': 'cumulative_cpu_time_hours', 'PT_WTIME': 'cumulative_wall_time_hours'}
 SOLVER_INDEX = -1            # private identifier (negative index) for the PT_SOLVER code
 
 
-class imas_transport_solver_numerics:
+class imas_transport_solver_numerics(IdsWriter):
     """Writer registered as ``transport_solver_numerics`` in ``convert.py``."""
-
-    def __init__(self, ncimas):
-        self.im = ncimas
-        self.logger = ncimas.logger
-        self.create_ids()
 
     def _named_control_parameters(self):
         """True if this DD names its control parameters (DD >= 3.42.0; DD 3.39.0 has only ``value``).
 
         An unnamed value cannot say which parameter it is, so nothing is written without names.
         """
-        scratch = self.im.new_ids('transport_solver_numerics')
+        scratch = self.dd.new_ids('transport_solver_numerics')
         scratch.solver_1d.resize(1)
         control = scratch.solver_1d[0].control_parameters
         control.integer0d.resize(1)
@@ -78,25 +74,25 @@ class imas_transport_solver_numerics:
             time = coordinate if time is None else time
         return time, integers, reals
 
-    def create_ids(self):
+    def build(self):
         self.logger.info('\ntransport_solver_numerics')
         if not self._named_control_parameters():
             self.logger.info('transport_solver_numerics: this DD version has unnamed control parameters; not '
                              'written (the raw channels remain in the core_transport code parameters)')
-            self.im.mapping.skipped('this DD version has unnamed control parameters (named from DD 3.42.0)',
+            self.ctx.mapping.skipped('this DD version has unnamed control parameters (named from DD 3.42.0)',
                                     target='transport_solver_numerics')
-            return
-        diagnostics = diagnostic_xml(getattr(self.im, 'nc', None), record_inactive=False)
+            return []
+        diagnostics = diagnostic_xml(getattr(self.cdf, 'nc', None), record_inactive=False)
         time, integers, reals = self._channels(diagnostics)
         if time is None or not (integers or reals):
             self.logger.info('transport_solver_numerics: no active PT_SOLVER runtime channels; skipping')
-            self.im.mapping.skipped('no active PT_SOLVER runtime channels (NPTRITER/PT_CPTIME/PT_WTIME)',
+            self.ctx.mapping.skipped('no active PT_SOLVER runtime channels (NPTRITER/PT_CPTIME/PT_WTIME)',
                                     target='transport_solver_numerics')
-            return
+            return []
 
-        ids = self.im.new_ids('transport_solver_numerics')
-        ids = self.im.fill_properties(ids)
-        self.im.fill_code_properties(ids)
+        ids = self.dd.new_ids('transport_solver_numerics')
+        ids = self.fill.fill_properties(ids)
+        self.fill.fill_code_properties(ids)
         ids.ids_properties.homogeneous_time = 1
         ids.time = np.asarray(time, dtype=np.float64)
         ids.ids_properties.comment = (
@@ -105,7 +101,7 @@ class imas_transport_solver_numerics:
         ids.solver.name = 'PT_SOLVER'
         ids.solver.index = SOLVER_INDEX
         ids.solver.description = 'TRANSP PT_SOLVER predictive transport solver'
-        reference = self.im.vacuum_field_reference(time)
+        reference = self.signs.vacuum_field_reference(time)
         if reference is not None:
             ids.vacuum_toroidal_field.r0, ids.vacuum_toroidal_field.b0 = reference
 
@@ -120,9 +116,9 @@ class imas_transport_solver_numerics:
             for slot, (name, values) in zip(control.real0d, reals.items()):
                 slot.name = name
                 slot.value = float(values[it])
-        self.im.putdb_imas(ids)
-        self.logger.info('transport_solver_numerics: wrote '
+        self.logger.info('transport_solver_numerics: built '
                          f'{", ".join(list(integers) + list(reals))} at {time.size} native TIME samples')
+        return [ids]
 
 
 if __name__ == '__main__':
