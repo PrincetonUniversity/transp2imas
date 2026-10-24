@@ -230,6 +230,13 @@ messages.
   This prevents all-example false failures from `json.dumps` and restores real
   IMAS readback to the end-to-end verification sequence.
 
+## [0.13.0](https://github.com/PrincetonUniversity/transp2imas/compare/v0.12.1...v0.13.0) (2026-10-24)
+
+
+### Features
+
+* Introducing registry for the TRANSP2IMAS conversion ([#118](https://github.com/PrincetonUniversity/transp2imas/issues/118)) ([b5db83b](https://github.com/PrincetonUniversity/transp2imas/commit/b5db83ba1c41fc1d1fcab5d04bddf8b5fba45eb0))
+
 ## [0.12.1](https://github.com/PrincetonUniversity/transp2imas/compare/v0.12.0...v0.12.1) (2026-10-23)
 
 
