@@ -28,7 +28,7 @@ import namelist_reader as nl
 import plasma_betas as pb
 from conversion_plan import ConversionJournal
 from conversion_provenance import ProvenanceRecorder
-from mapping_status import MappingLedger
+from mapping_status import MappingError, MappingLedger, RecordingDataset, set_strict
 
 LOG = logging.getLogger('verify-conversion-services')
 
@@ -63,6 +63,42 @@ class NamelistTests(unittest.TestCase):
         self.assertEqual(data['NLJCCW'], 'T')
         self.assertEqual(data['FREQ(1)'], 1.5e9)
         self.assertNotIn('&INNML', data)
+
+    def test_fortran_d_exponents_are_read_not_turned_into_zero(self):
+        for text, expected in (('1.0D-3', 1.0e-3), ('2.5d0', 2.5), ('1D3', 1000.0), ('9.205d-2', 0.09205),
+                               ('1.142d3', 1142.0), ('-4.D1', -40.0)):
+            self.assertEqual(nl.parse_number(text, float), expected, text)
+        self.assertEqual(nl.parse_number('1.0D-3*2', float), 2.0e-3)           # inside an expression too
+        self.assertEqual(nl.fortran_number('5D-3'), 5.0e-3)
+        self.assertEqual(nl.fortran_number('7'), 7)
+        self.assertIsNone(nl.fortran_number('abc'))
+        self.assertIsNone(nl.fortran_number("'1.0D-3'"))                       # a quoted string stays a string
+
+    def test_names_are_not_mistaken_for_exponents(self):
+        self.assertEqual(nl.normalize_exponents('ADD3 + 1D2'), 'ADD3 + 1E2')
+
+    def test_load_reads_d_exponents_and_keeps_a_bang_inside_quotes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'TR.DAT'
+            path.write_text("TBONA(1) = 9.205d-2\nXLBTNA(3) = 1.142d3\nFILE='beam!config.nml' ! the comment\nN=7 ! seven\n",
+                            encoding='ISO-8859-1')
+            data = nl.load_namelist(str(path), LOG)
+        self.assertEqual(data['TBONA(1)'], 0.09205)
+        self.assertEqual(data['XLBTNA(3)'], 1142.0)
+        self.assertEqual(data['FILE'], "'beam!config.nml'")
+        self.assertEqual(data['N'], 7)
+
+    def test_an_unparseable_number_raises_and_is_unknown_to_the_reader_not_zero(self):
+        with self.assertRaises(ValueError):
+            nl.parse_number('abc', float)
+        with self.assertRaises(ValueError):
+            nl.parse_number('10**3', float)                                    # unsupported form: never a plausible 0
+        data = {'E': 'abc', 'A': '1.0D-3'}
+        with self.assertLogs('verify-conversion-services', level='WARNING') as logged:
+            self.assertIsNone(nl.get_var_(data, LOG, 'E', float))
+        self.assertIn('treated as unknown', logged.output[0])
+        self.assertEqual(nl.get_var_(data, LOG, 'A', float), 1.0e-3)
+        self.assertIsNone(nl.get_var_({'L': ['1.0', 'x']}, LOG, 'L', float))   # one bad element makes the list unknown
 
     def test_missing_file_gives_an_empty_namelist_and_no_path_gives_none(self):
         self.assertEqual(nl.load_namelist('/nonexistent/TR.DAT', LOG), {})
@@ -281,6 +317,104 @@ class BetaTests(unittest.TestCase):
         cos = np.array([[np.mean(radius * np.cos(k * theta)) * (1 if k == 0 else 2)] for k in range(8)])
         sin = np.array([[np.mean(radius * np.sin(k * theta)) * 2] for k in range(8)])
         self.assertAlmostEqual(float(pb.boundary_minor_radius(cos, sin)[0]), a, places=3)
+
+
+try:
+    import netCDF4
+except ImportError:      # pragma: no cover - environment dependent
+    netCDF4 = None
+
+
+@unittest.skipIf(netCDF4 is None, 'netCDF4 is required (it is what produces masked arrays)')
+class MaskedSourceTests(unittest.TestCase):
+    """A masked sample is a named broken mapping, never a fill value passed on as a physical number."""
+
+    def connection(self, directory, values, fill=-999.0):
+        from netcdf_class import netcdf_connection
+        path = Path(directory) / 'masked.nc'
+        with netCDF4.Dataset(path, 'w') as nc:
+            nc.createDimension('TIME', len(values))
+            var = nc.createVariable('TE', 'f8', ('TIME',), fill_value=fill)
+            var[:] = np.ma.masked_values(values, fill)
+            nc.createVariable('TI', 'f8', ('TIME',))[:] = np.arange(len(values), dtype=float)
+        connection = netcdf_connection.__new__(netcdf_connection)
+        connection.mapping = MappingLedger()
+        connection.mapping.writer = 'test'
+        connection.nc = RecordingDataset(netCDF4.Dataset(path), connection.mapping)
+        return connection
+
+    def test_masked_samples_are_a_broken_mapping_under_the_strict_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = self.connection(tmp, [1.0, -999.0, 3.0])
+            with self.assertRaises(MappingError) as caught:
+                connection.get_ncvar('TE')
+            self.assertIn('masked', str(caught.exception))
+            self.assertIn('TE', str(caught.exception))
+
+    def test_under_the_lenient_policy_the_variable_is_skipped_with_the_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = self.connection(tmp, [1.0, -999.0, 3.0])
+            set_strict(False)
+            try:
+                values = connection.get_ncvar('TE')
+            finally:
+                set_strict(True)
+            self.assertEqual(values.size, 0)                                  # not [1, -999, 3]
+            skipped = connection.mapping.entries('test')
+            self.assertTrue(any(row['source'] == 'TE' and 'masked' in row['reason'] for row in skipped), skipped)
+
+    def test_a_variable_without_masked_samples_is_read_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = self.connection(tmp, [1.0, 2.0, 3.0])
+            np.testing.assert_array_equal(connection.get_ncvar('TE'), [1.0, 2.0, 3.0])
+            np.testing.assert_array_equal(connection.get_ncvar('TI', scale=2.0), [0.0, 2.0, 4.0])
+            np.testing.assert_array_equal(connection.get_ncvar('TI', ind=1), [1.0])
+
+
+try:
+    import nc2imas as nc2imas_module
+except ImportError:      # pragma: no cover - environment dependent
+    nc2imas_module = None
+
+
+@unittest.skipIf(nc2imas_module is None, 'the converter module needs IMAS-Python')
+class ProfileShapeTests(unittest.TestCase):
+    """``nc2imas.check_profile_shape``: empty or exactly (nt, nx); everything else is a named broken mapping."""
+
+    def check(self, array, nt=3, nx=3, strict=False):
+        me = types.SimpleNamespace(mapping=MappingLedger())
+        me.mapping.writer = 'test'
+        set_strict(strict)
+        try:
+            result = nc2imas_module.nc2imas.check_profile_shape(me, 'VAR', array, nt, nx)
+        finally:
+            set_strict(True)
+        return result, me.mapping.entries('test')
+
+    def test_the_declared_shape_an_empty_array_and_histories_pass_unchanged(self):
+        full = np.zeros((3, 3))
+        self.assertIs(self.check(full)[0], full)
+        result, entries = self.check(np.array([]))
+        self.assertEqual((result.size, entries), (0, []))
+        # a scalar or 1-D time history is not a profile; its length is that of TIME, which need not be TIME3's
+        for history in (np.zeros(3), np.zeros(7), np.float64(2.0)):
+            result, entries = self.check(history)
+            self.assertIs(result, history)
+            self.assertEqual(entries, [])
+
+    def test_each_wrong_profile_shape_is_rejected_with_its_own_reason(self):
+        for array, text in ((np.zeros((2, 3)), 'time length mismatch 2 != 3'),
+                            (np.zeros((3, 4)), 'radial size mismatch 4 != 3'),
+                            (np.zeros((3, 3, 2)), '3-dimensional')):
+            result, entries = self.check(array)
+            self.assertEqual(result.size, 0, text)
+            self.assertTrue(any(text in row['reason'] and row['source'] == 'VAR' for row in entries), (text, entries))
+
+    def test_the_strict_policy_raises_naming_the_variable(self):
+        for array in (np.zeros((2, 3)), np.zeros((3, 3, 2))):
+            with self.assertRaises(MappingError) as caught:
+                self.check(array, strict=True)
+            self.assertIn('VAR', str(caught.exception))
 
 
 class ReadCountTests(unittest.TestCase):

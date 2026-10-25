@@ -59,6 +59,7 @@ help:
 
 quick:
 	$(PYTHON) -m py_compile $(wildcard *.py)
+	$(PYTHON) verify_curation.py
 	$(PYTHON) verify_conversion_runner.py
 	$(PYTHON) verify_cocos_signs.py
 	$(PYTHON) verify_code_provenance.py
@@ -66,6 +67,7 @@ quick:
 	$(PYTHON) verify_writer_interface.py
 	$(PYTHON) verify_conversion_context.py
 	$(PYTHON) verify_conversion_services.py
+	$(PYTHON) verify_nbi_mapping.py
 	$(PYTHON) verify_equilibrium_boundary_trace.py
 	$(PYTHON) verify_radial_interpolation.py --quick
 	$(PYTHON) verify_mapping_registry.py --quick

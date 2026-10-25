@@ -392,18 +392,27 @@ class nc2imas(imas_connection, netcdf_connection):
                                       self.timep if times is None else times, self.timesc, r0=r0)
 
     def check_profile_shape(self, name, array, nt, nx):
-        """``array`` if it is a ``(nt, nx)`` time-radius profile (or empty), else a broken mapping.
+        """``array`` unless it is a time-radius profile that does not fit ``(nt, nx)``, which is a broken mapping.
 
-        A profile with another radial size cannot be placed on the writer's grid.  Catching it here
-        names the variable, instead of failing later in some array arithmetic or being dropped.
-        Returns an empty array when the lenient policy skips it.
+        Absent input stays distinct from malformed present data: an empty array passes (the caller decides what
+        absent means).  A scalar or 1-D array is a time history, not a profile, and passes untouched: readers route
+        both kinds through here, and a history's length is that of ``TIME``, which need not be that of ``TIME3``.
+        A 2-D array must have the writer's time length and radial size, and more than two dimensions never fit.
+        A profile that does not fit cannot be placed on the writer's grid; catching it here names the variable
+        instead of failing later in some array arithmetic or being dropped.  Returns an empty array when the
+        lenient policy skips it.
         """
         values = np.asarray(array)
-        if values.ndim == 2 and values.shape[0] == nt and values.shape[1] != nx:
-            self.mapping.broken(f'radial size mismatch {values.shape[1]} != {nx} on the writer grid',
-                                source=name, target=f'profile ({nt} times x {nx} radial points)')
-            return np.array([])
-        return array
+        if values.ndim < 2 or values.size == 0 or values.shape == (nt, nx):
+            return array
+        if values.ndim > 2:
+            problem = f'{values.ndim}-dimensional data {values.shape} where a ({nt}, {nx}) time-radius profile is expected'
+        elif values.shape[0] != nt:
+            problem = f'time length mismatch {values.shape[0]} != {nt} on the writer grid'
+        else:
+            problem = f'radial size mismatch {values.shape[1]} != {nx} on the writer grid'
+        self.mapping.broken(problem, source=name, target=f'profile ({nt} times x {nx} radial points)')
+        return np.array([])
 
     def vacuum_b0_magnitude(self, times=None):
         """``|b0(times)|`` (T) of the IMAS ``vacuum_toroidal_field`` node, or ``None``.

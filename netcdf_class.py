@@ -228,12 +228,28 @@ class netcdf_connection:
         if var not in self.nc.variables:
             self.mapping.missing_optional(var)
             return np.array([])
+        detail = f'cannot read/transform CDF variable (ind={ind}, interp={interp})'
         try:
+            variable = self.nc.variables[var]
             if ind>=0:
-               res = np.array(self.nc.variables[var][ind])
+               raw = variable[ind]
+            elif hasattr(variable, 'set_auto_mask'):
+               raw = variable[...]          # netCDF4: samples equal to the fill value come back masked
             else:
-               res = np.array(self.nc.variables[var])
-
+               raw = variable
+            is_masked = np.ma.isMaskedArray(raw)
+            masked = int(np.ma.getmaskarray(raw).sum()) if is_masked else 0
+            res = np.array(np.ma.getdata(raw)) if is_masked else np.array(raw)
+        except (IndexError, ValueError, TypeError, AttributeError, RuntimeError, FloatingPointError) as exc:
+            self.mapping.broken(f'{detail}: {type(exc).__name__}: {exc}', source=var)
+            return np.array([])
+        if masked:
+            # Taking the data under the mask would hand fill values (-999, 9.97e36, ...) on as physical numbers, and
+            # zeroing or interpolating them is a policy nobody has chosen.  Say so, and skip the variable.
+            self.mapping.broken(f'{masked} masked (missing or fill-value) samples; there is no missing-data '
+                                'policy for them, so the variable is not used', source=var)
+            return np.array([])
+        try:
             if res.ndim==0:
                res = np.array([res])
 
@@ -251,7 +267,6 @@ class netcdf_connection:
             else:
                 return res
         except (IndexError, ValueError, TypeError, AttributeError, RuntimeError, FloatingPointError) as exc:
-            detail = f'cannot read/transform CDF variable (ind={ind}, interp={interp})'
             self.mapping.broken(f'{detail}: {type(exc).__name__}: {exc}', source=var)
             return np.array([])
 

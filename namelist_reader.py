@@ -10,8 +10,31 @@ from typing import List
 
 import numpy as np
 
+from input_provenance import strip_fortran_comment
 from name_patterns import make_namelist_re_pattern
 from utilities import check_file_exists
+
+
+# A Fortran real literal: ``1.0D-3``, ``2.5d0``, ``1D3``, ``.5``, ``-4.``
+FORTRAN_REAL = re.compile(r'[+-]?(?:\d+\.?\d*|\.\d+)(?:[dDeE][+-]?\d+)?\Z')
+_D_EXPONENT = re.compile(r'(?<=[0-9.])[dD](?=[+-]?\d)')
+
+
+def normalize_exponents(text):
+    """``1.0D-3`` -> ``1.0E-3``: Fortran D exponents written as the E that Python reads (numeric tokens only)."""
+    return _D_EXPONENT.sub('E', text)
+
+
+def fortran_number(text):
+    """The value of a single Fortran numeric literal as int or float, or ``None`` if ``text`` is not one."""
+    token = text.strip()
+    try:
+        return int(token)
+    except ValueError:
+        pass
+    if FORTRAN_REAL.match(token):
+        return float(normalize_exponents(token))
+    return None
 
 
 def parse_bool_value(value):
@@ -61,20 +84,12 @@ def load_namelist(path, logger):
         for line in nmf:
             lns = line.strip()
             if lns and (lns[0] not in ['!', '&', '/']):
-                lns = lns.split('!',1)[0]
+                lns = strip_fortran_comment(lns)           # '!' inside a quoted string is not a comment
                 kv = lns.split('=',1)
                 if len(kv) == 2:
                     val = kv[1].strip()
-                    #cast to int or float
-                    try:
-                        val = int(val)
-                    except ValueError:
-                        try:
-                            vv = val.upper().replace('D0','')
-                            val = float(vv)
-                        except ValueError:
-                            pass
-                    nmlist[kv[0].strip()] = val
+                    number = fortran_number(val)           # int or float where the text is one numeric literal
+                    nmlist[kv[0].strip()] = val if number is None else number
     return nmlist
 
 
@@ -84,6 +99,7 @@ def parse_number(ss:str, tp):
 
     #replace exponential 10** if any
     ss0 = ss
+    ss = normalize_exponents(ss)
     res= ss.find('10**')
     if res >=0:
         ss = ss.replace('10**', 'E')
@@ -117,7 +133,8 @@ def parse_number(ss:str, tp):
             elif s=='-':
                 n = n-d
     except (ValueError, TypeError, IndexError):
-        print(f'parse error: {ss0} extracted: {nn}')
+        # an unparseable value must not become a plausible number: the caller gets an explicit unknown
+        raise ValueError(f'cannot parse {ss0!r} as {tp.__name__} (parts {nn})') from None
     return n
 
 
@@ -173,11 +190,16 @@ def get_var_(nmlist, logger, name:str, tp=None, scale=1., ind:int=-1):
         pass
 
     if tp in [int, float]:
-        if narr>0:
-           val =  [parse_number(val[i], tp) for i in range(narr)]
-           val = np.array(val)
-        else:
-           val = parse_number(val, tp)
+        try:
+            if narr>0:
+               val =  [parse_number(val[i], tp) for i in range(narr)]
+               val = np.array(val)
+            else:
+               val = parse_number(val, tp)
+        except ValueError as exc:
+            # present but not a number: unknown, said aloud, never a plausible 0
+            logger.warning(f'namelist {name}: {exc}; treated as unknown')
+            return None
         if scale != 1.0:
            val = scale*val
     return val

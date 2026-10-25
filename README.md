@@ -65,6 +65,20 @@ make verify-end-to-end PYTHON=python3 DD_VERSION=4.1.1 BACKEND=HDF5
 
 The end-to-end target requires a working IMAS-Python installation and tests real database writes/readback; source-only tests cannot establish successful serialization.
 
+## Data curation (initial framework)
+
+Screen input provenance, native grids, profile/gradient validity, declared composition and model
+controls without modifying the CDF or writing an IMAS entry:
+
+```bash
+python3 curate.py -i RUN.CDF --trdat RUNTR.DAT --output-dir build/curation/RUN
+make verify-curation
+```
+
+Optional `--evidence my-evidence.json` supplies diagnostic/uncertainty declarations and configuration
+references. Reports include JSON, Markdown and local evaluated/flagged masks. Missing evidence stays
+unassessed; a screening pass is not scientific certification. See [curation guide](docs/curation/README.md).
+
 ## Repository layout and documentation
 
 - `convert.py` — command-line entry point.

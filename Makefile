@@ -18,11 +18,14 @@ OUTPUT_DIR ?= $(CURDIR)/build/imas
 CONVERT_FLAGS ?= -new
 PF_PASSIVE_GEOMETRY ?=
 PF_ACTIVE_GEOMETRY ?=
+CURATION_TRDAT ?=
+CURATION_EVIDENCE ?=
+CURATION_DIR ?= $(CURDIR)/build/curation/$(basename $(notdir $(CDF)))
 PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not -path './build/*' | sort)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-readback verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
+.PHONY: curate verify-curation help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-readback verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
 
 help:
 	@echo "TRANSP-to-IMAS developer commands"
@@ -31,6 +34,8 @@ help:
 	@echo "  make install      Install requirements into the local environment"
 	@echo "  make convert      Convert CDF into OUTPUT_DIR (fresh HDF5 entry by default)"
 	@echo "  make test         Verify and convert both NSTX regression cases"
+	@echo "  make verify-curation  Run independent curation tests (no IMAS or real fixtures required)"
+	@echo "  make curate       Screen CDF without changing it; optional CURATION_TRDAT/CURATION_EVIDENCE"
 	@echo "  make check        Enforce Python headers, compile-check Python, and run fast regressions"
 	@echo "  make verify       Run source diagnostics for CASE"
 	@echo "  make verify-all   Verify EVERY bundled CDF automatically (all physics families)"
@@ -186,3 +191,11 @@ fortran:
 clean:
 	$(RM) -r __pycache__ build
 	$(MAKE) -C examples clean
+
+# Scientific screening is independent of conversion/database creation.
+verify-curation:
+	$(PYTHON) examples/verify_curation.py
+
+curate:
+	$(PYTHON) curate.py -i "$(CDF)" --output-dir "$(CURATION_DIR)" \
+		$(if $(CURATION_TRDAT),--trdat "$(CURATION_TRDAT)") $(if $(CURATION_EVIDENCE),--evidence "$(CURATION_EVIDENCE)")
