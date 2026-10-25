@@ -7,6 +7,9 @@ policy, and release process in more detail.
 
 ## Start here
 
+- [Data curation](curation/README.md) -- read-only screening, evidence sidecars, scientific design and staged development.
+- [t2i2 source review](review-t2i2.md) -- improvements, remaining risks and verification limits for the reviewed snapshot.
+
 - [All-example verification](examples-verification.md) -- automatic CDF discovery,
   all-run reports, PF/waves coverage, and known input/current warnings.
 - [Plotting converted IDSs](plotting.md) -- real `plot_ids.py` commands and options.

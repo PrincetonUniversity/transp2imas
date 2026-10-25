@@ -1,0 +1,61 @@
+{
+  "schema_version": "transp2imas.curation.inputs.v1",
+  "evidence": {
+    "electron_temperature": {
+      "origin": "unknown",
+      "source": "",
+      "uncertainty": "unknown",
+      "reliability": "unknown",
+      "roles": [
+        "input"
+      ]
+    },
+    "ion_temperature": {
+      "origin": "unknown",
+      "source": "",
+      "uncertainty": "unknown",
+      "reliability": "unknown",
+      "roles": [
+        "input"
+      ]
+    },
+    "electron_density": {
+      "origin": "unknown",
+      "source": "",
+      "uncertainty": "unknown",
+      "reliability": "unknown",
+      "roles": [
+        "input"
+      ]
+    },
+    "rotation": {
+      "origin": "unknown",
+      "source": "",
+      "uncertainty": "unknown",
+      "reliability": "unknown",
+      "roles": [
+        "input"
+      ]
+    },
+    "composition": {
+      "origin": "unknown",
+      "source": "",
+      "uncertainty": "unknown",
+      "reliability": "unknown",
+      "roles": [
+        "input"
+      ]
+    },
+    "heating": {
+      "origin": "unknown",
+      "source": "",
+      "uncertainty": "unknown",
+      "reliability": "unknown",
+      "roles": [
+        "input"
+      ]
+    }
+  },
+  "input_expectations": [],
+  "notes": "Template only. Enter run-specific evidence; absence of metadata is not zero uncertainty."
+}

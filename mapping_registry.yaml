@@ -249,6 +249,17 @@
   verification: readback_verified
   tests: [examples/verify_registry_values.py]
 
+- id: nbi_native_time
+  kind: direct_typed
+  writer: nbi
+  ids: [nbi]
+  source: [TIME]
+  destination: {'4': unit/power_launched/time, '3': unit/power_launched/time}
+  units: 's -> s'
+  transform: 'every unit (and its energy trace) is written on the native TIME axis unchanged, and so is the IDS time; a beam that is off is expressed by its zero power, never by altering the clock. Source identity comes from the PINJ<n> suffix, not list position; a species is attached only when the data names one (a single PINJ_<sp> applies to all units, several are not matched by position)'
+  verification: readback_verified
+  tests: [examples/verify_registry_values.py, examples/verify_nbi_mapping.py]
+
 - id: radiation_electron_emissivity
   kind: direct_typed
   writer: radiation

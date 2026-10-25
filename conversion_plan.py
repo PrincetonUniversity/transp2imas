@@ -61,8 +61,9 @@ class ConversionRunner:
     ``mapping`` (a ``MappingLedger``) and the ``_written_ids`` manifest and ``_active_writer``
     attribution of the IMAS connection.  Writers are zero-argument factories that build their IDS
     objects and submit them; with deferral on, nothing reaches the database until the runner flushes
-    after that writer returned.  A writer that fails writes nothing of its own output, the failure is
-    journaled with the writer's name, and the remaining writers do not run.
+    after that writer returned. A build failure submits none of that writer's output. A backend
+    failure during flush may leave already accepted IDSs in the entry: no rollback is provided.
+    Accepted writes and the failure are journaled with the writer's name; remaining writers do not run.
     """
 
     def __init__(self, converter, writers, journal, clock=time.monotonic):

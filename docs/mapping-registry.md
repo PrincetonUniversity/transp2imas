@@ -3,7 +3,7 @@
 Generated from `mapping_registry.yaml` by `python examples/verify_mapping_registry.py --write-docs`;
 do not edit by hand.  Recognising a variable name is not an export: only typed entries are exports.
 
-## direct_typed (76)
+## direct_typed (77)
 
 | id | writer | source | destination (DD4 / DD3) | units | verification | tests |
 |---|---|---|---|---|---|---|
@@ -16,6 +16,7 @@ do not edit by hand.  Recognising a variable name is not an export: only typed e
 | ec_beam_power | ec_launchers | `PECIN?` | `beam/power_launched/data` | W -> W | readback_verified | `verify_registry_values.py` |
 | nbi_unit_power | nbi | `PINJ??` | `unit/power_launched/data` | W -> W | readback_verified | `verify_registry_values.py` |
 | nbi_unit_energy | nbi | `EINJ??_E1` | `unit/energy/data` | eV -> eV | readback_verified | `verify_registry_values.py` |
+| nbi_native_time | nbi | `TIME` | `unit/power_launched/time` | s -> s | readback_verified | `verify_registry_values.py`, `verify_nbi_mapping.py` |
 | radiation_electron_emissivity | radiation | `PRAD_BR`, `PRAD_CY` | `process/profiles_1d/electrons/emissivity` | W/cm^3 -> W/m^3 | readback_verified | `verify_registry_values.py` |
 | radiation_line_emissivity | radiation | `PRAD_LI` | `process/profiles_1d/emissivity_ion_total` | W/cm^3 -> W/m^3 | readback_verified | `verify_registry_values.py` |
 | core_sources_nbi_electron_energy | core_sources | `PBE` | `source/profiles_1d/electrons/energy` | W/cm^3 -> W/m^3 | readback_verified | `verify_registry_values.py` |

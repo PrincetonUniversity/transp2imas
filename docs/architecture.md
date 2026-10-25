@@ -54,9 +54,9 @@ Done so far, behind the unchanged `nc2imas` interface: DD version logic
 -> immutable `CocosSigns`) and conversion provenance (`code_provenance`: source-file
 records, `ids_properties` text, `code.parameters` XML) and the assignment
 primitives (`ids_assignment`: `is_valid`, array arithmetic, `fill_data`, `fill_value`,
-which carry the strict/lenient mapping policy). A writer that raises writes none of its
-own output; the failure is journaled with the writer's name and later writers do not
-run. Tests: `verify_conversion_runner.py`, `verify_cocos_signs.py`,
+which carry the strict/lenient mapping policy). A writer whose build raises submits none of its own output. A backend failure during a multi-IDS
+flush can leave earlier accepted IDSs in the entry; this is not rollback/transactional storage. The
+journal records accepted writes and the failure, and later writers do not run. Tests: `verify_conversion_runner.py`, `verify_cocos_signs.py`,
 `verify_code_provenance.py`, `verify_ids_assignment.py`, `verify_conversion_services.py`.
 
 **Writer-facing context.** Writers no longer take the whole converter. `conversion_context.py`
@@ -229,3 +229,17 @@ NUBEAM FI_TAR archives are the other large cost: reaching the equilibrium member
 gzip stream of hundreds of MB. `nubeam_fi.read_archives_in_order` reads the archives of a run with up to four
 `spawn` processes (threads gave 25%, processes 2x on two archives), keeps a bounded window in memory and yields in
 the original order. `TRANSP2IMAS_FI_WORKERS=1` reads them sequentially. NSTX 120967E03 `distributions`: 40 s to 21 s.
+
+## Independent scientific curation
+
+`curate.py` and `curation/` screen source data and explicit evidence without constructing `nc2imas`,
+importing IMAS or opening an output database. `NativeSource` provides copied read-only arrays,
+explicit fill/missing handling and a bounded cache; `CurationEngine` emits typed findings and local
+evaluated/flagged masks; the strict evidence parser rejects unknown contracts instead of guessing.
+The first-stage sidecars are JSON, Markdown and NPZ. Scientific acceptance, full model-state/default
+resolution, uncertainty ensembles and typed IMAS curation export are future stages.
+
+This is not an alternative physics converter. Reuse a common source/provenance protocol after the
+converter's missing-data and namelist contracts have been hardened and regression tested. Keep
+source-scientific findings separate from failed mappings or incomplete backend serialization.
+See [curation design](curation/design.md).

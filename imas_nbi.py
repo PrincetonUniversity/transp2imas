@@ -6,113 +6,91 @@ from writer_base import IdsWriter
 
 
 class imas_nbi(IdsWriter):
-    def find_beam_times(self, stn, times, nlines):
-        val = 0
-        limit = 0
-        if nlines>0:
-           einje1 = self.cdf.get_ncvar(f'EINJ{stn}_E1')
-           einje2 = self.cdf.get_ncvar(f'EINJ{stn}_E2')
-           einje3 = self.cdf.get_ncvar(f'EINJ{stn}_E3')
-           if self.fill.is_valid(einje1, einje2, einje3):
-              check = np.logical_and(einje1>limit, einje2>limit, einje3>limit)
-              times = np.where(check, times, val)
-        else:
-            einj = self.cdf.get_ncvar(f'EINJ')
-            if self.fill.is_valid(einj):
-               times = np.where(einj>0, times, val)
-        #use original times if no data found?
-        return times
+    """Map the TRANSP injector time traces to the nbi IDS, one unit per ``PINJ<n>`` source.
 
+    The native ``TIME`` axis is written unchanged for every unit.  A source that is off is expressed by
+    its power (``PINJ<n>`` is zero), never by altering the clock: an earlier version replaced the times by
+    zero wherever any of the three energy components was zero, which wrote all-zero time axes for every
+    beam that has only a full-energy component (both ITER beams, all 14 DIII-D 163303U09 beams).
+    """
+
+    def _sources(self):
+        """``[(source suffix, PINJ name)]`` of the ``PINJ<n>`` channels, in numeric order, keeping their own numbers."""
+        names = self.cdf.get_var_names_re('PINJ?', nd1=1, nd2=2)
+        return sorted(((name[len('PINJ'):], name) for name in names), key=lambda item: int(item[0]))
+
+    def _species(self, species_suffixes, unit_count):
+        """Species for each unit, or ``None`` where the data does not say.
+
+        One ``PINJ_<sp>`` species-total channel means every unit injects it.  With several species TRANSP gives
+        no channel that links a unit to one of them, and the order of the names is not evidence, so none is assigned.
+        """
+        if len(species_suffixes) == 1:
+            return [species_suffixes[0]] * unit_count
+        if len(species_suffixes) > 1 and unit_count:
+            self.ctx.mapping.skipped(
+                f'beam species {species_suffixes} cannot be matched to the {unit_count} PINJ<n> units: '
+                'no channel links a unit to a species, and list position is not evidence',
+                target='unit/species')
+        return [None] * unit_count
+
+    def _set_species(self, unit, symbol):
+        atoms = atom_base()
+        sp_zn, sp_a, sp_label = atoms.find_beam_species_data(symbol)
+        if self.fill.is_valid(sp_a, sp_zn):
+            unit.species.a = float(sp_a)
+            # z_n is INT_0D in DD4 (it was FLT_0D in older DDs).
+            self.fill.set_nuclear_charge(unit.species, sp_zn)
+            # 'label' was renamed to 'name' in DD 3.42.  Strip the TRANSP bookkeeping suffix from names such as D_BEAM.
+            self.fill.set_species_name(unit.species, str(sp_label).replace('_BEAM', ''))
+
+    def _fill_trace(self, node, name, data, times):
+        """Assign ``data`` and the native ``times``; a trace of another length is a broken mapping."""
+        if not self.fill.is_valid(data):
+            return
+        if len(data) != len(times):
+            self.ctx.mapping.broken(f'{len(data)} samples on a {len(times)}-sample TIME axis', source=name,
+                                    target='unit/' + name)
+            return
+        node.data.resize(len(data))
+        node.data = data
+        node.time.resize(len(times))
+        node.time = times
 
     def build(self):
         self.logger.info('\nnbi')
         nbi = self.dd.new_ids('nbi')
-        #scalar time
-        timesc = self.cdf.get_ncvar('TIME')
-        ntimes = len(timesc)
+        timesc = self.cdf.get_ncvar('TIME')                 # native scalar time, written as it is
         self.fill.checkErrExit(timesc)
 
-        slist = self.cdf.get_var_names_re('PINJ?', nd1=1, nd2=2)
-        nunits = len(slist)
-        nlines = nunits
+        sources = self._sources()
+        species = self.cdf.get_var_names('PINJ_?', cut='PINJ_')
+        self.logger.info(f'NBeams: PINJ {[name for _s, name in sources]}; species: {species}')
 
-        #find species info
-        spec_list = self.cdf.get_var_names('PINJ_?', cut= 'PINJ_')
-        nspec_list = len(spec_list)
+        if sources:
+            units = [(f'unit_{int(suffix)}', f'TRANSP NBI unit {int(suffix)}', f'EINJ{suffix}_E1', name)
+                     for suffix, name in sources]
+            symbols = self._species(species, len(units))
+        else:
+            # no per-source channels: one unit per species total, named by its own suffix
+            units = [(f'species_{sp}', f'TRANSP NBI species {sp}', 'EINJ', f'PINJ_{sp}') for sp in species]
+            symbols = list(species)
 
-        if nunits==0 and nspec_list>0:
-            nunits = nspec_list
-        self.logger.info(f'NBeams nunits {nunits}; PINJ {slist}; species: {spec_list}')
-        if nspec_list>1 and nlines>0:
-            #beams numbers PINJ<n> are not matched for different species
-            self.logger.info(f'Warning: {spec_list} not matched to {nlines} lines')
+        nbi.unit.resize(len(units))
+        for unit, (identifier, description, energy_name, power_name), symbol in zip(nbi.unit, units, symbols):
+            self.fill.set_nbi_unit_identity(unit, identifier, description)
+            if symbol is not None:
+                self._set_species(unit, symbol)
+            # energy EINJ<n>_E1 (full-energy component) or EINJ (max initial beam energy); power PINJ<n> or PINJ_<sp>
+            self._fill_trace(unit.energy, energy_name, self.cdf.get_ncvar(energy_name), timesc)
+            self._fill_trace(unit.power_launched, power_name, self.cdf.get_ncvar(power_name), timesc)
 
-        nbi.unit.resize(nunits)
-        for i in range(nunits):
-            symb = spec_list[0]
-            sname = symb
-            if nspec_list>i:
-                symb = spec_list[i]
-                sname = spec_list[i]
-
-            atomsDef = atom_base()
-            sp_zn, sp_a, sp_label = atomsDef.find_beam_species_data(symb)
-
-            nbu = nbi.unit[i]
-            ib = i+1
-            stn = f'0{ib}' if ib<=9 else f'{ib}'
-            self.fill.set_nbi_unit_identity(
-                nbu, f'unit_{ib}', f'TRANSP NBI unit {ib}'
-            )
-
-            if self.fill.is_valid(sp_a, sp_zn):
-                nbu.species.a = float(sp_a)
-                # z_n is INT_0D in DD4 (it was FLT_0D in older DDs).
-                self.fill.set_nuclear_charge(nbu.species, sp_zn)
-                # 'label' was renamed to 'name' in DD 3.42.
-                # Strip the TRANSP bookkeeping suffix from names such as D_BEAM.
-                sp_name = str(sp_label).replace('_BEAM', '')
-                self.fill.set_species_name(nbu.species, sp_name)
-
-            beam_times = self.find_beam_times(stn, timesc, nlines)
-
-            einj = []
-            if nlines>0:
-               #fill even if zeros
-               #energy EINJ02_E1
-               einj = self.cdf.get_ncvar(f'EINJ{stn}_E1')
-            else:
-               #EINJ(TIME)EV; MAX INITIAL BEAM ENERGY
-               einj = self.cdf.get_ncvar('EINJ')
-
-            nbu.energy.data.resize(len(einj))
-            nbu.energy.data = einj
-
-            #times
-            #self.fill.fill_data(nbu.energy.time, beam_times, name='energy_times')
-            nbu.energy.time.resize(ntimes)
-            nbu.energy.time = beam_times
-            if i==0:
-               self.logger.info('NOTE: Scalar time filled')
-
-            if nlines>0:
-               #injected power PINJ02
-               pinj = self.cdf.get_ncvar(f'PINJ{stn}')
-            else:
-               pinj = self.cdf.get_ncvar(f'PINJ_{stn}')
-
-            nbu.power_launched.data.resize(len(pinj))
-            nbu.power_launched.data = pinj
-
-            nbu.power_launched.time.resize(ntimes)
-            nbu.power_launched.time = beam_times
-
-        if nunits > 0:
+        if units:
             nbi = self.fill.fill_properties(nbi)
             self.fill.fill_code_properties(nbi)
             self.fill.fill_external_model_inputs(nbi, 'nbi')
             nbi.ids_properties.homogeneous_time = 1
-            nbi.time.resize(ntimes)
+            nbi.time.resize(len(timesc))
             nbi.time = timesc
             self.logger.info('Done NBI')
             return [nbi]

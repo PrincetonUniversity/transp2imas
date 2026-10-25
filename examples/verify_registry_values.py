@@ -279,6 +279,17 @@ class RegistryValueTests:
             self.close(nbi.unit[i].power_launched.data, self.var(name), name)
             self.close(nbi.unit[i].energy.data, self.var(f'EINJ{number}_E1'), f'EINJ{number}_E1')
 
+    @covers('nbi_native_time')
+    def test_nbi_native_time(self):
+        """Every unit is on the native TIME axis, whether or not its beam has half/third-energy components."""
+        nbi = self.get('nbi')
+        time = self.var('TIME')
+        np.testing.assert_array_equal(arr(nbi.time), time, 'nbi time')
+        for i, unit in enumerate(nbi.unit):
+            for label, node in (('energy', unit.energy), ('power_launched', unit.power_launched)):
+                np.testing.assert_array_equal(arr(node.time), time, f'unit {i} {label}.time')
+                self.assertTrue(np.all(np.diff(arr(node.time)) > 0), f'unit {i} {label}.time is not increasing')
+
     # ---- radiation --------------------------------------------------------------------------
 
     @covers('radiation_electron_emissivity')
