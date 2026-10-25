@@ -53,6 +53,11 @@ def getVarName(var):
     return str([k for k, v in localVars if v is var][0])
 
 
+# The coordinates a time-radius profile must be declared on (see ``nc2imas.check_profile_shape``).
+TIME_PROFILE_DIMENSION = 'TIME3'
+RADIAL_DIMENSIONS = ('X', 'XB')
+
+
 class nc2imas(imas_connection, netcdf_connection):
     def __init__(self, run, backend, occur, user, machine, new_db, ncfile,
          nml_file:str=None, log:str='error', debug:int=0,
@@ -98,15 +103,15 @@ class nc2imas(imas_connection, netcdf_connection):
             recorder = self._provenance_recorder = ProvenanceRecorder(self, TRANSP2IMAS_VERSION)
         return recorder
 
-    def close_imas_database(self):
+    def close_imas_database(self, completed=True):
         """Close the IMAS entry and TRANSP CDF deterministically.
 
         ``netcdf_connection.__del__`` remains a best-effort safety net, but
         normal converter operation must not depend on garbage collection for
-        closing the input NetCDF file.
+        closing the input NetCDF file.  The ``ids stored in`` line is printed only when ``completed``.
         """
         try:
-            imas_connection.close_imas_database(self)
+            imas_connection.close_imas_database(self, completed=completed)
         finally:
             self.close_ncfile()
 
@@ -117,7 +122,7 @@ class nc2imas(imas_connection, netcdf_connection):
     def __exit__(self, exc_type, exc_value, traceback):
         """Close IMAS and NetCDF resources without suppressing exceptions."""
         try:
-            self.close_imas_database()
+            self.close_imas_database(completed=exc_type is None)
         except (AttributeError, RuntimeError, TypeError, OSError) as close_error:
             if exc_type is None:
                 raise
@@ -391,27 +396,50 @@ class nc2imas(imas_connection, netcdf_connection):
         return vacuum_field_reference(raxis, bzxR, self.bt_sign,
                                       self.timep if times is None else times, self.timesc, r0=r0)
 
-    def check_profile_shape(self, name, array, nt, nx):
-        """``array`` unless it is a time-radius profile that does not fit ``(nt, nx)``, which is a broken mapping.
+    def check_profile_shape(self, name, array, nt, nx, dimensions=None, grid=None):
+        """``array`` unless it is a time-radius profile that breaks the contract, which is a broken mapping.
 
-        Absent input stays distinct from malformed present data: an empty array passes (the caller decides what
-        absent means).  A scalar or 1-D array is a time history, not a profile, and passes untouched: readers route
-        both kinds through here, and a history's length is that of ``TIME``, which need not be that of ``TIME3``.
-        A 2-D array must have the writer's time length and radial size, and more than two dimensions never fit.
-        A profile that does not fit cannot be placed on the writer's grid; catching it here names the variable
-        instead of failing later in some array arithmetic or being dropped.  Returns an empty array when the
-        lenient policy skips it.
+        The contract for a ``(nt, nx)`` profile, checked in this order, each failure naming the variable:
+
+        1. *Shape.*  An empty array passes (absent input stays distinct from malformed data); a scalar or 1-D
+           array is a time history, not a profile, and passes untouched (readers route both kinds through here,
+           and a history's length is that of ``TIME``, which need not be that of ``TIME3``).  A 2-D array must have
+           the writer's time length and radial size; more than two dimensions never fit.
+        2. *Coordinates*, when the declared ``dimensions`` are given.  Equal lengths do not make two coordinates the
+           same: the time dimension must be ``TIME3`` (a ``TIME`` variable of equal length is another axis, to be
+           moved explicitly with ``get_ncvar_on_time``) and the radial one ``X`` or ``XB``, and the one named by
+           ``grid`` when the reader expects a particular grid (``X`` zone centres and ``XB`` boundaries differ even
+           at equal length; ``interp_radial_profiles`` is the explicit way across).
+
+        Nothing is transposed, reshaped, broadcast or interpolated here.  Returns an empty array when the lenient
+        policy skips the variable.
         """
         values = np.asarray(array)
-        if values.ndim < 2 or values.size == 0 or values.shape == (nt, nx):
+        if values.ndim < 2 or values.size == 0:
             return array
-        if values.ndim > 2:
-            problem = f'{values.ndim}-dimensional data {values.shape} where a ({nt}, {nx}) time-radius profile is expected'
-        elif values.shape[0] != nt:
-            problem = f'time length mismatch {values.shape[0]} != {nt} on the writer grid'
-        else:
-            problem = f'radial size mismatch {values.shape[1]} != {nx} on the writer grid'
-        self.mapping.broken(problem, source=name, target=f'profile ({nt} times x {nx} radial points)')
+        target = f'profile ({nt} times x {nx} radial points)'
+        problem = None
+        if values.shape != (nt, nx):
+            if values.ndim > 2:
+                problem = f'{values.ndim}-dimensional data {values.shape} where a ({nt}, {nx}) time-radius profile is expected'
+            elif values.shape[0] != nt:
+                problem = f'time length mismatch {values.shape[0]} != {nt} on the writer grid'
+            else:
+                problem = f'radial size mismatch {values.shape[1]} != {nx} on the writer grid'
+        elif dimensions is not None and len(dimensions) == 2:
+            time_dim, radial_dim = dimensions
+            if time_dim != TIME_PROFILE_DIMENSION:
+                problem = (f'declared time dimension {time_dim} where {TIME_PROFILE_DIMENSION} is expected: equal '
+                           f'lengths do not make the axes the same (declared dimensions {tuple(dimensions)})')
+            elif radial_dim not in RADIAL_DIMENSIONS:
+                problem = (f'declared radial dimension {radial_dim} is neither X nor XB '
+                           f'(declared dimensions {tuple(dimensions)})')
+            elif grid is not None and radial_dim != grid:
+                problem = (f'profile is on {radial_dim} but the writer expects {grid}: equal lengths do not make the '
+                           f'grids the same (declared dimensions {tuple(dimensions)}); interpolate explicitly')
+        if problem is None:
+            return array
+        self.mapping.broken(problem, source=name, target=target)
         return np.array([])
 
     def vacuum_b0_magnitude(self, times=None):

@@ -18,7 +18,7 @@ and `pass` is limited to the predicate described below. No initial rule certifie
 | `FIT.*.SIGMA_VALIDITY` | Supplied derivative sigma is finite and nonnegative | No covariance estimation |
 | `FIT.*.GRADIENT_UNCERTAINTY` | Check whether declared derivative uncertainty includes zero | Uses the supplied exact-estimator uncertainty only |
 | `EVIDENCE.*`, `UNCERTAINTY.*` | Record origin, reference, reliability, assumption and uncertainty declarations | The external evidence is not authenticated |
-| `INDEPENDENCE.*` | Exact-source-string reuse as both constraint and independent validator | No full dependency graph yet |
+| `INDEPENDENCE.*` | Shared declared lineage (parents), source string or SHA-256 between an independent validator and constraining evidence | Only declared dependencies are visible; no shared lineage is not proof of independence |
 | `ROTATION.AVAILABILITY` | Recognized rotation output present/absent | Presence does not imply reliable measured rotation |
 | `COMPOSITION.QUASINEUTRALITY` | Charge closure of an explicitly complete, grid/unit-compatible inventory | Closure does not identify a unique composition or validate Zeff |
 | `INPUT.TIMELINE` | Explicit scalar declarations and update intervals, with parser gaps | Not a full Fortran/preprocessor/runtime-default resolver |
@@ -31,6 +31,12 @@ and `pass` is limited to the predicate described below. No initial rule certifie
 | `NUMERICS.ITERATION_LIMIT` | Optional analyst screening threshold | Not the solver's iteration limit unless independently established |
 | `NUMERICS.RESL2*.DOMAIN` | L2 residual nonnegative | Residual definitions/normalizations are not inferred |
 | `NUMERICS.RESL2*.THRESHOLD` | Optional threshold with supplied rationale | Not a complete stopping-condition check |
+| `RUN.IDENTITY` | Declared device/shot equal the CDF's own `device`/`shot` attributes | Not assessed if the CDF states neither; a match does not authenticate the evidence |
+| `INPUT.RESOLVED.CODE` | Declared code version equals the CDF's `TRANSP_version` | The attribute is the build's, not proof of the executable |
+| `INPUT.RESOLVED.FILES` | Declared input files hashed (SHA-256) and compared | A match proves identity of the file, not that TRANSP read it |
+| `INPUT.RESOLVED.CONTROL.<NAME>` | Resolved runtime control compared with each TR.DAT declaration in the window | A declaration-only control is `not_assessed`; no type coercion |
+| `EVENTS.INVENTORY` | Declared events, their exclusions, and declarations that matched nothing or lie outside the source time | Events are declared, never detected |
+| `HEATING.REFERENCE.*` (v2) | Applicability, time restriction and reviewed override applied before comparison | Unknown applicability is `not_assessed`; an override is shown, never silent |
 | `NUMERICS.CONVERGENCE` | Explicitly unassessed in stage 1 | Requires equation activity, stopping conditions and sensitivity evidence |
 
 ## Local masks and weak-gradient criterion

@@ -85,7 +85,7 @@ do not edit by hand.  Recognising a variable name is not an export: only typed e
 | sawteeth_previous_crash_time | sawteeth | `TLASTSAW` | `diagnostics/previous_crash_time` | s -> s | writer_verified | `verify_sawteeth_mapping.py` |
 | sawteeth_q1_radius | sawteeth | `XIQ1` | `diagnostics/rho_tor_norm_q1` | 1 -> 1 | writer_verified | `verify_sawteeth_mapping.py` |
 
-## derived_typed (87)
+## derived_typed (89)
 
 | id | writer | source | destination (DD4 / DD3) | units | verification | tests |
 |---|---|---|---|---|---|---|
@@ -95,6 +95,8 @@ do not edit by hand.  Recognising a variable name is not an export: only typed e
 | j_parallel_core_profiles | core_profiles | `PLJB`, `PLJBOH`, `CURBS`, `CONPLJB` | `profiles_1d/j_total` | A*T/cm^2 -> A/m^2 | readback_verified | `verify_parallel_current.py` |
 | j_parallel_equilibrium | equilibrium | `PLJB` | `time_slice/profiles_1d/j_parallel` | A*T/cm^2 -> A/m^2 | readback_verified | `verify_parallel_current.py` |
 | nbi_momentum_source | core_sources | `TQBE`, `TQBI`, `TQBTH`, `TQJXB`, `TQABDF` | `source/profiles_1d/momentum_phi` / `source/profiles_1d/momentum_tor` | N*m/cm^3 -> N*m/m^3 | readback_verified | `verify_nbi_momentum.py` |
+| nbi_momentum_ripple | core_sources | `TQRPL`, `FTQRIP` | `source/profiles_1d/momentum_phi` / `source/profiles_1d/momentum_tor` | N*m/cm^3 -> N*m/m^3 | writer_verified | `verify_nbi_momentum.py` |
+| nbi_unit_species | nbi | `PINJ??`, `PINJ_*` | `unit/species/a` | 1 -> 1 | writer_verified | `verify_nbi_mapping.py` |
 | momentum_flux_solver_model | core_transport | `AMTR_MOD`, `SURF`, `DVOL` | `model/profiles_1d/momentum_phi/flux` / `model/profiles_1d/momentum_tor/flux` | N m cm^-3 (a torque density) -> N m m^-2, i.e. kg s^-2 | readback_verified | `verify_momentum_transport.py` |
 | momentum_flux_observed | core_transport | `AMTR_OBS` | `model/profiles_1d/momentum_phi/flux` / `model/profiles_1d/momentum_tor/flux` | N m cm^-3 (a torque density) -> N m m^-2, i.e. kg s^-2 | readback_verified | `verify_registry_values.py` |
 | ec_steering_angles | ec_launchers | `PHAIECH?`, `THETECH?` | `beam/steering_angle_tor` | deg -> rad | readback_verified | `verify_registry_values.py` |

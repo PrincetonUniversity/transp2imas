@@ -14,6 +14,7 @@ import re
 import numpy as np
 
 from curation import REPORT_SCHEMA, __version__
+from curation import applicability, events as event_rules, evidence as evidence_graph, resolved
 from curation.manifest import validate_manifest
 from curation.inputs import normalize_name
 from curation.source import SourceDataError, density_scale, unit_key
@@ -54,6 +55,10 @@ class Report:
     coordinates: dict = field(default_factory=dict, repr=False)
     channel_inventory: dict = field(default_factory=dict)
     read_counts: dict = field(default_factory=dict)
+    run_identity: dict = field(default_factory=dict)
+    evidence_graph: dict = field(default_factory=dict)
+    event_exclusions: dict = field(default_factory=dict)
+    events: list = field(default_factory=list)
 
     def add(self, identifier, status, message, **kwargs):
         if status not in STATUSES or any(f.id == identifier for f in self.findings):
@@ -85,10 +90,13 @@ class Report:
                             'scope': 'read-only source screening; no IDS backend validation',
                             'applications': {a: self.application_status(a) for a in APPLICATIONS}},
                 'findings': [asdict(f) for f in self.findings],
+                'run_identity': self.run_identity, 'evidence_graph': self.evidence_graph,
+                'events': self.events, 'event_exclusions': self.event_exclusions,
                 'channel_inventory': self.channel_inventory, 'source_read_counts': self.read_counts,
                 'mask_storage': {'format': 'numpy_npz',
                                  'keys': sorted(set(self.masks) | set(self.coordinates)),
-                                 'semantics': 'evaluated masks distinguish unassessed samples from unflagged samples'}}
+                                 'semantics': 'evaluated masks distinguish unassessed samples from unflagged samples; '
+                             '__excluded masks mark samples removed from a rule by a declared event'}}
 
 
 class CurationEngine:
@@ -101,6 +109,8 @@ class CurationEngine:
         self.report = Report(source.provenance(), self.manifest, self.timeline)
         self.window = self.manifest['assessment_window']
         self.thresholds = self.manifest['thresholds']
+        self.events = self.manifest['events']
+        self.identity = self._identity()
 
     def _selection(self, name):
         """Select native samples; never infer a grid from equal array lengths."""
@@ -154,24 +164,56 @@ class CurationEngine:
     def _normalized_radius(self, name):
         return unit_key(self.source.meta(name)['units']) in ('', '1', '-', 'DIMENSIONLESS')
 
-    def _scope(self, name, identifier, evaluated, flagged):
+    def _scope(self, name, identifier, evaluated, flagged, excluded=None, event_ids=()):
         key = re.sub('[^A-Za-z0-9_]', '_', identifier)
         self.report.masks[key + '__evaluated'] = np.asarray(evaluated, dtype=bool)
         self.report.masks[key + '__flagged'] = np.asarray(flagged, dtype=bool)
         points = np.argwhere(flagged)
-        return {'source_dimensions': self.source.meta(name)['dimensions'],
-                'shape': list(evaluated.shape), 'evaluated_count': int(evaluated.sum()),
-                'flagged_count': int(flagged.sum()), 'mask_prefix': key,
-                'flagged_index_examples': points[:12].tolist(), 'index_examples_truncated': len(points) > 12,
-                'assessment_window': self.window}
+        scope = {'source_dimensions': self.source.meta(name)['dimensions'],
+                 'shape': list(evaluated.shape), 'evaluated_count': int(evaluated.sum()),
+                 'flagged_count': int(flagged.sum()), 'mask_prefix': key,
+                 'flagged_index_examples': points[:12].tolist(), 'index_examples_truncated': len(points) > 12,
+                 'assessment_window': self.window}
+        if excluded is not None and excluded.any():
+            self.report.masks[key + '__excluded'] = excluded
+            scope.update({'excluded_by_events': int(excluded.sum()), 'excluding_events': list(event_ids)})
+            self.report.event_exclusions[identifier] = {'excluded_count': int(excluded.sum()), 'events': list(event_ids),
+                                                        'variable': name}
+        return scope
+
+    def _event_exclusion(self, name, identifier, shape):
+        """Samples of ``name`` inside a declared event that applies to rule ``identifier`` (all False if none)."""
+        mask = np.zeros(shape, dtype=bool)
+        if not any(applicability.rule_matches(e['rules'], identifier) for e in self.events):
+            return mask, []
+        used = []
+        for axis, dim in enumerate(self.source.meta(name)['dimensions']):
+            if dim not in ('TIME', 'TIME3') or not self.source.has(dim) or axis >= len(shape):
+                continue
+            times = self.source.array(dim)
+            if times.ndim != 1 or len(times) != shape[axis]:
+                continue
+            inside, ids = event_rules.exclusion(self.events, identifier, times)
+            reshape = [1] * len(shape)
+            reshape[axis] = len(times)
+            mask |= inside.reshape(reshape)
+            used += [i for i in ids if i not in used]
+        return mask, used
 
     def _samples(self, identifier, name, evaluated, flagged, message, *, severity='warning',
                  applications=APPLICATIONS, metrics=None, recommendation=''):
+        evaluated, flagged = np.asarray(evaluated, dtype=bool), np.asarray(flagged, dtype=bool)
+        excluded, event_ids = self._event_exclusion(name, identifier, evaluated.shape)
+        excluded &= evaluated                                   # only samples that would have been assessed
+        evaluated, flagged = evaluated & ~excluded, flagged & ~excluded
         n = int(evaluated.sum())
         status = 'not_assessed' if n == 0 else severity if np.any(flagged) else 'pass'
-        return self.report.add(identifier, status, message if n else 'No assessable samples in the selected window.',
+        empty = ('Every assessable sample lies inside declared events (' + ', '.join(event_ids) + ').'
+                 if excluded.any() else 'No assessable samples in the selected window.')
+        return self.report.add(identifier, status, message if n else empty,
                                variables=[name], applications=list(applications), metrics=metrics or {},
-                               scope=self._scope(name, identifier, evaluated, flagged), recommendation=recommendation)
+                               scope=self._scope(name, identifier, evaluated, flagged, excluded, event_ids),
+                               recommendation=recommendation)
 
     def _unavailable(self, identifier, message, names=(), apps=APPLICATIONS):
         return self.report.add(identifier, 'not_assessed', message, variables=list(names), applications=list(apps))
@@ -183,15 +225,138 @@ class CurationEngine:
         return self._unavailable(identifier, str(exc), names, apps)
 
     def run(self):
+        self.check_identity()
         self.check_coordinates()
         self.check_profiles()
         self.check_evidence()
         self.check_rotation()
         self.check_composition()
         self.check_declared_inputs()
+        self.check_resolved_inputs()
         self.check_numerics()
+        self.check_events()
         self.report.read_counts = dict(self.source.read_counts)
         return self.report
+
+    def _identity(self):
+        """Device, shot and campaign: the analyst's declaration, else what the CDF itself states."""
+        declared = dict(self.manifest['run_identity'])
+        found = {'device': self.source.global_attribute('device'), 'shot': self.source.global_attribute('shot')}
+        return {key: declared.get(key, found.get(key)) for key in ('device', 'shot', 'campaign')
+                if declared.get(key, found.get(key)) is not None}
+
+    def check_identity(self):
+        declared = self.manifest['run_identity']
+        found = {'device': self.source.global_attribute('device'), 'shot': self.source.global_attribute('shot')}
+        rows, status = [], 'pass'
+        for key in ('device', 'shot'):
+            if key not in declared:
+                continue
+            have = found[key]
+            if have is None:
+                rows.append({'item': key, 'declared': declared[key], 'source': None, 'match': None})
+                status = status if status == 'fail' else 'not_assessed'
+                continue
+            match = (str(have).strip().lower() == str(declared[key]).strip().lower() if key == 'device'
+                     else int(have) == int(declared[key]))
+            rows.append({'item': key, 'declared': declared[key], 'source': have, 'match': match})
+            if not match:
+                status = 'fail'
+        self.report.run_identity = {'declared': declared, 'source_attributes': found, 'effective': self.identity,
+                                    'run_id': self.source.global_attribute('Runid'),
+                                    'transp_version': self.source.global_attribute('TRANSP_version')}
+        if not rows:
+            self._unavailable('RUN.IDENTITY', 'No run identity was declared; the source is not tied to a named run.')
+            return
+        message = {'pass': 'The declared run identity matches the source file.',
+                   'fail': 'The declared run identity disagrees with the source file; the supplied evidence may belong to another run.',
+                   'not_assessed': 'The source file does not state part of the declared run identity; it is unverified.'}[status]
+        self.report.add('RUN.IDENTITY', status, message, evidence={'checks': rows})
+
+    def check_resolved_inputs(self):
+        spec = self.manifest['resolved_inputs']
+        if not (spec.get('code') or spec['inputs'] or spec['controls']):
+            self._unavailable('INPUT.RESOLVED', 'No resolved-input evidence was supplied; controls and files are unverified.')
+            return
+        code = spec.get('code')
+        if code:
+            version = self.source.global_attribute('TRANSP_version')
+            if version is None:
+                status, message = 'not_assessed', 'The source file does not state its TRANSP version.'
+            elif str(version).strip() != code['version'].strip():
+                status, message = 'warning', 'The declared code version differs from the version recorded in the source file.'
+            else:
+                status, message = 'pass', 'The declared code version matches the version recorded in the source file.'
+            self.report.add('INPUT.RESOLVED.CODE', status, message,
+                            evidence={'declared': code, 'source_version': version})
+        else:
+            self._unavailable('INPUT.RESOLVED.CODE', 'The code version used for the run was not declared.')
+        rows = resolved.check_files(spec['inputs'])
+        if not rows:
+            self._unavailable('INPUT.RESOLVED.FILES', 'No input files were declared with hashes.')
+        else:
+            states = {row['status'] for row in rows}
+            status = ('fail' if 'mismatch' in states else 'error' if 'unreadable' in states
+                      else 'not_assessed' if 'unhashed' in states else 'pass')
+            self.report.add('INPUT.RESOLVED.FILES', status,
+                            'Declared input files compared by SHA-256; a match proves only that this file is the declared one.',
+                            evidence={'files': rows})
+        self._check_controls(spec['controls'])
+
+    def _check_controls(self, controls):
+        temporal = self.timeline.get('temporal_valid', True)
+        states = list(self._states_in_window()) if temporal and self.timeline.get('available') else []
+        for control in controls:
+            key = normalize_name(control['name'])
+            identifier = 'INPUT.RESOLVED.CONTROL.' + key
+            if not control['resolved']:
+                self.report.add(identifier, 'not_assessed',
+                                'Supplied as a declaration, not as a resolved runtime value; it cannot confirm the run.',
+                                variables=[key], evidence={'control': control})
+                continue
+            records, unknown = [], 0
+            for state in states:
+                declared = state['values'].get(key)
+                if declared is None:
+                    unknown += 1
+                    continue
+                value, segment = resolved.segment_value(control, state['start_time'])
+                if segment is None:
+                    unknown += 1
+                    continue
+                records.append({'start_time': state['start_time'], 'end_time': state['end_time'], 'declared': declared,
+                                'resolved': value, 'segment': segment, 'agrees': resolved.same_value(declared, value)})
+            if not states:
+                status, message = 'not_assessed', 'No declared TR.DAT state exists to compare with the resolved control.'
+            elif any(not r['agrees'] for r in records):
+                status, message = 'warning', 'The TR.DAT declaration differs from the resolved runtime value; the declaration is not what ran.'
+            elif not records or unknown:
+                status, message = 'not_assessed', 'Some declared intervals have no comparable resolved value.'
+            else:
+                status, message = 'pass', 'Every declared interval agrees with the resolved runtime value.'
+            self.report.add(identifier, status, message, variables=[key],
+                            evidence={'control': control, 'intervals': records, 'unknown_intervals': unknown})
+
+    def check_events(self):
+        spans = {}
+        for dim in ('TIME', 'TIME3'):
+            if self.source.has(dim):
+                times = self.source.array(dim)
+                if times.ndim == 1 and times.size and np.all(np.isfinite(times)):
+                    spans[dim] = (float(times[0]), float(times[-1]))
+        emitted = {f.id for f in self.report.findings}
+        rows = event_rules.inventory(self.events, spans, emitted)
+        self.report.events = rows
+        if not rows:
+            self._unavailable('EVENTS.INVENTORY', 'No events were declared; transients are not detected automatically.')
+            return
+        problems = [r['id'] for r in rows if r['outside_source_time'] or r['unused']]
+        self.report.add('EVENTS.INVENTORY', 'warning' if problems else 'pass',
+                        'Declared events were applied as analyst exclusions; a declaration outside the source time or matching '
+                        'no rule is reported rather than ignored.' if problems else
+                        'Declared events were applied as analyst exclusions; they were not detected or verified here.',
+                        evidence={'events': rows, 'needs_review': problems,
+                                  'excluded': self.report.event_exclusions})
 
     def check_coordinates(self):
         for name in ('TIME', 'TIME3'):
@@ -323,10 +488,26 @@ class CurationEngine:
         finding.evidence = dict(spec)
 
     def check_evidence(self):
+        not_applicable = {}
+        for role, record in self.manifest['evidence'].items():
+            state, reasons = applicability.judge(record.get('applicability'), self.identity)
+            if state != applicability.APPLIES:
+                not_applicable[role] = (state, reasons)
         for role, apps in ROLE_APPS.items():
             record = self.manifest['evidence'].get(role, {})
             origin = record.get('origin', 'unknown')
             source = record.get('source', '')
+            if role in not_applicable:
+                state, reasons = not_applicable[role]
+                status = 'not_applicable' if state == applicability.NOT_APPLICABLE else 'not_assessed'
+                self.report.add('EVIDENCE.' + role, status,
+                                'The declared evidence does not apply to this run: ' + '; '.join(reasons)
+                                if state == applicability.NOT_APPLICABLE else
+                                'Whether the declared evidence applies cannot be established: ' + '; '.join(reasons),
+                                applications=list(apps), evidence=record)
+                self.report.add('UNCERTAINTY.' + role, 'not_assessed', 'No applicable evidence, hence no uncertainty.',
+                                applications=list(apps))
+                continue
             if origin in ('unknown', 'missing') or not source:
                 status, message = 'not_assessed', 'Origin/reference is missing or unknown; automatic retrieval is not validation.'
             elif record.get('reliability') == 'unreliable':
@@ -340,18 +521,22 @@ class CurationEngine:
             self.report.add('UNCERTAINTY.' + role, 'pass' if uncertainty == 'provided' else 'not_assessed',
                             'Uncertainty is declared as provided; propagation/calibration remains unverified.' if uncertainty == 'provided'
                             else 'No usable uncertainty specification; unknown is not zero.', applications=list(apps))
-        # Shared source strings are only a conservative exact-match warning, not a proof of independence.
+        # Independence is judged on declared lineage (parents, source string, hash); it is never a proof.
         evidence = self.manifest['evidence']
+        excluded = [evidence[role].get('id', 'evidence:' + role) for role in not_applicable]
+        nodes = evidence_graph.build_graph(self.manifest, excluded)
+        self.report.evidence_graph = evidence_graph.summary(nodes)
         for role, record in evidence.items():
-            if not record.get('independent_validation'):
+            identifier = record.get('id', 'evidence:' + role)
+            if 'independent_validation' not in record['usage'] or identifier not in nodes or role not in ROLE_APPS:
                 continue
-            shared = [other for other, item in evidence.items()
-                      if item.get('source') and item.get('source') == record.get('source')
-                      and set(item.get('roles', ())) & {'input', 'calibration', 'initial_condition', 'boundary_condition'}]
+            shared = evidence_graph.shared_lineage(nodes, identifier)
             if shared:
                 self.report.add('INDEPENDENCE.' + role, 'warning',
-                                'The claimed independent validator shares a source used to constrain the run.',
-                                applications=list(ROLE_APPS[role]), evidence={'shared_with': shared, 'source': record.get('source')})
+                                'The claimed independent validator shares lineage with evidence that constrained the run.',
+                                applications=list(ROLE_APPS[role]),
+                                evidence={'shared_with': [item['with'] for item in shared], 'shared': shared,
+                                          'source': record.get('source')})
 
     def check_rotation(self):
         names = [name for name in ('OMEGA', 'VTOR') if self.source.has(name)]
@@ -489,22 +674,44 @@ class CurationEngine:
             self._unavailable('HEATING.REFERENCE', 'No campaign/configuration reference expectations were supplied.')
         for index, item in enumerate(expectations):
             key = normalize_name(item['name'])
+            identifier = f'HEATING.REFERENCE.{index}'
             records = []
             missing = 0
+            state_of_applicability, reasons = applicability.judge(item.get('applicability'), self.identity)
+            if state_of_applicability != applicability.APPLIES:
+                not_applicable = state_of_applicability == applicability.NOT_APPLICABLE
+                self.report.add(identifier, 'not_applicable' if not_applicable else 'not_assessed',
+                                ('This reference does not apply to this run: ' if not_applicable else
+                                 'Whether this reference applies cannot be established: ') + '; '.join(reasons),
+                                variables=[key], evidence={'expectation': item})
+                continue
+            override = item.get('override')
+            if override is not None and not isinstance(override['value'], (int, float)):
+                self.report.add(identifier, 'error', 'The override value is not numeric and cannot replace a numeric reference.',
+                                variables=[key], evidence={'expectation': item})
+                continue
+            expected = override['value'] if override else item['expected']
+            time_spec = item.get('applicability')
             for state in states:
+                if not applicability.overlaps(time_spec, state['start_time'], state['end_time']):
+                    continue
                 value = state['values'].get(key)
                 if not isinstance(value, (int, float)) or isinstance(value, bool):
                     missing += 1
                     continue
-                matches = abs(value - item['expected']) <= item['atol'] + item['rtol'] * abs(item['expected'])
+                matches = abs(value - expected) <= item['atol'] + item['rtol'] * abs(expected)
                 records.append({'start_time': state['start_time'], 'end_time': state['end_time'],
                                 'value': value, 'matches_reference': matches,
                                 'source_line': state['source_lines'].get(key)})
             status = ('warning' if any(not r['matches_reference'] for r in records)
                       else 'not_assessed' if not records or missing else 'pass')
-            self.report.add(f'HEATING.REFERENCE.{index}', status,
-                            'Explicit native-unit declarations compared to the supplied reference; deviations are not automatically corrected.',
-                            variables=[key], evidence={'expectation': item, 'intervals': records, 'unknown_intervals': missing})
+            note = (' A reviewed override replaced the reference value (' + override['reason'] + '; reviewer '
+                    + override['reviewer'] + '); the original is kept in the evidence.') if override else ''
+            self.report.add(identifier, status,
+                            'Explicit native-unit declarations compared to the supplied reference; deviations are not automatically corrected.' + note,
+                            variables=[key], evidence={'expectation': item, 'effective_expected': expected,
+                                                       'override_applied': override is not None,
+                                                       'intervals': records, 'unknown_intervals': missing})
 
     def check_numerics(self):
         present = []

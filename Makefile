@@ -20,12 +20,13 @@ PF_PASSIVE_GEOMETRY ?=
 PF_ACTIVE_GEOMETRY ?=
 CURATION_TRDAT ?=
 CURATION_EVIDENCE ?=
+CURATION_PILOT ?=
 CURATION_DIR ?= $(CURDIR)/build/curation/$(basename $(notdir $(CDF)))
 PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not -path './build/*' | sort)
 
 .DEFAULT_GOAL := help
 
-.PHONY: curate verify-curation help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-readback verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
+.PHONY: curate curate-pilot verify-curation verify-curation-pilot help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-readback verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
 
 help:
 	@echo "TRANSP-to-IMAS developer commands"
@@ -35,6 +36,8 @@ help:
 	@echo "  make convert      Convert CDF into OUTPUT_DIR (fresh HDF5 entry by default)"
 	@echo "  make test         Verify and convert both NSTX regression cases"
 	@echo "  make verify-curation  Run independent curation tests (no IMAS or real fixtures required)"
+	@echo "  make verify-curation-pilot  Run the pilot on the bundled NSTX and DIII-D cases (fixtures required)"
+	@echo "  make curate-pilot CURATION_PILOT=facts.json  Curate CDF with analyst-supplied pilot facts"
 	@echo "  make curate       Screen CDF without changing it; optional CURATION_TRDAT/CURATION_EVIDENCE"
 	@echo "  make check        Enforce Python headers, compile-check Python, and run fast regressions"
 	@echo "  make verify       Run source diagnostics for CASE"
@@ -195,6 +198,15 @@ clean:
 # Scientific screening is independent of conversion/database creation.
 verify-curation:
 	$(PYTHON) examples/verify_curation.py
+
+verify-curation-pilot:
+	$(PYTHON) examples/verify_curation_pilot.py
+
+# Analyst-supplied facts only: hashes are computed, placeholders are refused (see examples/curation/pilot-template.json).
+curate-pilot:
+	@test -n "$(CURATION_PILOT)" || { echo "set CURATION_PILOT=<facts.json>" >&2; exit 2; }
+	$(PYTHON) curate.py -i "$(CDF)" --output-dir "$(CURATION_DIR)" --pilot "$(CURATION_PILOT)" \
+		$(if $(CURATION_TRDAT),--trdat "$(CURATION_TRDAT)")
 
 curate:
 	$(PYTHON) curate.py -i "$(CDF)" --output-dir "$(CURATION_DIR)" \

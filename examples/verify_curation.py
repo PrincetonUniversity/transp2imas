@@ -23,10 +23,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from curation import MANIFEST_SCHEMA
+from curation import MANIFEST_SCHEMA, MANIFEST_SCHEMA_V1
 from curation.engine import CurationEngine
 from curation.inputs import declared_timeline, literal
 from curation.manifest import load_manifest, validate_manifest
+from curation.pilot import PILOT_SCHEMA, build_manifest, load_pilot
 from curation.reporting import write_report
 from curation.source import NativeSource, density_scale
 
@@ -56,8 +57,8 @@ def variables():
             'NPTRITER': Variable([0, 4, 2], ('TIME',))}
 
 
-def run_screen(data=None, manifest=None, timeline=None):
-    source = NativeSource(types.SimpleNamespace(variables=data if data is not None else variables()))
+def run_screen(data=None, manifest=None, timeline=None, **attributes):
+    source = NativeSource(types.SimpleNamespace(variables=data if data is not None else variables(), **attributes))
     manifest = manifest or {'schema_version': MANIFEST_SCHEMA}
     report = CurationEngine(source, manifest, timeline).run()
     return report, {f.id: f for f in report.findings}
@@ -152,6 +153,281 @@ class ManifestTests(unittest.TestCase):
         original = {'schema_version': MANIFEST_SCHEMA}
         validate_manifest(original)
         self.assertEqual(original, {'schema_version': MANIFEST_SCHEMA})
+
+
+class ManifestV2Tests(unittest.TestCase):
+    """Manifest v2: strict new sections, v1 compatibility, and a validated evidence graph."""
+
+    def v2(self, **sections):
+        return {'schema_version': MANIFEST_SCHEMA, **sections}
+
+    def rejects(self, document, fragment):
+        with self.assertRaises(ValueError) as caught:
+            validate_manifest(document)
+        self.assertIn(fragment, str(caught.exception))
+
+    def test_a_v1_document_stays_valid_and_gains_empty_v2_sections(self):
+        result = validate_manifest({'schema_version': MANIFEST_SCHEMA_V1,
+                                    'evidence': {'rotation': {'origin': 'measured', 'roles': ['validation']}}})
+        self.assertEqual(result['events'], [])
+        self.assertEqual(result['evidence']['rotation']['usage'], ['independent_validation'])
+
+    def test_a_v1_document_may_not_use_v2_keys(self):
+        self.rejects({'schema_version': MANIFEST_SCHEMA_V1, 'events': []}, 'need schema_version')
+        self.rejects({'schema_version': MANIFEST_SCHEMA_V1,
+                      'evidence': {'rotation': {'origin': 'measured', 'id': 'x'}}}, 'need schema_version')
+
+    def test_legacy_roles_map_to_one_usage_vocabulary(self):
+        result = validate_manifest(self.v2(evidence={'heating': {
+            'origin': 'measured', 'roles': ['input', 'calibration'], 'independent_validation': True}}))
+        self.assertEqual(result['evidence']['heating']['usage'],
+                         ['calibration_target', 'constraint', 'independent_validation'])
+
+    def test_unknown_usage_hash_and_identifier_are_rejected(self):
+        self.rejects(self.v2(evidence={'rotation': {'origin': 'measured', 'usage': ['proof']}}), 'usage')
+        self.rejects(self.v2(evidence={'rotation': {'origin': 'measured', 'sha256': 'abc'}}), 'SHA-256')
+        self.rejects(self.v2(evidence={'rotation': {'origin': 'measured', 'id': 'has space'}}), 'identifier')
+
+    def test_parents_must_exist_and_may_not_form_a_cycle(self):
+        self.rejects(self.v2(evidence_sources=[{'id': 'a', 'description': 'x', 'parents': ['ghost']}]), 'ghost')
+        self.rejects(self.v2(evidence_sources=[{'id': 'a', 'description': 'x', 'parents': ['b']},
+                                               {'id': 'b', 'description': 'y', 'parents': ['a']}]), 'cycle')
+        self.rejects(self.v2(evidence_sources=[{'id': 'a', 'description': 'x'}, {'id': 'a', 'description': 'y'}]),
+                     'duplicate')
+
+    def test_an_override_needs_value_reason_and_reviewer(self):
+        for override in ({'value': 1.0, 'reason': 'r'}, {'value': 1.0, 'reviewer': 'p'}, {'reason': 'r', 'reviewer': 'p'},
+                         {'value': float('nan'), 'reason': 'r', 'reviewer': 'p'}):
+            self.rejects(self.v2(input_expectations=[{'name': 'X', 'expected': 1.0, 'override': override}]), 'override')
+        validate_manifest(self.v2(input_expectations=[{'name': 'X', 'expected': 1.0, 'reference': 'r', 'units': '1',
+                                                       'override': {'value': 2.0, 'reason': 'r', 'reviewer': 'p'}}]))
+
+    def test_applicability_ranges_must_be_ordered(self):
+        self.rejects(self.v2(input_expectations=[{'name': 'X', 'expected': 1.0,
+                                                  'applicability': {'shot_min': 5, 'shot_max': 1}}]), 'shot_min')
+
+    def test_events_need_a_type_a_window_and_rules(self):
+        base = {'id': 'e1', 'type': 'sawtooth', 'start': 1.0, 'end': 1.1, 'rules': ['GRADIENT.*']}
+        validate_manifest(self.v2(events=[base]))
+        self.rejects(self.v2(events=[{**base, 'type': 'quake'}]), 'type')
+        self.rejects(self.v2(events=[{**base, 'start': 2.0}]), 'exceeds')
+        self.rejects(self.v2(events=[{**base, 'rules': []}]), 'rules')
+        self.rejects(self.v2(events=[base, base]), 'duplicate')
+
+    def test_controls_must_be_ordered_nonoverlapping_scalars_that_state_their_kind(self):
+        def control(segments, **extra):
+            return self.v2(resolved_inputs={'controls': [{'name': 'MODEQ', 'resolved': True,
+                                                          'segments': segments, **extra}]})
+        validate_manifest(control([{'start': 0, 'end': 1, 'value': 1}, {'start': 1, 'end': None, 'value': 2}]))
+        self.rejects(control([{'start': 0, 'end': 2, 'value': 1}, {'start': 1, 'end': 3, 'value': 2}]), 'overlap')
+        self.rejects(control([{'start': 0, 'end': 1, 'value': [1, 2]}]), 'scalar')
+        self.rejects(control([{'start': 1, 'end': 0, 'value': 1}]), 'before')
+        self.rejects(self.v2(resolved_inputs={'controls': [{'name': 'M', 'segments': [{'value': 1}]}]}), 'resolved')
+
+    def test_duplicate_controls_are_rejected_after_normalisation(self):
+        segments = [{'start': 0, 'end': 1, 'value': 1}]
+        self.rejects(self.v2(resolved_inputs={'controls': [
+            {'name': 'MODEQ', 'resolved': True, 'segments': segments},
+            {'name': 'mod eq', 'resolved': True, 'segments': segments}]}), 'duplicate')
+
+
+class EngineV2Tests(unittest.TestCase):
+    """Events, run identity, evidence lineage, applicability, overrides and resolved inputs in the engine."""
+
+    def v2(self, **sections):
+        return {'schema_version': MANIFEST_SCHEMA, **sections}
+
+    def timeline(self, body):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'TR.DAT'
+            path.write_text(body)
+            return declared_timeline(path)
+
+    def negative_te(self):
+        data = variables()
+        te = np.array(data['TE'].values, dtype=float)
+        te[1, 1] = -5.0
+        data['TE'] = Variable(te, ('TIME3', 'X'), 'EV')
+        return data
+
+    # events
+    def test_a_negative_sample_inside_a_declared_event_is_excluded_and_accounted_for(self):
+        _r, found = run_screen(self.negative_te())
+        self.assertEqual(found['PROFILE.TE.NEGATIVE'].status, 'fail')
+        event = {'id': 'saw1', 'type': 'sawtooth', 'start': 0.9, 'end': 1.1, 'rules': ['PROFILE.TE.NEGATIVE']}
+        report, found = run_screen(self.negative_te(), self.v2(events=[event]))
+        finding = found['PROFILE.TE.NEGATIVE']
+        self.assertEqual(finding.status, 'pass')
+        self.assertEqual(finding.scope['excluded_by_events'], 3)                  # the whole TIME3=1.0 row
+        self.assertEqual(finding.scope['excluding_events'], ['saw1'])
+        self.assertEqual(report.event_exclusions['PROFILE.TE.NEGATIVE']['excluded_count'], 3)
+        self.assertEqual(found['PROFILE.TE.ZERO'].scope.get('excluded_by_events', 0), 0)        # other rules untouched
+        self.assertEqual(found['EVENTS.INVENTORY'].status, 'pass')
+
+    def test_excluded_samples_are_not_counted_as_evaluated_or_unflagged(self):
+        event = {'id': 'e', 'type': 'elm', 'start': 0.9, 'end': 1.1, 'rules': ['PROFILE.TE.*']}
+        report, found = run_screen(self.negative_te(), self.v2(events=[event]))
+        scope = found['PROFILE.TE.FINITE'].scope
+        self.assertEqual((scope['evaluated_count'], scope['excluded_by_events']), (3, 3))
+        self.assertTrue(report.masks['PROFILE_TE_FINITE__excluded'][1].all())
+        self.assertFalse(report.masks['PROFILE_TE_FINITE__evaluated'][1].any())
+
+    def test_when_every_sample_is_excluded_the_rule_is_not_assessed(self):
+        event = {'id': 'all', 'type': 'diagnostic_outage', 'start': -1.0, 'end': 5.0, 'rules': ['PROFILE.TE.NEGATIVE']}
+        _r, found = run_screen(self.negative_te(), self.v2(events=[event]))
+        self.assertEqual(found['PROFILE.TE.NEGATIVE'].status, 'not_assessed')
+        self.assertIn('inside declared events', found['PROFILE.TE.NEGATIVE'].message)
+
+    def test_an_event_matching_no_rule_or_outside_the_source_is_reported(self):
+        events = [{'id': 'typo', 'type': 'pellet', 'start': 0.0, 'end': 1.0, 'rules': ['NO.SUCH.RULE']},
+                  {'id': 'late', 'type': 'pellet', 'start': 50.0, 'end': 51.0, 'rules': ['PROFILE.TE.*']}]
+        report, found = run_screen(manifest=self.v2(events=events))
+        self.assertEqual(found['EVENTS.INVENTORY'].status, 'warning')
+        self.assertEqual(sorted(found['EVENTS.INVENTORY'].evidence['needs_review']), ['late', 'typo'])
+
+    def test_no_events_means_unassessed_not_none_found(self):
+        _r, found = run_screen()
+        self.assertEqual(found['EVENTS.INVENTORY'].status, 'not_assessed')
+
+    # identity
+    def test_run_identity_is_checked_against_the_source_attributes(self):
+        manifest = self.v2(run_identity={'device': 'nstx', 'shot': 141711})
+        _r, found = run_screen(manifest=manifest, device='NSTX', shot=np.int32(141711))
+        self.assertEqual(found['RUN.IDENTITY'].status, 'pass')
+        _r, found = run_screen(manifest=manifest, device='NSTX', shot=np.int32(141712))
+        self.assertEqual(found['RUN.IDENTITY'].status, 'fail')
+        _r, found = run_screen(manifest=manifest)
+        self.assertEqual(found['RUN.IDENTITY'].status, 'not_assessed')
+        _r, found = run_screen()
+        self.assertEqual(found['RUN.IDENTITY'].status, 'not_assessed')
+
+    # lineage
+    def evidence(self, **extra):
+        return {'origin': 'measured', 'source': 'ref', **extra}
+
+    def test_a_validator_sharing_an_ancestor_with_a_constraint_is_not_independent(self):
+        manifest = self.v2(
+            evidence_sources=[{'id': 'efit_raw', 'description': 'EFIT reconstruction'}],
+            evidence={'electron_temperature': self.evidence(id='te_input', usage=['constraint'], parents=['efit_raw'],
+                                                           source='a'),
+                      'ion_temperature': self.evidence(id='ti_check', usage=['independent_validation'],
+                                                       parents=['efit_raw'], source='b')})
+        _r, found = run_screen(manifest=manifest)
+        finding = found['INDEPENDENCE.ion_temperature']
+        self.assertEqual(finding.status, 'warning')
+        self.assertEqual(finding.evidence['shared'][0]['via'], ['efit_raw'])
+
+    def test_a_validator_with_separate_lineage_raises_no_warning(self):
+        manifest = self.v2(
+            evidence_sources=[{'id': 'a_raw', 'description': 'x'}, {'id': 'b_raw', 'description': 'y'}],
+            evidence={'electron_temperature': self.evidence(id='te', usage=['constraint'], parents=['a_raw'], source='a'),
+                      'ion_temperature': self.evidence(id='ti', usage=['independent_validation'], parents=['b_raw'],
+                                                       source='b')})
+        report, found = run_screen(manifest=manifest)
+        self.assertNotIn('INDEPENDENCE.ion_temperature', found)
+        self.assertEqual(report.evidence_graph['a_raw']['children'], ['te'])
+
+    def test_a_shared_hash_defeats_a_claim_of_independence(self):
+        digest = 'ab' * 32
+        manifest = self.v2(evidence={'electron_temperature': self.evidence(usage=['constraint'], sha256=digest, source='a'),
+                                     'ion_temperature': self.evidence(usage=['independent_validation'], sha256=digest,
+                                                                      source='b')})
+        _r, found = run_screen(manifest=manifest)
+        self.assertEqual(found['INDEPENDENCE.ion_temperature'].status, 'warning')
+
+    # applicability and overrides
+    def expectation(self, **extra):
+        return {'name': 'EINJA(1)', 'expected': 80.0, 'reference': 'sheet', 'units': 'keV', **extra}
+
+    def test_a_reference_for_another_shot_range_is_not_applicable(self):
+        body = 'EINJA(1)=70.0\n'
+        manifest = self.v2(run_identity={'shot': 141711}, input_expectations=[
+            self.expectation(applicability={'shot_min': 120000, 'shot_max': 130000})])
+        _r, found = run_screen(manifest=manifest, timeline=self.timeline(body))
+        self.assertEqual(found['HEATING.REFERENCE.0'].status, 'not_applicable')
+        manifest['input_expectations'][0]['applicability'] = {'shot_min': 141000, 'shot_max': 142000}
+        _r, found = run_screen(manifest=manifest, timeline=self.timeline(body))
+        self.assertEqual(found['HEATING.REFERENCE.0'].status, 'warning')               # applies, and 70 != 80
+
+    def test_an_unknown_shot_makes_applicability_unknown_not_true(self):
+        manifest = self.v2(input_expectations=[self.expectation(applicability={'shot_min': 1})])
+        _r, found = run_screen(manifest=manifest, timeline=self.timeline('EINJA(1)=80.0\n'))
+        self.assertEqual(found['HEATING.REFERENCE.0'].status, 'not_assessed')
+
+    def test_a_reviewed_override_replaces_the_value_and_keeps_the_original(self):
+        override = {'value': 70.0, 'reason': 'campaign used 70 keV', 'reviewer': 'physicist'}
+        manifest = self.v2(input_expectations=[self.expectation(override=override)])
+        _r, found = run_screen(manifest=manifest, timeline=self.timeline('EINJA(1)=70.0\n'))
+        finding = found['HEATING.REFERENCE.0']
+        self.assertEqual(finding.status, 'pass')
+        self.assertTrue(finding.evidence['override_applied'])
+        self.assertEqual(finding.evidence['expectation']['expected'], 80.0)
+        self.assertIn('physicist', finding.message)
+
+    def test_a_reference_time_window_restricts_the_compared_intervals(self):
+        body = 'EINJA(1)=80.0\n~update_time=1.0\nEINJA(1)=10.0\n'
+        manifest = self.v2(input_expectations=[self.expectation(applicability={'time_max': 0.5})])
+        _r, found = run_screen(manifest=manifest, timeline=self.timeline(body))
+        self.assertEqual(found['HEATING.REFERENCE.0'].status, 'pass')                  # the 10 keV interval is not compared
+
+    def test_evidence_for_another_device_does_not_apply(self):
+        manifest = self.v2(run_identity={'device': 'NSTX'}, evidence={'rotation': self.evidence(
+            applicability={'device': 'DIII-D'})})
+        _r, found = run_screen(manifest=manifest)
+        self.assertEqual(found['EVIDENCE.rotation'].status, 'not_applicable')
+
+    # resolved inputs
+    def test_resolved_controls_are_compared_with_the_declarations(self):
+        controls = [{'name': 'NLMDIF', 'resolved': True, 'segments': [{'start': None, 'end': None, 'value': False}]}]
+        manifest = self.v2(resolved_inputs={'controls': controls})
+        _r, found = run_screen(manifest=manifest, timeline=self.timeline('NLMDIF=.TRUE.\n'))
+        self.assertEqual(found['INPUT.RESOLVED.CONTROL.NLMDIF'].status, 'warning')
+        _r, found = run_screen(manifest=manifest, timeline=self.timeline('NLMDIF=.FALSE.\n'))
+        self.assertEqual(found['INPUT.RESOLVED.CONTROL.NLMDIF'].status, 'pass')
+
+    def test_a_declared_only_control_cannot_confirm_the_run(self):
+        controls = [{'name': 'NLMDIF', 'resolved': False, 'segments': [{'value': True}]}]
+        _r, found = run_screen(manifest=self.v2(resolved_inputs={'controls': controls}),
+                               timeline=self.timeline('NLMDIF=.TRUE.\n'))
+        self.assertEqual(found['INPUT.RESOLVED.CONTROL.NLMDIF'].status, 'not_assessed')
+
+    def test_a_value_of_another_type_is_not_coerced_to_agree(self):
+        controls = [{'name': 'LPREDICT_NE', 'resolved': True, 'segments': [{'value': True}]}]
+        _r, found = run_screen(manifest=self.v2(resolved_inputs={'controls': controls}),
+                               timeline=self.timeline('LPREDICT_NE=1\n'))
+        self.assertEqual(found['INPUT.RESOLVED.CONTROL.LPREDICT_NE'].status, 'warning')
+
+    def test_input_file_hashes_are_verified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'TR.DAT'
+            path.write_text('A=1\n')
+            good = hashlib.sha256(path.read_bytes()).hexdigest()
+            for digest, expected in ((good, 'pass'), ('00' * 32, 'fail'), (None, 'not_assessed')):
+                item = {'role': 'trdat', 'path': str(path)}
+                if digest:
+                    item['sha256'] = digest
+                _r, found = run_screen(manifest=self.v2(resolved_inputs={'inputs': [item]}))
+                self.assertEqual(found['INPUT.RESOLVED.FILES'].status, expected, digest)
+            gone = {'role': 'trdat', 'path': str(Path(tmp) / 'absent'), 'sha256': good}
+            _r, found = run_screen(manifest=self.v2(resolved_inputs={'inputs': [gone]}))
+            self.assertEqual(found['INPUT.RESOLVED.FILES'].status, 'error')
+
+    def test_the_code_version_is_compared_with_the_source(self):
+        manifest = self.v2(resolved_inputs={'code': {'name': 'TRANSP', 'version': '21.X.X'}})
+        _r, found = run_screen(manifest=manifest, TRANSP_version='21.X.X')
+        self.assertEqual(found['INPUT.RESOLVED.CODE'].status, 'pass')
+        _r, found = run_screen(manifest=manifest, TRANSP_version='20.1')
+        self.assertEqual(found['INPUT.RESOLVED.CODE'].status, 'warning')
+        _r, found = run_screen(manifest=manifest)
+        self.assertEqual(found['INPUT.RESOLVED.CODE'].status, 'not_assessed')
+
+    def test_the_source_arrays_are_not_modified_by_the_v2_checks(self):
+        data = self.negative_te()
+        before = {k: np.array(v.values, copy=True) for k, v in data.items()}
+        event = {'id': 'e', 'type': 'elm', 'start': 0.9, 'end': 1.1, 'rules': ['PROFILE.*']}
+        run_screen(data, self.v2(events=[event]))
+        for name, values in before.items():
+            np.testing.assert_array_equal(data[name].values, values, name)
 
 
 class DeclaredInputTests(unittest.TestCase):
@@ -503,6 +779,65 @@ class ReportingAndCliTests(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
             self.assertFalse((Path(tmp) / 'report').exists())
+
+
+class PilotAdapterTests(unittest.TestCase):
+    """The pilot adapter computes hashes, passes supplied facts through, and refuses an unfilled template."""
+
+    def facts(self, **extra):
+        return {'schema_version': PILOT_SCHEMA, 'run_identity': {'device': 'X', 'shot': 1}, **extra}
+
+    def test_the_template_is_refused_until_it_is_filled(self):
+        with self.assertRaises(ValueError) as caught:
+            load_pilot(ROOT / 'examples' / 'curation' / 'pilot-template.json')
+        self.assertIn('TO_BE_SUPPLIED', str(caught.exception))
+        self.assertIn('facts.run_identity.device', str(caught.exception))
+
+    def test_file_hashes_are_computed_from_the_files_not_supplied(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'TR.DAT').write_text('A=1\n')
+            manifest = build_manifest(self.facts(files=[{'role': 'trdat', 'path': 'TR.DAT'}]), tmp)
+            item = manifest['resolved_inputs']['inputs'][0]
+            self.assertEqual(item['sha256'], hashlib.sha256(b'A=1\n').hexdigest())
+            self.assertEqual(manifest['schema_version'], MANIFEST_SCHEMA)
+            with self.assertRaises(ValueError):                     # a supplied hash would be a claim, not a computation
+                build_manifest(self.facts(files=[{'role': 'trdat', 'path': 'TR.DAT', 'sha256': '0' * 64}]), tmp)
+            with self.assertRaises(OSError):
+                build_manifest(self.facts(files=[{'role': 'trdat', 'path': 'absent'}]), tmp)
+
+    def test_unknown_sections_and_wrong_schema_are_rejected(self):
+        with self.assertRaises(ValueError):
+            build_manifest(self.facts(surprise=1), '.')
+        with self.assertRaises(ValueError):
+            build_manifest({'schema_version': 'other'}, '.')
+
+    def test_the_result_is_validated_like_any_manifest(self):
+        with self.assertRaises(ValueError):
+            build_manifest(self.facts(events=[{'id': 'e', 'type': 'bogus', 'start': 0, 'end': 1, 'rules': ['*']}]), '.')
+
+    def test_the_cli_runs_a_pilot_and_leaves_the_inputs_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            ReportingAndCliTests().write_cdf(tmp / 'run.CDF')
+            (tmp / 'TR.DAT').write_text('NLMDIF=.TRUE.\n')
+            facts = self.facts(files=[{'role': 'trdat', 'path': 'TR.DAT'}],
+                               events=[{'id': 'e', 'type': 'elm', 'start': 0.0, 'end': 0.1, 'rules': ['PROFILE.TE.*']}])
+            (tmp / 'pilot.json').write_text(json.dumps(facts))
+            before = {n: hashlib.sha256((tmp / n).read_bytes()).hexdigest() for n in ('run.CDF', 'TR.DAT', 'pilot.json')}
+            done = subprocess.run([sys.executable, str(ROOT / 'curate.py'), '-i', str(tmp / 'run.CDF'),
+                                   '--trdat', str(tmp / 'TR.DAT'), '--pilot', str(tmp / 'pilot.json'),
+                                   '--output-dir', str(tmp / 'out')], capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stderr + done.stdout)
+            self.assertEqual(before, {n: hashlib.sha256((tmp / n).read_bytes()).hexdigest() for n in before})
+            document = json.loads((tmp / 'out' / 'curation.json').read_text())
+            self.assertEqual(document['source']['evidence_file']['kind'], 'pilot_facts')
+            self.assertEqual(document['events'][0]['id'], 'e')
+            self.assertIn('INPUT.RESOLVED.FILES', {f['id'] for f in document['findings']})
+            done = subprocess.run([sys.executable, str(ROOT / 'curate.py'), '-i', str(tmp / 'run.CDF'), '--pilot',
+                                   str(ROOT / 'examples' / 'curation' / 'pilot-template.json'),
+                                   '--output-dir', str(tmp / 'out2')], capture_output=True, text=True)
+            self.assertEqual(done.returncode, 2)
+            self.assertFalse((tmp / 'out2').exists())
 
 
 if __name__ == '__main__':

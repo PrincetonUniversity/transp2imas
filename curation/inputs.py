@@ -9,6 +9,7 @@ An omitted switch is unknown; later explicit declarations persist in snapshots.
 from pathlib import Path
 import re
 
+import fortran_literals
 from input_provenance import strip_fortran_comment
 from curation.source import digest_file
 
@@ -22,19 +23,9 @@ def normalize_name(name):
 
 
 def literal(raw):
-    value = raw.strip().rstrip(',').strip()
-    logical = value.upper()
-    if logical in ('.TRUE.', '.T.', 'T', 'TRUE'):
-        return True
-    if logical in ('.FALSE.', '.F.', 'F', 'FALSE'):
-        return False
-    if NUMBER.fullmatch(value):
-        result = float(value.replace('d', 'e').replace('D', 'E'))
-        import math
-        return result if math.isfinite(result) else None
-    if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
-        return value[1:-1].replace(value[0] * 2, value[0])
-    return None
+    """One supported scalar (``bool``, number as ``float``, ``str``) or ``None``; the contract is ``fortran_literals``."""
+    value = fortran_literals.parse_scalar(raw)
+    return float(value) if isinstance(value, int) and not isinstance(value, bool) else value
 
 
 def declared_timeline(path=None):

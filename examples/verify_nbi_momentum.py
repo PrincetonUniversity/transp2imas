@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# registry ids verified here (mapping_registry.yaml): nbi_momentum_source
+# registry ids verified here (mapping_registry.yaml): nbi_momentum_source, nbi_momentum_ripple
 """Verify the NBI total toroidal momentum source written to ``core_sources``.
 
 TRANSP assembles its total input torque ``TQIN`` (xplbal.f90, ``TQINP``) from the beam terms
@@ -28,6 +28,9 @@ import numpy as np
 from scipy.io import netcdf_file
 
 ROOT = Path(__file__).resolve().parents[1]
+for _path in (ROOT, ROOT / 'examples'):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 DATA = ROOT / 'examples' / 'data'
 
 try:
@@ -114,6 +117,154 @@ def convert_and_open(cdf, ids_names, dd_version, outdir):
                          dd_version=dd_version)
     entry.open()
     return entry
+
+
+try:
+    from verify_nbi_mapping import FakeConverter as _NbiFake
+    from imas_core_sources import imas_core_sources
+    from mapping_status import MappingLedger
+except ImportError:      # pragma: no cover - environment dependent
+    _NbiFake = None
+
+NT, NX = 3, 4
+
+
+if _NbiFake is not None:
+    class SourcesFake(_NbiFake):
+        """The part of the converter ``imas_core_sources._nbi_momentum`` reads, over a dict of CDF arrays."""
+
+        ip_sign = -1.0
+        vol_inv = 1.0e6
+        vconv = 1.0e-6
+
+        def __init__(self, variables, dimensions=None):
+            super().__init__(variables)
+            self.dimensions = dimensions or {}
+            self.cm2m = 0.01
+
+        def check_var_name(self, name, **kwargs):
+            return name in self.variables
+
+        def variable_dimensions(self, name):
+            if name in self.dimensions:
+                return self.dimensions[name]
+            return ('TIME3', 'X') if self.variables[name].ndim == 2 else None
+
+        def get_ncvar_on_time(self, name, target='TIME3', scale=1.0):
+            return self.variables[name] * scale
+
+        def check_profile_shape(self, name, array, nt, nx, dimensions=None, grid=None):
+            return array
+
+
+def torques(**overrides):
+    """Distinct, easily summed beam torque profiles (N m cm^-3): the four required terms and a zero TQRPL.
+
+    A keyword set to ``None`` removes that variable (absent from the CDF), as opposed to zeros (present and zero).
+    """
+    base = {name: np.full((NT, NX), value) for name, value in
+            (('TQBE', 1.0), ('TQBI', 2.0), ('TQBTH', 4.0), ('TQJXB', 8.0))}
+    base['TQRPL'] = np.zeros((NT, NX))
+    for name, value in overrides.items():
+        if value is None:
+            base.pop(name, None)
+        else:
+            base[name] = value
+    return base
+
+
+@unittest.skipIf(_NbiFake is None or imas is None, 'IMAS-Python is required (the writer module imports it)')
+class MomentumCompletenessTests(unittest.TestCase):
+    """The NBI momentum total is written only when it is complete; partiality is recorded, not just logged.
+
+    These are synthetic accounting checks of the writer's logic.  They are not validation against a real
+    nonzero-ripple TRANSP run: none is bundled (TQRPL is zero in every case that has it, FTQRIP is in none).
+    """
+
+    def momentum(self, variables, dimensions=None):
+        converter = SourcesFake({'TIME3': np.arange(NT, dtype=float), 'X': np.zeros((NT, NX)), **variables}, dimensions)
+        converter.mapping = MappingLedger()
+        converter.mapping.writer = 'core_sources'
+        writer = imas_core_sources(converter)
+        writer.nt, writer.nx = NT, NX
+        return writer, writer._nbi_momentum()
+
+    def test_zero_ripple_gives_the_complete_total(self):
+        _writer, result = self.momentum(torques())
+        self.assertEqual((result.status, result.ripple, result.missing), ('complete', 'zero', []))
+        np.testing.assert_array_equal(result.total, -1.0e6 * 15.0 * np.ones((NT, NX)))        # ip_sign * 1e6 * sum
+        np.testing.assert_array_equal(result.jxb, -1.0e6 * 8.0 * np.ones((NT, NX)))
+
+    def test_an_absent_ripple_term_is_not_modelled_and_does_not_block_the_total(self):
+        _writer, result = self.momentum(torques(TQRPL=None))
+        self.assertEqual((result.status, result.ripple), ('complete', 'not_modelled'))
+        self.assertTrue(result.total.size)
+
+    def test_nonzero_ripple_with_a_valid_scalar_weight_is_included(self):
+        ripple = np.full((NT, NX), 3.0)
+        _writer, result = self.momentum({**torques(TQRPL=ripple), 'FTQRIP': np.array(0.5)}, {'FTQRIP': ()})
+        self.assertEqual((result.status, result.ripple), ('complete', 'weighted'))
+        np.testing.assert_array_equal(result.total, -1.0e6 * (15.0 + 0.5 * 3.0) * np.ones((NT, NX)))
+        self.assertIn('FTQRIP*TQRPL', result.included)
+        self.assertIn('not validated against a real nonzero-ripple run', imas_core_sources._nbi_momentum_xml(result))
+
+    def test_nonzero_ripple_with_a_time_dependent_weight(self):
+        weight = np.array([0.0, 0.5, 1.0])
+        _writer, result = self.momentum({**torques(TQRPL=np.full((NT, NX), 2.0)), 'FTQRIP': weight},
+                                        {'FTQRIP': ('TIME3',)})
+        np.testing.assert_array_equal(result.total, -1.0e6 * (15.0 + weight[:, None] * 2.0) * np.ones((NT, NX)))
+
+    def test_nonzero_ripple_without_a_weight_withholds_the_total_but_keeps_the_jxb_component(self):
+        _writer, result = self.momentum(torques(TQRPL=np.full((NT, NX), 3.0)))
+        self.assertEqual((result.status, result.ripple), ('partial', 'unresolved'))
+        self.assertEqual(result.total.size, 0)                                              # not the four-term sum
+        np.testing.assert_array_equal(result.jxb, -1.0e6 * 8.0 * np.ones((NT, NX)))
+        self.assertIn('FTQRIP is not in the CDF', result.missing[0])
+        xml = imas_core_sources._nbi_momentum_xml(result)
+        for attribute in ('status="partial"', 'total_written="false"', 'jxb_written="true"'):
+            self.assertIn(attribute, xml)
+
+    def test_an_unusable_weight_is_not_guessed(self):
+        ripple = np.full((NT, NX), 3.0)
+        for label, weight, dimensions in (('not finite', np.array(np.nan), ()),
+                                          ('a profile', np.ones((NT, NX)), ('TIME3', 'X')),
+                                          ('a wrong axis', np.ones(NT), ('X',))):
+            with self.subTest(label):
+                _writer, result = self.momentum({**torques(TQRPL=ripple), 'FTQRIP': weight}, {'FTQRIP': dimensions})
+                self.assertEqual((result.status, result.total.size), ('partial', 0))
+
+    def test_a_missing_required_term_is_different_from_a_zero_one(self):
+        _writer, zero = self.momentum(torques(TQBE=np.zeros((NT, NX))))
+        self.assertEqual(zero.status, 'complete')                                           # present and zero: adds nothing
+        np.testing.assert_array_equal(zero.total, -1.0e6 * 14.0 * np.ones((NT, NX)))
+        _writer, absent = self.momentum(torques(TQBE=None))
+        self.assertEqual((absent.status, absent.total.size), ('absent', 0))                 # absent: the total is withheld
+        self.assertIn('TQBE is not in the CDF', absent.missing[0])
+        self.assertTrue(absent.jxb.size)                                                    # TQJXB alone is a valid component
+
+    def test_with_no_beam_torques_nothing_is_written(self):
+        _writer, result = self.momentum({})
+        self.assertEqual((result.status, result.total.size, result.jxb.size), ('absent', 0, 0))
+        self.assertEqual(len(result.missing), 4)
+
+    def test_the_optional_anomalous_diffusion_term_is_added_when_present(self):
+        _writer, result = self.momentum({**torques(), 'TQABDF': np.full((NT, NX), 16.0)})
+        np.testing.assert_array_equal(result.total, -1.0e6 * 31.0 * np.ones((NT, NX)))
+        self.assertIn('TQABDF', result.included)
+
+    def test_the_source_arrays_are_not_modified(self):
+        variables = {'TIME3': np.arange(NT, dtype=float), 'X': np.zeros((NT, NX)),
+                     **torques(TQRPL=np.full((NT, NX), 3.0)), 'FTQRIP': np.array(0.5)}
+        converter = SourcesFake(variables, {'FTQRIP': ()})
+        converter.mapping = MappingLedger()
+        converter.mapping.writer = 'core_sources'
+        before = {k: v.copy() for k, v in converter.variables.items()}
+        writer = imas_core_sources(converter)
+        writer.nt, writer.nx = NT, NX
+        writer._nbi_momentum()
+        for name, values in converter.variables.items():
+            np.testing.assert_array_equal(values, before[name], name)
+
 
 
 @unittest.skipIf(imas is None, 'IMAS-Python is required')

@@ -42,8 +42,26 @@ reports with the input/model revision.
 - *Profile shape.* `check_profile_shape` accepted a wrong time length and any other dimensionality; it now requires
   exactly `(nt, nx)` for a present profile.
 
-Still open from the list: item 3 (a shared source/provenance protocol), 4 to 6 (resolved inputs, authoritative
-geometry and events), and the NBI torque total when `TQRPL` is nonzero and `FTQRIP` is unavailable.
+**Status of items 3 to 6 (curation side, manifest/report schema v2).**
+
+- *Shared contracts (item 3).* One Fortran scalar-literal parser (`fortran_literals.py`) is used by the converter's
+  namelist reader and by the curation TR.DAT reader; the CDF missing-data semantics are the same in both
+  (`docs/curation/scientific-policy.md`). Curation stays independent of IMAS.
+- *Resolved inputs (item 4), partly.* Analyst-supplied code version, input-file hashes and resolved controls are
+  compared with the CDF and TR.DAT (`INPUT.RESOLVED.*`). Not done: reading the resolved configuration from TRANSP
+  itself, and PT model-execution semantics, which are still `unresolved` (replacement is assumed and labelled as
+  such; the raw `%active` declarations are preserved).
+- *Applicability, overrides, power-accounting boundary (item 5), partly.* Applicability and reviewed overrides are
+  implemented for evidence and references; the boundary is recorded only. No authoritative geometry or waveform
+  registry exists yet.
+- *Events and lineage (item 6), partly.* Declared events exclude samples per rule with exact accounting; an evidence
+  dependency graph judges independence. Event *detection* and diagnostic fit adapters are not implemented.
+- *Pilot.* `curate.py --pilot` runs on analyst-supplied facts; `make verify-curation-pilot` runs the mechanics on
+  NSTX 141711Y05 and DIII-D 147634T16. No campaign evidence is bundled, so every evidence-derived finding of those
+  runs stays `not_assessed`.
+
+Converter side, also done: the NBI momentum total is written only when it is complete (nonzero `TQRPL` without
+`FTQRIP` withholds the total and keeps the `TQJXB` component, recorded as partial).
 
 Acceptance: representative real runs plus deliberately incorrect source identities/units/times,
 valid missing-data cases, and independent expert-reviewed expected outcomes. A bare parser/test pass

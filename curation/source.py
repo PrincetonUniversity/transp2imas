@@ -62,6 +62,12 @@ class SourceDataError(ValueError):
     """The source variable exists but cannot be decoded: corrupt or unsupported data, not absent evidence."""
 
 
+# netCDF default fill values by stored type (``netCDF4.default_fillvals``), without importing netCDF4
+DEFAULT_FILL = {'i1': -127, 'u1': 255, 'i2': -32767, 'u2': 65535, 'i4': -2147483647, 'u4': 4294967295,
+                'i8': -9223372036854775806, 'u8': 18446744073709551614,
+                'f4': 9.969209968386869e+36, 'f8': 9.969209968386869e+36}
+
+
 def _numeric_attribute(name, variable, attr):
     """The attribute as a flat float array; metadata that is not numeric is corrupt data, not a missing input."""
     try:
@@ -121,8 +127,15 @@ class NativeSource:
         raw = variable[...]  # works for scalar and array variables
         if np.asanyarray(raw).dtype.kind not in 'biuf':
             raise SourceDataError(f'{name}: curation requires real numeric data')
-        values = np.array(np.ma.getdata(raw), dtype=float, copy=True)
+        data = np.ma.getdata(raw)
         mask = np.ma.getmaskarray(raw).copy()
+        if not any(hasattr(variable, attr) for attr in ('_FillValue', 'missing_value')):
+            # no declared sentinel: the netCDF default fill of the stored type still marks an unwritten sample, as the
+            # netCDF library and the converter's backend treat it (compared in the stored representation)
+            default = DEFAULT_FILL.get(f'{data.dtype.kind}{data.dtype.itemsize}')
+            if default is not None:
+                mask |= data == np.array(default, dtype=data.dtype)
+        values = np.array(data, dtype=float, copy=True)
         for attr in ('_FillValue', 'missing_value'):
             if hasattr(variable, attr):
                 for fill in np.asarray(getattr(variable, attr)).ravel():
@@ -159,6 +172,31 @@ class NativeSource:
             self._cache[name] = values
             self._cache_size += values.nbytes
         return values
+
+    def global_attribute(self, name):
+        """A global attribute of the run (``shot``, ``device``, ``TRANSP_version``...) as text or a number, or ``None``.
+
+        Read-only and never guessed: an absent attribute is ``None`` (unknown), not an empty string or zero.
+        """
+        dataset = self.dataset
+        try:
+            if hasattr(dataset, 'getncattr'):
+                value = dataset.getncattr(name) if name in dataset.ncattrs() else None
+            else:
+                value = getattr(dataset, name, None)
+        except (AttributeError, OSError, RuntimeError):
+            return None
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            value = text(value)
+        if isinstance(value, str):
+            return value.strip() or None
+        if isinstance(value, np.ndarray):
+            value = value.item() if value.size == 1 else None
+        if isinstance(value, np.generic):
+            value = value.item()
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
     def provenance(self):
         if self.path is None:

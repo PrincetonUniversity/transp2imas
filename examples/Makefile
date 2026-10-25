@@ -60,6 +60,7 @@ help:
 quick:
 	$(PYTHON) -m py_compile $(wildcard *.py)
 	$(PYTHON) verify_curation.py
+	$(PYTHON) verify_curation_pilot.py
 	$(PYTHON) verify_conversion_runner.py
 	$(PYTHON) verify_cocos_signs.py
 	$(PYTHON) verify_code_provenance.py

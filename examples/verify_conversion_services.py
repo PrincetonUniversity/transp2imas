@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
 import grid_services as gs
 import ids_identity as ii
 import name_patterns as npat
+import fortran_literals as fl
 import namelist_reader as nl
 import plasma_betas as pb
 from conversion_plan import ConversionJournal
@@ -99,6 +100,56 @@ class NamelistTests(unittest.TestCase):
         self.assertIn('treated as unknown', logged.output[0])
         self.assertEqual(nl.get_var_(data, LOG, 'A', float), 1.0e-3)
         self.assertIsNone(nl.get_var_({'L': ['1.0', 'x']}, LOG, 'L', float))   # one bad element makes the list unknown
+
+    def test_the_required_literal_cases_from_the_review(self):
+        cases = (('1.0D-3', 0.001), ('-2.5d+2', -250.0), ('2.5D0', 2.5), ('+.5e1', 5.0), ('-4.', -4.0), ('12', 12))
+        for text, expected in cases:
+            self.assertEqual(fl.parse_number(text), expected, text)
+            self.assertEqual(nl.parse_number(text, float), float(expected), text)
+
+    def test_malformed_numbers_are_unknown_never_zero_false_or_a_previous_value(self):
+        for text in ('1.0D', 'D3', '1.0.0', '1e', '--1', '1 2', 'nan', 'inf', '1.0q3', '', '1.0D-3x', '1/0'):
+            self.assertIsNone(fl.parse_number(text), text)
+            self.assertIsNone(fl.parse_scalar(text), text)
+            with self.assertRaises(ValueError):
+                nl.parse_number(text, float)
+        self.assertIs(fl.parse_scalar('.false.'), False)             # a real False is not the same as unknown
+        self.assertIsNone(fl.parse_scalar('maybe'))
+
+    def test_a_later_unparseable_assignment_does_not_keep_the_earlier_value(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'TR.DAT'
+            path.write_text('A = 1.0\nA = 1.0.0\nB = 2.0\n', encoding='ISO-8859-1')
+            records = nl.read_namelist(str(path), LOG)
+        self.assertEqual(records.raw['A'], '1.0.0')
+        self.assertEqual(records.lines['A'], 2)                       # the assignment that supplied the value
+        self.assertIsNone(nl.get_var_(records.values, LOG, 'A', float))
+        self.assertEqual(nl.get_var_(records.values, LOG, 'B', float), 2.0)
+
+    def test_records_keep_raw_text_source_lines_and_gaps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'TR.DAT'
+            path.write_text("&TRIN LPREDICT_NE = 1\nTE = 1.5D-3 ! keV\nFILE='beam!x.nml'\nA=1, B=2\ninclude 'o.nml'\n/\n",
+                            encoding='ISO-8859-1')
+            records = nl.read_namelist(str(path), LOG)
+            dictionary_view = nl.load_namelist(str(path), LOG)
+        self.assertEqual(records.values['LPREDICT_NE'], 1)             # an assignment on the group-header line
+        self.assertEqual((records.raw['TE'], records.lines['TE'], records.values['TE']), ('1.5D-3', 2, 0.0015))
+        self.assertEqual(records.values['FILE'], "'beam!x.nml'")
+        reasons = [(gap['line'], gap['reason'].split(';')[0]) for gap in records.gaps]
+        self.assertIn((4, 'several assignments on one line'), reasons)
+        self.assertIn((5, 'statement without an assignment'), reasons)
+        self.assertEqual(dictionary_view, records.values)             # the dictionary view is unchanged
+
+    def test_the_converter_and_curation_read_the_same_scalars(self):
+        from curation.inputs import literal
+        for text in ('1.0D-3', '-2.5d+2', '7', '.TRUE.', 'f', "'a!b'", "'it''s'", '1.0D', '1.0.0', 'abc', 'nan', '[1,2]'):
+            shared = fl.parse_scalar(text)
+            curated = literal(text)
+            if isinstance(shared, bool) or shared is None or isinstance(shared, str):
+                self.assertEqual(curated, shared, text)
+            else:
+                self.assertEqual(curated, float(shared), text)
 
     def test_missing_file_gives_an_empty_namelist_and_no_path_gives_none(self):
         self.assertEqual(nl.load_namelist('/nonexistent/TR.DAT', LOG), {})
@@ -363,6 +414,25 @@ class MaskedSourceTests(unittest.TestCase):
             skipped = connection.mapping.entries('test')
             self.assertTrue(any(row['source'] == 'TE' and 'masked' in row['reason'] for row in skipped), skipped)
 
+    def test_an_entirely_missing_array_is_a_broken_mapping_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = self.connection(tmp, [-999.0, -999.0, -999.0])
+            with self.assertRaises(MappingError):
+                connection.get_ncvar('TE')
+
+    def test_legitimate_zeros_are_not_missing_for_floats_and_integers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = self.connection(tmp, [0.0, 0.0, 0.0])
+            np.testing.assert_array_equal(connection.get_ncvar('TE'), [0.0, 0.0, 0.0])
+            self.assertEqual(connection.get_ncvar('TI', ind=0).tolist(), [0.0])      # integer-valued zero
+
+    def test_the_returned_array_is_a_copy_the_caller_may_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = self.connection(tmp, [1.0, 2.0, 3.0])
+            first = connection.get_ncvar('TE')
+            first[:] = -1.0
+            np.testing.assert_array_equal(connection.get_ncvar('TE'), [1.0, 2.0, 3.0])
+
     def test_a_variable_without_masked_samples_is_read_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
             connection = self.connection(tmp, [1.0, 2.0, 3.0])
@@ -410,11 +480,171 @@ class ProfileShapeTests(unittest.TestCase):
             self.assertEqual(result.size, 0, text)
             self.assertTrue(any(text in row['reason'] and row['source'] == 'VAR' for row in entries), (text, entries))
 
+    def check_declared(self, array, dimensions, nt=3, nx=3, grid=None):
+        me = types.SimpleNamespace(mapping=MappingLedger())
+        me.mapping.writer = 'test'
+        set_strict(False)
+        try:
+            result = nc2imas_module.nc2imas.check_profile_shape(me, 'VAR', array, nt, nx, dimensions=dimensions, grid=grid)
+        finally:
+            set_strict(True)
+        return result, me.mapping.entries('test')
+
+    def test_equal_lengths_with_different_coordinates_are_rejected_naming_the_dimensions(self):
+        full = np.zeros((3, 3))
+        for dimensions, grid, text in ((('TIME', 'X'), None, 'declared time dimension TIME where TIME3 is expected'),
+                                       (('TIME3', 'RMAJM'), None, 'declared radial dimension RMAJM is neither X nor XB'),
+                                       (('TIME3', 'XB'), 'X', 'profile is on XB but the writer expects X'),
+                                       (('TIME3', 'X'), 'XB', 'profile is on X but the writer expects XB')):
+            result, entries = self.check_declared(full, dimensions, grid=grid)
+            self.assertEqual(result.size, 0, text)
+            reason = ' | '.join(row['reason'] for row in entries)
+            self.assertIn(text, reason)
+            self.assertIn(str(tuple(dimensions)), reason)                  # source dimensions named
+            self.assertTrue(all(row['source'] == 'VAR' and 'profile (3 times x 3 radial points)' in row['target']
+                                for row in entries), entries)                # variable and destination named
+
+    def test_declared_coordinates_that_fit_pass_unchanged(self):
+        full = np.zeros((3, 3))
+        for dimensions, grid in ((('TIME3', 'X'), 'X'), (('TIME3', 'XB'), 'XB'), (('TIME3', 'X'), None),
+                                 (('TIME3', 'XB'), None), (None, 'X')):
+            result, entries = self.check_declared(full, dimensions, grid=grid)
+            self.assertIs(result, full)
+            self.assertEqual(entries, [])
+
+    def test_a_valid_single_slice_passes(self):
+        single = np.zeros((1, 4))
+        result, entries = self.check_declared(single, ('TIME3', 'X'), nt=1, nx=4, grid='X')
+        self.assertIs(result, single)
+        self.assertEqual(entries, [])
+        wrong, _ = self.check_declared(np.zeros((2, 4)), ('TIME3', 'X'), nt=1, nx=4)
+        self.assertEqual(wrong.size, 0)
+
+    def test_the_shape_is_judged_before_the_coordinates(self):
+        _result, entries = self.check_declared(np.zeros((3, 4)), ('TIME', 'X'))
+        self.assertIn('radial size mismatch 4 != 3', entries[0]['reason'])     # the length problem is the first reported
+
+    def test_the_explicit_ways_across_are_the_documented_transformations(self):
+        # TIME -> TIME3 for a 1-D history and X <-> XB for a profile are done by named methods, never by the check
+        self.assertTrue(callable(nc2imas_module.nc2imas.get_ncvar_on_time))
+        self.assertTrue(callable(nc2imas_module.nc2imas.interp_radial_profiles))
+        x, xb = np.array([[0.25, 0.75]]), np.array([[0.5, 1.0]])
+        moved = nc2imas_module.nc2imas.interp_radial_profiles(np.array([[1.0, 3.0]]), xb, x, axis_value=0.0)
+        self.assertEqual(moved.shape, (1, 2))
+        np.testing.assert_allclose(moved, [[0.5, 2.0]])      # (0 -> 0, 0.5 -> 1, 1.0 -> 3) sampled at 0.25 and 0.75
+
     def test_the_strict_policy_raises_naming_the_variable(self):
         for array in (np.zeros((2, 3)), np.zeros((3, 3, 2))):
             with self.assertRaises(MappingError) as caught:
                 self.check(array, strict=True)
             self.assertIn('VAR', str(caught.exception))
+
+
+@unittest.skipIf(netCDF4 is None, 'netCDF4 is required (the backend whose automatic handling is compared)')
+class MissingDataContractTests(unittest.TestCase):
+    """The converter (netCDF4's automatic mask and scale) and curation (explicit decoding) give one answer."""
+
+    def write(self, directory):
+        path = Path(directory) / 'contract.nc'
+        with netCDF4.Dataset(path, 'w', format='NETCDF3_CLASSIC') as nc:
+            nc.createDimension('T', 4)
+
+            def var(name, dtype, data, **attrs):
+                fill = attrs.pop('_FillValue', None)
+                variable = nc.createVariable(name, dtype, ('T',), fill_value=fill)
+                variable.set_auto_maskandscale(False)
+                variable[:] = data
+                for key, value in attrs.items():
+                    variable.setncattr(key, value)
+
+            var('fill', 'f8', [1, -999, 3, 0], _FillValue=-999.0)
+            var('missing', 'f8', [1, -999, 3, 0], missing_value=-999.0)
+            var('valid_range', 'f8', [1, 50, 3, 0], valid_range=np.array([0.0, 10.0]))
+            var('valid_min', 'f8', [1, -5, 3, 0], valid_min=0.0)
+            var('valid_max', 'f8', [1, 50, 3, 0], valid_max=10.0)
+            var('packed', 'i2', [100, 200, 300, 0], scale_factor=0.5, add_offset=10.0)
+            var('packed_fill', 'i2', [100, -32768, 300, 0], _FillValue=np.int16(-32768), scale_factor=0.5, add_offset=10.0)
+            var('packed_range', 'i2', [100, 5000, 300, 0], valid_range=np.array([0, 1000], dtype='i2'),
+                scale_factor=0.5, add_offset=10.0)
+            var('plain_int', 'i4', [1, 2, 3, 0])
+            var('all_zero', 'f8', [0, 0, 0, 0])
+            var('all_missing', 'f8', [-999, -999, -999, -999], _FillValue=-999.0)
+            var('default_fill', 'f8', [1.0, netCDF4.default_fillvals['f8'], 3.0, 0.0])
+            var('default_fill_int', 'i4', [1, netCDF4.default_fillvals['i4'], 3, 0])
+        return path
+
+    @staticmethod
+    def backend_view(path, name):
+        """What the backend's own automatic masking and scaling returns, with missing samples as NaN."""
+        with netCDF4.Dataset(path) as nc:
+            data = nc.variables[name][...]
+            return np.ma.filled(np.ma.asarray(data).astype(float), np.nan), np.ma.getmaskarray(data)
+
+    def test_curation_decodes_every_case_as_the_backend_does_on_both_readers(self):
+        from curation.source import NativeSource
+        from scipy.io import netcdf_file
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.write(tmp)
+            with netCDF4.Dataset(path) as nc4, netcdf_file(str(path), 'r', mmap=False) as nc3:
+                nc4.set_auto_maskandscale(False)
+                readers = {'netCDF4 (explicit)': NativeSource(nc4, packed=True),
+                           'scipy classic': NativeSource(nc3, packed=True)}
+                for name in nc4.variables:
+                    expected, missing = self.backend_view(path, name)
+                    for label, source in readers.items():
+                        decoded = source.array(name)
+                        np.testing.assert_array_equal(np.isnan(decoded), missing, f'{name} missingness, {label}')
+                        np.testing.assert_allclose(decoded, expected, rtol=1e-12, err_msg=f'{name} values, {label}')
+
+    def test_packing_is_applied_once_and_sentinels_are_judged_in_the_packed_representation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.write(tmp)
+            values, mask = self.backend_view(path, 'packed')
+            np.testing.assert_array_equal(values, [60.0, 110.0, 160.0, 10.0])    # raw*0.5 + 10, once
+            values, mask = self.backend_view(path, 'packed_fill')
+            self.assertEqual(mask.tolist(), [False, True, False, False])         # -32768 is the raw sentinel
+            values, mask = self.backend_view(path, 'packed_range')
+            self.assertEqual(mask.tolist(), [False, True, False, False])         # valid_range [0, 1000] bounds raw values
+            np.testing.assert_array_equal(values[[0, 2, 3]], [60.0, 160.0, 10.0])
+            values, mask = self.backend_view(path, 'all_zero')
+            self.assertFalse(mask.any())                                         # legitimate zeros stay valid
+            np.testing.assert_array_equal(values, 0.0)
+
+    def test_the_converter_reads_packed_data_without_applying_the_packing_again(self):
+        from netcdf_class import netcdf_connection
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.write(tmp)
+            connection = netcdf_connection.__new__(netcdf_connection)
+            connection.mapping = MappingLedger()
+            connection.mapping.writer = 'test'
+            connection.nc = RecordingDataset(netCDF4.Dataset(path), connection.mapping)
+            np.testing.assert_array_equal(connection.get_ncvar('packed'), [60.0, 110.0, 160.0, 10.0])
+            np.testing.assert_array_equal(connection.get_ncvar('plain_int'), [1, 2, 3, 0])
+            np.testing.assert_array_equal(connection.get_ncvar('all_zero'), 0.0)
+            set_strict(False)
+            try:
+                for name in ('packed_fill', 'packed_range', 'default_fill', 'default_fill_int', 'all_missing', 'fill'):
+                    self.assertEqual(connection.get_ncvar(name).size, 0, name)     # never a sentinel passed on as a number
+            finally:
+                set_strict(True)
+
+
+@unittest.skipIf(nc2imas_module is None, 'the converter module needs IMAS-Python')
+class ConverterExitTests(unittest.TestCase):
+    """``with nc2imas(...)`` closes the entry; only a run that ended without an exception is "completed"."""
+
+    def exit_with(self, exc_type):
+        from unittest import mock
+        converter = nc2imas_module.nc2imas.__new__(nc2imas_module.nc2imas)
+        converter.logger = LOG
+        with mock.patch.object(nc2imas_module.nc2imas, 'close_imas_database') as close:
+            result = converter.__exit__(exc_type, exc_type() if exc_type else None, None)
+        self.assertFalse(result)                                    # exceptions are never swallowed
+        return close.call_args.kwargs
+
+    def test_a_clean_exit_is_completed_and_an_exception_is_not(self):
+        self.assertEqual(self.exit_with(None), {'completed': True})
+        self.assertEqual(self.exit_with(RuntimeError), {'completed': False})
 
 
 class ReadCountTests(unittest.TestCase):

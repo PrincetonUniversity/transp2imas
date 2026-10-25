@@ -35,7 +35,7 @@ class imas_core_transport(IdsWriter):
         """A CDF profile as float64; one whose radial size is not the writer's is a named broken mapping."""
         a=self.cdf.get_ncvar(name)
         if not self.fill.is_valid(a): return np.array([])
-        a=np.asarray(self.fill.check_profile_shape(name,np.asarray(a,dtype=np.float64),self.nt,self.nx))
+        a=np.asarray(self.check_profile(name,np.asarray(a,dtype=np.float64),self.nt,self.nx))
         return a if mult is None else a*mult
 
     def _first_available(self,names,mult=None):

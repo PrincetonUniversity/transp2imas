@@ -372,6 +372,122 @@ class EveryReaderShapeTests(unittest.TestCase):
                     self.assertTrue(hits, skipped)
 
 
+def mask_one_sample(src, dst, variable):
+    """Copy a CDF, declaring a ``_FillValue`` for ``variable`` and storing it in the first sample (so it comes back masked)."""
+    with netCDF4.Dataset(src) as source, netCDF4.Dataset(dst, 'w', format=source.data_model) as target:
+        target.setncatts({k: source.getncattr(k) for k in source.ncattrs()})
+        for name, dim in source.dimensions.items():
+            target.createDimension(name, None if dim.isunlimited() else len(dim))
+        sentinel = -999.0
+        for name, var in source.variables.items():
+            fill = sentinel if name == variable else (var.getncattr('_FillValue') if '_FillValue' in var.ncattrs() else None)
+            out = target.createVariable(name, var.dtype, var.dimensions, fill_value=fill)
+            out.setncatts({k: var.getncattr(k) for k in var.ncattrs() if k != '_FillValue'})
+            out.set_auto_maskandscale(False)
+            data = np.array(var[:])
+            if name == variable:
+                data.flat[0] = sentinel
+            out[:] = data
+
+
+@unittest.skipIf(imas is None or netCDF4 is None, 'netCDF4 and IMAS-Python are required')
+class MaskedPropagationTests(unittest.TestCase):
+    """A masked input is never a physical value: the quantities derived from it are withheld, not written as zeros."""
+
+    def setUp(self):
+        if RUN['quick']:
+            self.skipTest('real conversions skipped (--quick)')
+        if not CASE.is_file():
+            self.skipTest(f'{CASE.name} not present')
+
+    def read_summary(self, outdir):
+        path = next(Path(outdir).glob('*/*/*/*'))
+        entry = imas.DBEntry(f'imas:hdf5?path={path}', 'r', dd_version='4.1.1')
+        try:
+            return entry.get('summary')
+        finally:
+            entry.close()
+
+    def test_a_masked_pressure_withholds_the_betas_and_the_mhd_energy_instead_of_zeroing_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / CASE.name
+            mask_one_sample(CASE, bad, 'PTOWB')
+            for source in CASE.parent.iterdir():
+                if source.suffix != '.CDF' and source.is_file():
+                    (Path(tmp) / source.name).write_bytes(source.read_bytes())
+            control = convert(CASE, Path(tmp) / 'db_control', ids='summary')
+            self.assertEqual(control.returncode, 0, control.stdout[-500:] + control.stderr[-500:])
+            reference = self.read_summary(Path(tmp) / 'db_control').global_quantities
+            for name in ('energy_mhd', 'beta_tor', 'beta_pol', 'beta_tor_norm'):
+                self.assertGreater(len(reference[name].value), 0, f'control: {name} is written when nothing is masked')
+            strict = convert(bad, Path(tmp) / 'db_strict', ids='summary', report=Path(tmp) / 'strict.json')
+            self.assertNotEqual(strict.returncode, 0, 'a masked PTOWB sample was passed on silently')
+            failed = json.loads((Path(tmp) / 'strict.json').read_text())
+            self.assertIn('PTOWB', failed['writers'][0]['error'])
+            self.assertIn('masked', failed['writers'][0]['error'])
+            lenient = convert(bad, Path(tmp) / 'db_lenient', '--lenient-mapping', ids='summary',
+                              report=Path(tmp) / 'lenient.json')
+            self.assertEqual(lenient.returncode, 0, lenient.stdout[-500:] + lenient.stderr[-500:])
+            journal = json.loads((Path(tmp) / 'lenient.json').read_text())
+            skipped = journal['writers'][0]['mapping'][SKIPPED]['fields']
+            self.assertTrue(any(f.get('source') == 'PTOWB' and 'masked' in f['reason'] for f in skipped), skipped)
+            summary = self.read_summary(Path(tmp) / 'db_lenient')
+            gq = summary.global_quantities
+            for name in ('energy_mhd', 'beta_tor', 'beta_pol', 'beta_tor_norm'):
+                self.assertEqual(len(gq[name].value), 0, f'{name} was written although its input pressure is masked')
+            self.assertGreater(len(gq.ip.value), 0)                       # what does not depend on PTOWB is still written
+
+
+@unittest.skipIf(imas is None or netCDF4 is None, 'netCDF4 and IMAS-Python are required')
+class PartialPublicationBackendTests(unittest.TestCase):
+    """A real HDF5 conversion in which one ``DBEntry.put`` fails after two succeeded.
+
+    The failure is injected into the real backend call; the writes before it are real.  Nothing is rolled back.
+    """
+
+    def setUp(self):
+        if RUN['quick']:
+            self.skipTest('real conversions skipped (--quick)')
+        if not CASE.is_file():
+            self.skipTest(f'{CASE.name} not present')
+
+    def test_a_put_that_fails_after_earlier_puts_is_reported_as_a_partial_publication(self):
+        import contextlib
+        import io
+        from unittest import mock
+        import convert
+        real_put = imas.DBEntry.put
+
+        def failing_put(entry, ids, *args, **kwargs):
+            if ids.metadata.name == 'summary':
+                raise RuntimeError('injected backend failure')
+            return real_put(entry, ids, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / 'report.json'
+            out = io.StringIO()
+            argv = ['convert.py', '-i', str(CASE), '-b', 'HDF5', '-u', str(Path(tmp) / 'db'), '--dd-version', '4.1.1',
+                    '-new', '--ids', 'tf,wall,summary,core_sources', '--report-json', str(report_path)]
+            with mock.patch.object(imas.DBEntry, 'put', failing_put), contextlib.redirect_stdout(out):
+                with self.assertRaisesRegex(RuntimeError, 'injected backend failure'):
+                    convert.do_convert(argv)
+            self.assertNotIn('ids stored in', out.getvalue())                  # no completion marker for a partial run
+            journal = json.loads(report_path.read_text())
+            self.assertEqual(journal['status'], 'FAIL')
+            publication = journal['publication']
+            self.assertEqual((publication['status'], publication['kind']), ('partial', 'backend_failure'))
+            self.assertEqual([(r['ids'], r['occurrence']) for r in publication['accepted']], [('wall', 0), ('tf', 0)])      # in the converter's writer order
+            self.assertEqual((publication['failed']['ids'], publication['failed']['occurrence']), ('summary', 0))
+            self.assertIn('injected backend failure', publication['failed']['error'])
+            self.assertEqual(publication['unattempted'], [])                   # summary was the last in its writer's flush
+            self.assertEqual([w['ids'] for w in journal['writers']], ['wall', 'tf', 'summary'])    # core_sources never ran
+            files = sorted(p.name for p in (Path(tmp) / 'db').rglob('*.h5'))
+            self.assertIn('tf.h5', files)                                       # accepted data was not removed
+            self.assertIn('wall.h5', files)
+            self.assertNotIn('summary.h5', files)
+            self.assertNotIn('core_sources.h5', files)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--quick', action='store_true', help='skip the real conversions')

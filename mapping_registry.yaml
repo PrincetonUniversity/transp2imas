@@ -104,10 +104,33 @@
   source: [TQBE, TQBI, TQBTH, TQJXB, TQABDF]
   destination: {'4': source/profiles_1d/momentum_phi, '3': source/profiles_1d/momentum_tor}
   units: 'N*m/cm^3 -> N*m/m^3'
-  transform: 'TQIN-style sum of the NBI torque terms; TQRPL excluded (its weight FTQRIP is not in the CDF)'
+  transform: 'TQIN-style sum of the required beam torque terms (TQBE, TQBI, TQBTH, TQJXB) plus the optional TQABDF, written only when complete: a required term absent from the CDF withholds the total (a zero term is not an absent one). The ripple term TQRPL is added only as FTQRIP*TQRPL (see nbi_momentum_ripple); a zero or absent TQRPL adds nothing. Verified on the bundled cases, where TQRPL is zero or absent'
   sign: ip_sign
   verification: readback_verified
   tests: [examples/verify_nbi_momentum.py]
+
+- id: nbi_momentum_ripple
+  kind: derived_typed
+  writer: core_sources
+  ids: [core_sources]
+  source: [TQRPL, FTQRIP]
+  destination: {'4': source/profiles_1d/momentum_phi, '3': source/profiles_1d/momentum_tor}
+  units: 'N*m/cm^3 -> N*m/m^3'
+  transform: 'a nonzero TQRPL contributes FTQRIP*TQRPL when FTQRIP is a finite scalar or a TIME3 history; when it is missing or unusable the NBI total is withheld (the TQJXB component is still written) and the XML records status partial, total_written false. Synthetic accounting tests only: no bundled run has a nonzero TQRPL and none has FTQRIP, so this has not been validated against a real nonzero-ripple run'
+  sign: ip_sign
+  verification: writer_verified
+  tests: [examples/verify_nbi_momentum.py]
+
+- id: nbi_unit_species
+  kind: derived_typed
+  writer: nbi
+  ids: [nbi]
+  source: ['PINJ??', 'PINJ_*']
+  destination: {'4': unit/species/a, '3': unit/species/a}
+  units: '1 -> 1'
+  transform: 'a species is attached to every unit only when exactly one species total PINJ_<sp> exists and the injector powers add up to it (relative 1e-4); several species, or a total the injectors do not close on, leave the species unset and are recorded as ambiguous. Closure of the sum is evidence of consistency, not of the species'
+  verification: writer_verified
+  tests: [examples/verify_nbi_mapping.py]
 
 - id: momentum_flux_solver_model
   kind: derived_typed

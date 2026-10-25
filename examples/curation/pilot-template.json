@@ -1,0 +1,24 @@
+{
+  "schema_version": "transp2imas.curation.pilot.v1",
+  "notes": "TEMPLATE. Every TO_BE_SUPPLIED must be replaced by a fact a person established, or the entry deleted. Nothing here is campaign data; curate.py --pilot refuses this file until it is filled.",
+  "run_identity": {"device": "TO_BE_SUPPLIED", "shot": "TO_BE_SUPPLIED", "campaign": "TO_BE_SUPPLIED"},
+  "assessment_window": {"time_min": 0.0, "time_max": 1.0},
+  "files": [
+    {"role": "trdat", "path": "TO_BE_SUPPLIED", "source": "TO_BE_SUPPLIED"},
+    {"role": "namelist", "path": "TO_BE_SUPPLIED", "source": "TO_BE_SUPPLIED"}
+  ],
+  "resolved_inputs": {
+    "code": {"name": "TRANSP", "version": "TO_BE_SUPPLIED", "source": "TO_BE_SUPPLIED"},
+    "controls": []
+  },
+  "evidence_sources": [
+    {"id": "TO_BE_SUPPLIED", "description": "TO_BE_SUPPLIED: a measurement or reconstruction that constrained or checks the run",
+     "source": "TO_BE_SUPPLIED", "usage": ["constraint"]}
+  ],
+  "evidence": {
+    "electron_temperature": {"origin": "TO_BE_SUPPLIED", "source": "TO_BE_SUPPLIED", "usage": ["constraint"],
+                              "parents": [], "uncertainty": "unknown"}
+  },
+  "events": [],
+  "input_expectations": []
+}

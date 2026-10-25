@@ -61,3 +61,5 @@ historical development milestones, not public semantic versions.
 - [TIME/TIME3 mapping and equilibrium regression](time-grids.md)
 
 - [End-to-end IMAS readback](end-to-end.md): convert every example, reopen written IDSs and validate native TIME3.
+- [Curation scientific policy](curation/scientific-policy.md) -- missing data, guardrails, model-semantics status and publication reporting.
+- [Converter input contracts](conversion-contracts.md) -- namelist values, profile shape, missing data, NBI species and torque.
