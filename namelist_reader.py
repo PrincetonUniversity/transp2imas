@@ -5,36 +5,23 @@ Functions over an explicit ``nmlist`` dict (and a logger), so the converter keep
 test can pass its own.  ``nc2imas`` exposes these under their historical method names.
 """
 
+from dataclasses import dataclass, field
+import math
 import re
 from typing import List
 
 import numpy as np
 
+import fortran_literals
 from input_provenance import strip_fortran_comment
 from name_patterns import make_namelist_re_pattern
 from utilities import check_file_exists
 
 
-# A Fortran real literal: ``1.0D-3``, ``2.5d0``, ``1D3``, ``.5``, ``-4.``
-FORTRAN_REAL = re.compile(r'[+-]?(?:\d+\.?\d*|\.\d+)(?:[dDeE][+-]?\d+)?\Z')
-_D_EXPONENT = re.compile(r'(?<=[0-9.])[dD](?=[+-]?\d)')
-
-
-def normalize_exponents(text):
-    """``1.0D-3`` -> ``1.0E-3``: Fortran D exponents written as the E that Python reads (numeric tokens only)."""
-    return _D_EXPONENT.sub('E', text)
-
-
-def fortran_number(text):
-    """The value of a single Fortran numeric literal as int or float, or ``None`` if ``text`` is not one."""
-    token = text.strip()
-    try:
-        return int(token)
-    except ValueError:
-        pass
-    if FORTRAN_REAL.match(token):
-        return float(normalize_exponents(token))
-    return None
+# The scalar-literal contract is shared with the curation package (``fortran_literals``); these names stay importable.
+FORTRAN_REAL = fortran_literals.REAL
+normalize_exponents = fortran_literals.normalize_exponents
+fortran_number = fortran_literals.parse_number
 
 
 def parse_bool_value(value):
@@ -69,28 +56,65 @@ def get_bool(nmlist, name:str, default=None):
     return default if value is None else value
 
 
-def load_namelist(path, logger):
-    """The namelist file as ``{key: value}`` (int or float where the text casts), or ``None`` without a path."""
+@dataclass
+class NamelistRecords:
+    """A namelist file as read: the values, and what they were read from.
+
+    ``values``  key -> ``int``/``float`` for a numeric literal, else the raw text (a quoted string keeps its quotes);
+    ``raw``     key -> the text after ``=`` with the comment removed;
+    ``lines``   key -> 1-based line of the assignment that supplied the value;
+    ``gaps``    ``[{'line', 'text', 'reason'}]`` for lines this reader does not interpret.
+
+    A later assignment replaces an earlier one, including when the later one is not a number: the value then is
+    the raw text, which :func:`get_var_` reports as unknown, never the earlier number.
+    """
+
+    values: dict = field(default_factory=dict)
+    raw: dict = field(default_factory=dict)
+    lines: dict = field(default_factory=dict)
+    gaps: list = field(default_factory=list)
+
+
+_SEVERAL_ASSIGNMENTS = re.compile(r',\s*[A-Za-z][A-Za-z0-9_%]*(?:\(\s*\d+\s*\))?\s*=')
+
+
+def read_namelist(path, logger):
+    """:class:`NamelistRecords` of the namelist file, ``None`` without a path, and empty records for a missing file."""
     if path is None:
         print('**Error: namelist file not set')
         return None
-    nmlist = {}
+    records = NamelistRecords()
     if not check_file_exists(path):
         print(f'**WARNING: namelist file {path} not found')
-        return nmlist
+        return records
 
     with open(path, encoding = 'ISO-8859-1') as nmf:
         logger.info(f'loading {path}')
-        for line in nmf:
-            lns = line.strip()
-            if lns and (lns[0] not in ['!', '&', '/']):
-                lns = strip_fortran_comment(lns)           # '!' inside a quoted string is not a comment
-                kv = lns.split('=',1)
-                if len(kv) == 2:
-                    val = kv[1].strip()
-                    number = fortran_number(val)           # int or float where the text is one numeric literal
-                    nmlist[kv[0].strip()] = val if number is None else number
-    return nmlist
+        for number, line in enumerate(nmf, 1):
+            text = strip_fortran_comment(line.strip()).strip()      # '!' inside a quoted string is not a comment
+            if text.startswith('&'):
+                text = re.sub(r'^&\w+\s*', '', text)               # a group header may share its line with an assignment
+            if not text or text == '/':
+                continue
+            key, equals, value = text.partition('=')
+            if not equals:
+                records.gaps.append({'line': number, 'text': text, 'reason': 'statement without an assignment; not interpreted'})
+                continue
+            key, value = key.strip(), value.strip()
+            if _SEVERAL_ASSIGNMENTS.search(value):
+                records.gaps.append({'line': number, 'text': text,
+                                     'reason': 'several assignments on one line; only the first key is recorded, as raw text'})
+            parsed = fortran_number(value)                          # int or float where the text is one numeric literal
+            records.values[key] = value if parsed is None else parsed
+            records.raw[key] = value
+            records.lines[key] = number
+    return records
+
+
+def load_namelist(path, logger):
+    """The namelist file as ``{key: value}`` (int or float where the text casts), or ``None`` without a path."""
+    records = read_namelist(path, logger)
+    return None if records is None else records.values
 
 
 def parse_number(ss:str, tp):
@@ -118,7 +142,7 @@ def parse_number(ss:str, tp):
     if p<len(ss):
         nn.append(ss[p:])
     if len(ops)!=len(nn)-1:
-        raise Exception(f'Error in parsing string to number {ss0}')
+        raise ValueError(f'cannot parse {ss0!r} as {tp.__name__}: operators and operands do not match')
     n = 0
     try:
         n = tp(nn[0]) if len(nn)>0 else None
@@ -132,9 +156,12 @@ def parse_number(ss:str, tp):
                 n = n+d
             elif s=='-':
                 n = n-d
-    except (ValueError, TypeError, IndexError):
+    except (ValueError, TypeError, IndexError, ArithmeticError):
         # an unparseable value must not become a plausible number: the caller gets an explicit unknown
         raise ValueError(f'cannot parse {ss0!r} as {tp.__name__} (parts {nn})') from None
+    if n is None or (isinstance(n, float) and not math.isfinite(n)):
+        # nothing to evaluate (an empty value), or nan/inf, which float() would accept as numbers
+        raise ValueError(f'{ss0!r} is not a finite {tp.__name__} (parts {nn})')
     return n
 
 

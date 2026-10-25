@@ -75,7 +75,7 @@ class imas_waves(IdsWriter):
         if not self._has(name):
             return np.array([])
         arr = np.asarray(self.cdf.get_ncvar(name), dtype=np.float64)
-        arr = np.asarray(self.fill.check_profile_shape(name, arr, self.nt, self.nx))   # wrong radial size: broken mapping
+        arr = np.asarray(self.check_profile(name, arr, self.nt, self.nx, grid='X'))   # wrong shape or coordinates: broken mapping
         if self.rho.ndim != 2 or arr.shape != self.rho.shape:
             return np.array([])
         return arr * float(mult)

@@ -214,13 +214,16 @@ class imas_connection:
             raise TypeError('ids/occur not valid')
         self._submit(ids, occur)
 
-    def close_imas_database(self):
+    def close_imas_database(self, completed=True):
+        """Close the entry.  ``ids stored in <path>`` is printed only if the conversion ``completed``: scripts read it as the
+        end of a conversion, and a run that failed part way has published only part of it."""
         if self.ids:
             self.ids.close()
             del self.ids
         else:
             raise TypeError('ids not valid')
-        print('ids stored in', self.outdir)
+        if completed:
+            print('ids stored in', self.outdir)
 
 
 if __name__ == '__main__':

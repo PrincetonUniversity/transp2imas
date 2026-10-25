@@ -542,22 +542,22 @@ def region_selection_timeline(plan):
     first activation.  Nothing is inferred for regions/categories the template never mentions.
     """
     timeline = {region: {category: [] for category in CATEGORIES} for region in REGIONS}
-    current = {}                                # (region, category) -> [model, start]
+    current = {}                                # (region, category) -> [model, start]; start -inf = initial state
 
     def close(key, end):
+        """Close the selection held at ``key`` at ``end`` (``-inf`` the initial instant, ``+inf`` the end of the run)."""
         model, start = current.pop(key)
-        if start is not None and end is not None and end <= start:
-            return                              # replaced at the instant it was enabled
+        if end <= start:
+            return                              # replaced at the instant it was enabled, including the initial instant
         region, category = key
         entry = next((e for e in timeline[region][category] if e['model'] == model), None)
         if entry is None:
             entry = {'model': model, 'intervals': []}
             timeline[region][category].append(entry)
-        entry['intervals'].append((start, end))
+        entry['intervals'].append((None if start == -math.inf else start, None if end == math.inf else end))
 
-    for key_time, _order, region, category, name, active in _activation_events(plan):
+    for time, _order, region, category, name, active in _activation_events(plan):
         key = (region, category)
-        time = None if key_time == -math.inf else key_time
         held = current.get(key)
         if active:
             if held is not None and held[0] == name:
@@ -571,7 +571,7 @@ def region_selection_timeline(plan):
         elif held is not None and held[0] == name:
             close(key, time)
     for key in list(current):
-        close(key, None)
+        close(key, math.inf)
     for region in REGIONS:
         for category in CATEGORIES:
             timeline[region][category] = [e for e in timeline[region][category] if e['intervals']]
@@ -636,17 +636,51 @@ def interval_attributes(start, end):
             'effective_until': 'end' if end is None else _fmt(end)}
 
 
+# What is and is not established about how TRANSP combines models that are switched on in one region and category.
+# The timeline assumes replacement; no TRANSP release source or documentation was available to verify it, and nothing
+# else in this repository establishes it, so the status stays unresolved and the raw declarations are preserved.
+MODEL_EXECUTION_SEMANTICS = {
+    'status': 'unresolved',
+    'assumed_rule': 'a model enabled in a category replaces the previous one in that region',
+    'evidence': 'none supplied',
+    'transp_version': 'not established',
+}
+
+
+def region_declarations(plan, region):
+    """The readable ``%active`` declarations of ``region`` as written, chronologically, with no interpretation.
+
+    ``[{'time': None | seconds, 'category', 'model', 'active'}]`` where ``time`` None is the initial state.  Unlike
+    :func:`region_selection_timeline` this applies no replacement rule, so it stays valid whatever the execution
+    semantics turn out to be.
+    """
+    return [{'time': None if key_time == -math.inf else key_time, 'category': category, 'model': name, 'active': active}
+            for key_time, _order, event_region, category, name, active in _activation_events(plan)
+            if event_region == region]
+
+
 def region_occurrence_xml(plan, item, occurrence):
     """Self-describing configuration for one regional IDS occurrence."""
     root = ET.Element('pt_solver_region_occurrence', {
         'occurrence': str(occurrence), 'region': item['region'],
         'radial_coordinate': 'rho_tor_norm',
         'outputs_policy': 'write_only_verified_CDF_model_channels',
-        'selection_semantics': 'cumulative_active_flags_replacement_within_category',
+        'execution_semantics': MODEL_EXECUTION_SEMANTICS['status'],
+        'execution_semantics_assumed_rule': MODEL_EXECUTION_SEMANTICS['assumed_rule'],
+        'execution_semantics_evidence': MODEL_EXECUTION_SEMANTICS['evidence'],
+        'execution_semantics_transp_version': MODEL_EXECUTION_SEMANTICS['transp_version'],
     })
+    declarations = ET.SubElement(root, 'declarations', {
+        'note': 'the %active assignments exactly as written, with no replacement or addition rule applied'})
+    for declaration in region_declarations(plan, item['region']):
+        ET.SubElement(declarations, 'declaration', {
+            'time': 'initial' if declaration['time'] is None else _fmt(declaration['time']),
+            'category': declaration['category'], 'model': declaration['model'].upper(),
+            'active': str(declaration['active']).lower()})
     for selection in item['selections']:
         node = ET.SubElement(root, 'model_selection', {
-            'category': selection['category'], 'name': selection['model'].upper()})
+            'category': selection['category'], 'name': selection['model'].upper(),
+            'interpretation': 'replacement_assumed_unverified'})
         for start, end in selection['intervals']:
             ET.SubElement(node, 'interval', interval_attributes(start, end))
     # This deliberately retains ALL regional boundary changes and the exact

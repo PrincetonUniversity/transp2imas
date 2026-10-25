@@ -3,7 +3,12 @@
 
 import numpy as np
 from nc2imas import *
+import xml.etree.ElementTree as ET
+from collections import namedtuple
 from writer_base import IdsWriter
+
+
+NbiMomentum = namedtuple('NbiMomentum', 'total jxb status ripple included missing')
 
 
 class imas_core_sources(IdsWriter):
@@ -40,7 +45,7 @@ class imas_core_sources(IdsWriter):
         if not self.fill.is_valid(a):
             return np.array([])
         a = np.asarray(a, dtype=np.float64)
-        a = self.fill.check_profile_shape(name, a, self.nt, self.nx)
+        a = self.check_profile(name, a, self.nt, self.nx, grid='X')
         if not a.size:
             return a
         return a if mult is None else a * mult
@@ -217,26 +222,76 @@ class imas_core_sources(IdsWriter):
     NBI_REQUIRED_TORQUES = ('TQBE', 'TQBI', 'TQBTH', 'TQJXB')
     NBI_OPTIONAL_TORQUES = ('TQABDF',)
 
-    def _nbi_momentum(self):
-        """``(total, jxb)`` NBI toroidal momentum source on the thermal plasma (IMAS sign), SI.
+    def _ripple_weight(self):
+        """``(weight, state)``: ``FTQRIP`` as a scalar or a ``TIME3`` series, or ``None`` and why it is unusable.
 
-        Both are empty unless every required beam torque is in the CDF: a partial sum
-        must not be written as the total.
+        The weight is taken only from the CDF and only in a shape that is unambiguous: a scalar, or a one-dimensional
+        ``TIME`` or ``TIME3`` history (moved onto ``TIME3`` explicitly).  It is never guessed.
+        """
+        if not self.cdf.check_var_name('FTQRIP'):
+            return None, 'FTQRIP is not in the CDF'
+        dimensions = self.cdf.variable_dimensions('FTQRIP')
+        if dimensions is None or len(dimensions) > 1 or (dimensions and dimensions[0] not in ('TIME', 'TIME3')):
+            return None, f'FTQRIP has dimensions {dimensions}, not a scalar or a TIME/TIME3 history'
+        weight = (self.cdf.get_ncvar('FTQRIP') if not dimensions else self.cdf.get_ncvar_on_time('FTQRIP'))
+        if weight.size == 0 or not np.all(np.isfinite(weight)):
+            return None, 'FTQRIP is empty or not finite'
+        return weight, 'FTQRIP from the CDF'
+
+    def _nbi_momentum(self):
+        """``NbiMomentum(total, jxb, status, ripple, included, missing)``: the NBI toroidal momentum source (IMAS sign, SI).
+
+        * ``jxb`` (TQJXB) is written whenever it is in the CDF: it is a component of the total, valid by itself.
+        * ``total`` is written only when it is complete, i.e. every required beam torque is present *and* the ripple
+          contribution is resolved.  Otherwise it is empty and ``status`` says why: ``'absent'`` (a required torque
+          is not in the CDF) or ``'partial'`` (``TQRPL`` is nonzero and its weight ``FTQRIP`` is unavailable, so the
+          remaining terms are not the total).  A partial sum is never returned as the total.
+        * ``ripple`` is ``'not_modelled'`` (no ``TQRPL``), ``'zero'``, ``'weighted'`` (``FTQRIP*TQRPL`` included, taken
+          from the documented TRANSP accounting; no real nonzero-ripple case is available to validate it) or
+          ``'unresolved'``.  Missing is not zero: an absent required torque is reported as missing.
         """
         terms = {name: self._get(name, self.grid.vol_inv)
                  for name in self.NBI_REQUIRED_TORQUES + self.NBI_OPTIONAL_TORQUES}
-        missing = [name for name in self.NBI_REQUIRED_TORQUES if not terms[name].size]
-        if missing:
-            self.logger.warning('core_sources: nbi momentum source not written; missing '
-                                + ', '.join(missing) + ' (a partial sum would not be the total torque)')
-            return np.array([]), np.array([])
-        ripple = self._get('TQRPL', self.grid.vol_inv)
-        if ripple.size and np.any(ripple):
-            self.logger.warning('core_sources: TQRPL (beam ripple JxB torque) is nonzero but its '
-                                'weight FTQRIP is not in the CDF; it is excluded from the nbi momentum')
-        total = self._sum_valid(*terms.values())
         sign = self.signs.ip_sign
-        return sign * total, sign * terms['TQJXB']
+        jxb = sign * terms['TQJXB'] if terms['TQJXB'].size else np.array([])
+        included = [name for name, values in terms.items() if values.size]
+        missing = [name for name in self.NBI_REQUIRED_TORQUES if not terms[name].size]
+        ripple = self._get('TQRPL', self.grid.vol_inv)
+        if not ripple.size:
+            ripple_state = 'not_modelled'
+        elif not np.any(ripple):
+            ripple_state = 'zero'
+        else:
+            weight, why = self._ripple_weight()
+            ripple_state = 'weighted' if weight is not None else 'unresolved'
+        if missing:
+            return NbiMomentum(np.array([]), jxb, 'absent', ripple_state, included,
+                               [f'{name} is not in the CDF' for name in missing])
+        if ripple_state == 'unresolved':
+            return NbiMomentum(np.array([]), jxb, 'partial', ripple_state, included,
+                               [f'TQRPL is nonzero and its weight is unavailable: {why}'])
+        total = self._sum_valid(*terms.values())
+        if ripple_state == 'weighted':
+            weight = np.asarray(weight, dtype=np.float64)
+            weighted = ripple * (weight if weight.size == 1 else weight[:, None])
+            total = self._sum_valid(total, weighted)
+            included = included + ['FTQRIP*TQRPL']
+        return NbiMomentum(sign * total, jxb, 'complete', ripple_state, included, [])
+
+    @staticmethod
+    def _nbi_momentum_xml(result):
+        """The completeness of the NBI momentum source as ``source/code/parameters`` XML (machine readable)."""
+        root = ET.Element('transp2imas_nbi_momentum', {'status': result.status, 'ripple': result.ripple,
+                                                       'total_written': str(bool(result.total.size)).lower(),
+                                                       'jxb_written': str(bool(result.jxb.size)).lower()})
+        for name in result.included:
+            ET.SubElement(root, 'included', {'term': name})
+        for reason in result.missing:
+            ET.SubElement(root, 'missing', {'reason': reason})
+        if result.ripple == 'weighted':
+            ET.SubElement(root, 'note', {'text': 'ripple term from the documented accounting; not validated against '
+                                                 'a real nonzero-ripple run'})
+        return ET.tostring(root, encoding='unicode')
 
     def _build_nbi(self, source):
         if not self._has('PBE','PBI','PBTH','SBTH','SBE'):
@@ -246,7 +301,16 @@ class imas_core_sources(IdsWriter):
         ep = self._get('SBE', self.grid.vol_inv)
         ie = self._sum_valid(self._get('PBI', self.grid.vol_inv), self._get('PBTH', self.grid.vol_inv))
         ip = self._get('SBTH', self.grid.vol_inv)
-        mom, jxb = self._nbi_momentum()
+        momentum = self._nbi_momentum()
+        mom, jxb = momentum.total, momentum.jxb
+        if momentum.status != 'complete':
+            self.ctx.mapping.skipped(
+                f'nbi momentum total withheld ({momentum.status}): ' + '; '.join(momentum.missing)
+                + f'; components written: {"TQJXB" if momentum.jxb.size else "none"}',
+                source='TQRPL' if momentum.status == 'partial' else '/'.join(self.NBI_REQUIRED_TORQUES),
+                target='source/profiles_1d/momentum_phi')
+        if hasattr(source, 'code') and hasattr(source.code, 'parameters'):
+            source.code.parameters = self._nbi_momentum_xml(momentum)
         ions=[]
         species=self.cdf.get_species_names('SBTH_?', cut='SBTH_')
         for sp in species:

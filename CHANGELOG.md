@@ -4,6 +4,23 @@ Notable changes to transp2imas are recorded here. Future entries and GitHub
 releases are managed automatically by Release Please from Conventional Commit
 messages.
 
+- Extend curation to manifest/report schema v2 (v1 documents still load). Added: run identity checked against the CDF,
+  an evidence dependency graph (ids, parents, usage) for lineage-based independence, applicability and reviewed
+  overrides for evidence and campaign references, resolved-input comparison (code version, input-file SHA-256,
+  resolved controls against TR.DAT), and analyst-declared events that exclude samples per rule with exact accounting.
+  `curate.py --pilot` builds the manifest from analyst-supplied facts (hashes computed, `TO_BE_SUPPLIED` refused);
+  `make verify-curation-pilot` runs it on NSTX 141711Y05 and DIII-D 147634T16 (mechanics only: no evidence is claimed).
+- Fix NBI source time and identity: native `TIME` is written unchanged for every unit, units keep their `PINJ<n>`
+  numbers, and a species is attached only when the injector powers add up to a single species total. Write the NBI
+  momentum total only when every required torque term is present; a nonzero `TQRPL` without `FTQRIP` withholds the
+  total and is recorded as partial (synthetic tests only: no bundled run has nonzero ripple).
+- Share one Fortran scalar-literal parser (`fortran_literals.py`) between the namelist reader and curation; an
+  unparseable value is unknown (a logged `None`), never 0, and `nan`/`inf` are rejected. Require the exact
+  `(nt, nx)` and time/radial dimensions of a profile, and treat a masked source sample as a broken mapping.
+- Report partial IMAS publication: `ImasStore.flush` returns what was requested, accepted, failed and unattempted
+  (no rollback), the journal records `publication` status, and a partial conversion no longer prints the completion
+  marker. Mark PT_SOLVER model-execution semantics as unresolved in the exported XML and keep the raw declarations.
+
 - Verify the registry on a second case, DIII-D 147634T16. `examples/verify_registry_values.py` now runs on ITER
   (strict) and on 147634T16 (runs what its data allow, skips the rest with the reason): 425 tests at DD 4.1.1 and
   3.39.0. 147634T16 is the MMM07 reference, so `ct_mmm07_diffusivities` and `ct_theory_auxiliary_xml` are now

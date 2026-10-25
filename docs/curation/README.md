@@ -23,6 +23,11 @@ python3 curate.py -i /path/run.CDF --trdat /path/runTR.DAT \
   --evidence my-evidence.json --output-dir build/curation/run
 ```
 
+For a pilot, fill a copy of `examples/curation/pilot-template.json` with facts a person established and run
+`make curate-pilot CURATION_PILOT=facts.json` (or `curate.py --pilot`): file hashes are computed, and an unfilled
+template is refused. `make verify-curation-pilot` exercises this on the bundled NSTX and DIII-D cases (mechanics
+only; no measurement is claimed).
+
 There is no automatic search for a TR.DAT or evidence file: association must be explicit. Do not
 reuse a template's numerical assumptions for an unrelated discharge. No external reference is
 retrieved or authenticated by this first version.
@@ -64,6 +69,8 @@ Original CDF/TR.DAT/evidence files are protected against being used as output de
 - A conservative declared-input timeline; scalar beam-current-fraction checks; comparisons to explicit
   campaign/configuration reference values; density/current coupling and rotation-control review flags.
 - Native iteration/timing/residual/upwind-channel inventory and opt-in numerical thresholds.
+- Manifest v2: run identity, an evidence dependency graph, applicability and reviewed overrides, resolved-input
+  comparison, and analyst-declared events with exact exclusion accounting (see the evidence format).
 - Strict JSON sidecar validation, read-only bounded-array caching, unit and CLI integration tests.
 
 ## What is not implemented
@@ -94,6 +101,7 @@ scientific findings fail a batch job. The report is still written for ordinary s
 ## Documents
 
 - [Scientific design and curation ideas](design.md)
+- [Scientific policy and guardrails](scientific-policy.md)
 - [Evidence sidecar format](evidence-format.md)
 - [Implemented rules and threshold semantics](rules.md)
 - [Development roadmap and acceptance tests](roadmap.md)

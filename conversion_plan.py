@@ -92,12 +92,15 @@ class ConversionRunner:
                         write_seconds = self.clock() - flush_started
                 except Exception as exc:
                     nci.discard_writes()
+                    report = getattr(exc, 'publication_report', None)      # set by ImasStore.flush on a backend failure
                     self.journal.record_writer(name, nci._written_ids[before:],
                                                self.clock() - started, error=exc,
                                                mapping=nci.mapping.summary(name),
                                                consumed=nci.mapping.consumed(name),
                                                reads=nci.mapping.read_summary(name),
-                                               write_seconds=write_seconds)
+                                               write_seconds=write_seconds,
+                                               publication=None if report is None else report.as_dict())
+                    self.journal.note_failure(exc)
                     raise
                 else:
                     if len(nci._written_ids) == before and not nci.mapping.entries(name):
@@ -156,7 +159,7 @@ class ConversionJournal:
                                 else str(getattr(backend, 'name', backend)))
 
     def record_writer(self, name, writes, duration, error=None, mapping=None, consumed=None,
-                      write_seconds=None, reads=None):
+                      write_seconds=None, reads=None, publication=None):
         # Preserve only the stable readback contract, with native JSON types.
         # IMAS and NetCDF may supply NumPy scalar IDs and occurrence numbers.
         events = [{'ids': str(event['ids']),
@@ -181,17 +184,47 @@ class ConversionJournal:
         if reads:
             # How often, not only which: total reads, distinct variables and the most repeated ones.
             record['reads'] = reads
+        if publication is not None:
+            # A backend failure during this writer's flush: requested, accepted, failed and unattempted writes.
+            record['publication'] = publication
         self.data['writers'].append(record)
         self.data['written_ids'].extend(events)
         return status
 
+    def _accepted(self):
+        return [dict(event) for event in self.data['written_ids']]
+
+    def note_failure(self, error):
+        """Record what was published when ``error`` ended the run (see :meth:`fail`), without changing the status.
+
+        ``publication.status`` is ``none`` (nothing was accepted), or ``partial``: writes are sequential, not a
+        transaction, so IDSs accepted before the failure remain in the database.  ``kind`` separates a
+        ``backend_failure`` (a put failed during a flush; the failing and unattempted requests are named) from a
+        ``build_failure`` (a writer failed before its flush; none of its output was submitted).  Nothing is rolled
+        back or deleted.
+        """
+        accepted = self._accepted()
+        report = getattr(error, 'publication_report', None)
+        failed = unattempted = None
+        if report is not None:
+            failed = {'ids': report.failed.get('writer') or report.failed['ids'],
+                      'occurrence': report.failed['occurrence'], 'error': report.failed['error']}
+            unattempted = [{'ids': item.get('writer') or item['ids'], 'occurrence': item['occurrence']}
+                           for item in report.unattempted]
+        self.data['publication'] = {'status': 'partial' if accepted else 'none',
+                                    'kind': 'backend_failure' if report is not None else 'build_failure',
+                                    'accepted': accepted, 'failed': failed, 'unattempted': unattempted or []}
+
     def fail(self, error):
         self.data['status'] = 'FAIL'
         self.data['error'] = f'{type(error).__name__}: {error}'
+        self.note_failure(error)
 
     def finish(self):
         if self.data['status'] == 'RUNNING':
             self.data['status'] = 'PASS'
+            self.data['publication'] = {'status': 'complete', 'kind': None, 'accepted': self._accepted(),
+                                        'failed': None, 'unattempted': []}
 
     def save(self, path):
         path = Path(path)

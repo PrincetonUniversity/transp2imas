@@ -49,7 +49,7 @@ class imas_distribution_sources(IdsWriter):
             return np.array([])
         values = np.asarray(values, dtype=np.float64)
         if self.dvol.ndim == 2:                                  # wrong radial size: broken mapping
-            values = np.asarray(self.fill.check_profile_shape(name, values, self.nt, self.dvol.shape[1]))
+            values = np.asarray(self.check_profile(name, values, self.nt, self.dvol.shape[1], grid='X'))
         if mult is not None:
             values = values * float(mult)
         return values

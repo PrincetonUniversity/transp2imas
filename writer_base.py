@@ -62,6 +62,13 @@ class IdsWriter:
     def fill(self):
         return self.ctx.fill
 
+    def check_profile(self, name, array, nt, nx, grid=None):
+        """``array`` if it is empty or a profile that fits ``(nt, nx)`` and its declared coordinates (see
+        ``nc2imas.check_profile_shape``); under the lenient policy a profile that does not fit comes back empty."""
+        dimensions = getattr(self.cdf, 'variable_dimensions', None)
+        return self.fill.check_profile_shape(name, array, nt, nx,
+                                             dimensions=None if dimensions is None else dimensions(name), grid=grid)
+
     def profile(self, name, scale=1.0):
         """A ``TIME3 x radial`` CDF profile; a radial size other than the zone grid's is a named broken mapping.
 
@@ -77,7 +84,7 @@ class IdsWriter:
             grid = self.cdf.get_ncvar('X')
             shape = self._x_shape = tuple(grid.shape) if grid.ndim == 2 else ()
         if len(shape) == 2:
-            values = np.asarray(self.fill.check_profile_shape(name, values, shape[0], shape[1]))
+            values = np.asarray(self.check_profile(name, values, shape[0], shape[1]))
         return values
 
     def build(self):

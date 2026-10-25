@@ -270,6 +270,15 @@ class netcdf_connection:
             self.mapping.broken(f'{detail}: {type(exc).__name__}: {exc}', source=var)
             return np.array([])
 
+    def variable_dimensions(self, name:str):
+        """The declared dimension names of CDF variable ``name`` (not recorded as a read), or ``None`` if unknown."""
+        variables = self.nc.variables
+        try:
+            variable = variables.peek(name) if hasattr(variables, 'peek') else variables[name]
+            return tuple(variable.dimensions)
+        except (KeyError, AttributeError, TypeError):
+            return None
+
     def get_ncvars_lst(self, lst:List[str], scale:float=1., ind:int=-1) -> np.array:
         tot = []
         n = 0

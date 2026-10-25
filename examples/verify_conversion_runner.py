@@ -211,5 +211,137 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(conn._written_ids, [{'ids': 'unknown', 'occurrence': 0}])
 
 
+class PublicationReportTests(unittest.TestCase):
+    """A backend failure after earlier puts is a *partial publication*, and it is reported as such.
+
+    The writes are sequential, not a transaction: nothing here rolls back, deletes or rewrites what was accepted.
+    """
+
+    @staticmethod
+    def identity(ids, occurrence, writer='w'):
+        return {'writer': writer, 'ids': ids, 'occurrence': occurrence}
+
+    def store(self, requests):
+        store = ImasStore()
+        store.deferred = True
+        for ids, occurrence in requests:
+            store.submit(WriteRequest(ids, occurrence, 'w'), lambda r: None)
+        return store
+
+    def test_a_complete_flush_reports_every_request_as_accepted(self):
+        store = self.store([('a', 0), ('b', 0), ('b', 1)])
+        report = store.flush(lambda r: None)
+        self.assertTrue(report.complete)
+        self.assertEqual(report.as_dict(), {
+            'complete': True, 'failed': None, 'unattempted': [],
+            'requested': [self.identity('a', 0), self.identity('b', 0), self.identity('b', 1)],
+            'accepted': [self.identity('a', 0), self.identity('b', 0), self.identity('b', 1)]})
+
+    def test_a_failure_reports_requested_accepted_failed_and_unattempted_with_identities(self):
+        written = []
+
+        def write(request):
+            if (request.ids, request.occurrence) == ('b', 1):
+                raise ValueError('rejected coordinates')
+            written.append((request.ids, request.occurrence))
+
+        store = self.store([('a', 0), ('b', 0), ('b', 1), ('c', 0), ('c', 1)])
+        with self.assertRaises(ValueError) as caught:                         # the original exception type is kept
+            store.flush(write)
+        report = caught.exception.publication_report.as_dict()
+        self.assertFalse(report['complete'])
+        self.assertEqual(report['requested'], [self.identity(i, o) for i, o in
+                                               (('a', 0), ('b', 0), ('b', 1), ('c', 0), ('c', 1))])
+        self.assertEqual(report['accepted'], [self.identity('a', 0), self.identity('b', 0)])
+        self.assertEqual(report['failed'], {**self.identity('b', 1), 'error': 'ValueError: rejected coordinates'})
+        self.assertEqual(report['unattempted'], [self.identity('c', 0), self.identity('c', 1)])
+        self.assertEqual(written, [('a', 0), ('b', 0)])                        # accepted data stays; nothing was undone
+        self.assertEqual(store.pending, 0)
+
+    def test_the_identity_names_the_ids_by_its_metadata_when_the_writer_is_unknown(self):
+        ids = types.SimpleNamespace(metadata=types.SimpleNamespace(name='core_transport'))
+        store = ImasStore()
+        store.deferred = True
+        store.submit(WriteRequest(ids, 2, None), lambda r: None)
+        self.assertEqual(store.flush(lambda r: None).as_dict()['requested'],
+                         [{'writer': None, 'ids': 'core_transport', 'occurrence': 2}])
+
+    def runner(self, conn, writers):
+        journal = ConversionJournal('case.CDF', tuple(writers))
+        return ConversionRunner(conn, writers, journal), journal
+
+    def test_the_journal_records_a_backend_failure_after_earlier_writes_as_partial(self):
+        conn = make_connection([], fail_on='CT1')
+
+        def core_transport():
+            conn.putdb_imas('CT0')
+            conn.putdb_imas_profile('CT1', 1)
+            conn.putdb_imas_profile('CT2', 2)
+
+        runner, journal = self.runner(conn, {'summary': lambda: conn.putdb_imas('S'), 'core_transport': core_transport})
+        with self.assertRaisesRegex(ValueError, 'invalid coordinates in CT1'):
+            runner.run(('summary', 'core_transport'))
+        publication = journal.data['writers'][1]['publication']
+        self.assertEqual([r['occurrence'] for r in publication['accepted']], [0])
+        self.assertEqual((publication['failed']['occurrence'], publication['failed']['error'].split(':')[0]), (1, 'ValueError'))
+        self.assertEqual([r['occurrence'] for r in publication['unattempted']], [2])
+        summary = journal.data['publication']
+        self.assertEqual((summary['status'], summary['kind']), ('partial', 'backend_failure'))
+        self.assertEqual([(r['ids'], r['occurrence']) for r in summary['accepted']],
+                         [('summary', 0), ('core_transport', 0)])         # earlier writers' output is accepted too
+        self.assertEqual(summary['failed']['ids'], 'core_transport')
+
+    def test_a_build_failure_is_not_a_backend_failure(self):
+        conn = make_connection([])
+
+        def broken():
+            raise RuntimeError('mapping failed')
+
+        runner, journal = self.runner(conn, {'summary': lambda: conn.putdb_imas('S'), 'wall': broken})
+        with self.assertRaisesRegex(RuntimeError, 'mapping failed'):
+            runner.run(('summary', 'wall'))
+        summary = journal.data['publication']
+        self.assertEqual((summary['status'], summary['kind']), ('partial', 'build_failure'))
+        self.assertEqual([(r['ids'], r['occurrence']) for r in summary['accepted']], [('summary', 0)])
+        self.assertIsNone(summary['failed'])                                    # nothing was attempted for the failed writer
+
+    def test_a_failure_before_any_write_is_nothing_published(self):
+        conn = make_connection([])
+        runner, journal = self.runner(conn, {'wall': lambda: (_ for _ in ()).throw(RuntimeError('mapping failed'))})
+        with self.assertRaises(RuntimeError):
+            runner.run(('wall',))
+        self.assertEqual(journal.data['publication']['status'], 'none')
+
+    def test_a_clean_run_is_complete(self):
+        conn = make_connection([])
+        runner, journal = self.runner(conn, {'summary': lambda: conn.putdb_imas('S')})
+        runner.run(('summary',))
+        journal.finish()
+        self.assertEqual(journal.data['publication']['status'], 'complete')
+        self.assertEqual(journal.data['status'], 'PASS')
+
+
+class CompletionMarkerTests(unittest.TestCase):
+    """``ids stored in`` is the line scripts read as "the conversion finished"; a failed run must not print it."""
+
+    def closed(self, completed):
+        import contextlib
+        import io
+        conn = make_connection([])
+        conn.outdir = '/entry'
+        conn.ids.close = mock.Mock()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            conn.close_imas_database(completed=completed)
+        return out.getvalue()
+
+    def test_the_marker_is_printed_only_for_a_completed_conversion(self):
+        self.assertIn('ids stored in /entry', self.closed(True))
+        self.assertNotIn('ids stored in', self.closed(False))
+
+    def test_the_default_is_unchanged_for_existing_callers(self):
+        self.assertIn('ids stored in', self.closed(True))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=1)

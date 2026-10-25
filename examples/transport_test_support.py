@@ -43,7 +43,7 @@ class FakeConverter:
                                             warning=lambda *a, **k: None)
         self.written = None
 
-    def check_profile_shape(self, name, array, nt, nx):
+    def check_profile_shape(self, name, array, nt, nx, dimensions=None, grid=None):
         """As ``nc2imas.check_profile_shape``, with the broken mapping raised (the real one follows the policy)."""
         values = np.asarray(array)
         if values.ndim == 2 and values.shape[0] == nt and values.shape[1] != nx:

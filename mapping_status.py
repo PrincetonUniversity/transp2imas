@@ -71,6 +71,10 @@ class RecordingVariables:
             return self[name]
         return default
 
+    def peek(self, name):
+        """The variable object without recording a read: for its declaration (dimensions, attributes), not its data."""
+        return self._variables[name]
+
     def __contains__(self, name):
         return name in self._variables
 

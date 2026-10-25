@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# registry ids verified here (mapping_registry.yaml): nbi_native_time
+# registry ids verified here (mapping_registry.yaml): nbi_native_time, nbi_unit_species
 """Verify the nbi writer's time axis and source identities with real ``nbi`` IDS objects.
 
 Cases the review of the t2i2 snapshot asked for, each built from a small fake CDF:
@@ -45,7 +45,8 @@ TIME = np.array([0.1, 0.2, 0.3, 0.4])
 class FakeConverter:
     """The part of the converter the nbi writer uses, over a dict of CDF arrays and a real IDS factory."""
 
-    def __init__(self, variables):
+    def __init__(self, variables, reverse_discovery=False):
+        self.reverse_discovery = reverse_discovery
         self.variables = {k: np.asarray(v, dtype=float) for k, v in variables.items()}
         self.logger = logging.getLogger('verify-nbi-mapping')
         self.mapping = MappingLedger()
@@ -59,7 +60,7 @@ class FakeConverter:
 
     def get_var_names_re(self, expr, nd1=0, nd2=0, length=False, **kwargs):
         regex = re.escape(expr[:-1]) + rf'\d{{{nd1},{nd2}}}$'
-        return sorted(n for n in self.variables if re.fullmatch(regex, n))
+        return sorted((n for n in self.variables if re.fullmatch(regex, n)), reverse=self.reverse_discovery)
 
     def get_var_names(self, expr, cut='', **kwargs):
         regex = re.escape(expr[:-1]) + r'[A-Z0-9]$'
@@ -97,8 +98,8 @@ class FakeConverter:
         return []
 
 
-def build(variables):
-    converter = FakeConverter({'TIME': TIME, **variables})
+def build(variables, reverse_discovery=False, time=TIME):
+    converter = FakeConverter({'TIME': time, **variables}, reverse_discovery)
     ids = imas_nbi(converter).build()
     return converter, (ids[0] if ids else None)
 
@@ -160,11 +161,58 @@ class NbiMappingTests(unittest.TestCase):
         reasons = [row['reason'] for row in converter.mapping.entries('nbi')]
         self.assertTrue(any('cannot be matched' in reason for reason in reasons), reasons)
 
-    def test_a_species_only_file_builds_one_unit_per_species_with_its_own_channel(self):
-        _converter, nbi = build({'PINJ_D': [1.0, 2.0, 3.0, 4.0], 'EINJ': [8.0e4] * 4})
-        self.assertEqual(len(nbi.unit), 1)
-        self.assertEqual(np.asarray(nbi.unit[0].power_launched.data).tolist(), [1.0, 2.0, 3.0, 4.0])
-        self.assertAlmostEqual(float(nbi.unit[0].species.a), 2.0, delta=0.1)
+    def test_a_species_total_alone_is_an_aggregate_not_an_injector(self):
+        converter, nbi = build({'PINJ_D': [1.0, 2.0, 3.0, 4.0], 'EINJ': [8.0e4] * 4})
+        self.assertIsNone(nbi)                                          # no unit is invented for an aggregate
+        reasons = [row['reason'] for row in converter.mapping.entries('nbi')]
+        self.assertTrue(any('aggregates over unknown injectors' in reason for reason in reasons), reasons)
+
+    def test_the_species_is_assigned_when_the_injector_powers_close_on_the_total(self):
+        powers = ([1.0e6, 2.0e6, 0.0, 3.0e6], [0.5e6, 0.5e6, 0.0, 1.0e6])
+        converter, nbi = build({**beam(1, powers[0]), **beam(2, powers[1]), 'PINJ_D': np.add(*powers) * (1 + 1e-7)})
+        for unit in nbi.unit:
+            self.assertAlmostEqual(float(unit.species.a), 2.0, delta=0.1)
+        self.assertEqual(converter.mapping.entries('nbi'), [])
+
+    def test_the_species_is_ambiguous_when_the_injector_powers_do_not_close_on_the_total(self):
+        converter, nbi = build({**beam(1, [1.0e6] * 4), **beam(2, [1.0e6] * 4), 'PINJ_D': [3.0e6] * 4})
+        self.assertEqual(len(nbi.unit), 2)                              # the power data is valid; only the species is not
+        for unit in nbi.unit:
+            self.assertFalse(unit.species.a.has_value)
+        self.assertTrue(any('do not demonstrably add up' in row['reason'] for row in converter.mapping.entries('nbi')))
+
+    def test_discovery_order_does_not_change_identities_or_channels(self):
+        variables = {**beam(3, [1.0] * 4, e1=7.0e4), **beam(7, [5.0] * 4, e1=9.0e4), 'PINJ_D': [6.0] * 4}
+        _c, forward = build(variables)
+        _c, backward = build(variables, reverse_discovery=True)
+        for unit_a, unit_b in zip(forward.unit, backward.unit):
+            self.assertEqual(str(unit_a.name), str(unit_b.name))
+            np.testing.assert_array_equal(np.asarray(unit_a.power_launched.data), np.asarray(unit_b.power_launched.data))
+
+    def test_malformed_times_are_reported_and_never_repaired(self):
+        for label, time in (('duplicate', [0.1, 0.2, 0.2, 0.3]), ('reordered', [0.1, 0.3, 0.2, 0.4]),
+                            ('not finite', [0.1, np.nan, 0.3, 0.4])):
+            with self.subTest(label):
+                with self.assertRaises(MappingError) as caught:
+                    build({**beam(1, [1.0] * 4), 'PINJ_D': [1.0] * 4}, time=time)
+                self.assertIn('TIME', str(caught.exception))
+
+    def test_the_source_arrays_are_not_modified(self):
+        variables = {**beam(1, [0.0, 1.0e6, 0.0, 1.0e6], e2=3.0e4, e3=2.0e4), 'PINJ_D': [0.0, 1.0e6, 0.0, 1.0e6]}
+        converter = FakeConverter({'TIME': TIME, **variables})
+        before = {name: values.copy() for name, values in converter.variables.items()}
+        imas_nbi(converter).build()
+        for name, values in converter.variables.items():
+            np.testing.assert_array_equal(values, before[name], name)
+
+    def test_all_energy_components_leave_the_clock_and_the_values_exact(self):
+        power = [1.0e6, 2.0e6, 3.0e6, 4.0e6]
+        _c, nbi = build({**beam(1, power, e1=8.0e4, e2=4.0e4, e3=2.7e4), 'PINJ_D': power})
+        unit = nbi.unit[0]
+        np.testing.assert_array_equal(np.asarray(unit.power_launched.time), TIME)
+        np.testing.assert_array_equal(np.asarray(unit.energy.time), TIME)
+        np.testing.assert_array_equal(np.asarray(unit.power_launched.data), power)
+        np.testing.assert_array_equal(np.asarray(unit.energy.data), [8.0e4] * 4)
 
     def test_a_trace_of_another_length_is_a_broken_mapping(self):
         variables = {**beam(1, [1.0, 1.0, 1.0])}                    # 3 samples on a 4-sample TIME

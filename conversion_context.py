@@ -47,7 +47,7 @@ class CdfView(ContextView):
     role = 'cdf'
     names = ('get_ncvar', 'get_ncvar_on_time', 'check_var_name', 'get_var_names', 'get_var_names_re',
              'get_var_names_re_', 'get_species_names', 'get_species_data', 'get_ncattr_text',
-             'vars_', 'nc', 'ncfile', 'device', 'shot', 'iter_')
+             'vars_', 'nc', 'ncfile', 'device', 'shot', 'iter_', 'variable_dimensions')
 
 
 class NamelistView(ContextView):

@@ -7,7 +7,7 @@ not write to the database.  The store has no IMAS dependency: the actual write i
 connection supplies, and a request is recorded as accepted only after that callable returned.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,36 @@ class WriteRequest:
     ids: object
     occurrence: int
     writer: object = None          # writer name at submission time, or None
+
+
+def identity(request):
+    """``{'writer', 'ids', 'occurrence'}`` of a request: the writer that produced it, the IDS name, the occurrence."""
+    ids = request.ids
+    name = getattr(getattr(ids, 'metadata', None), 'name', None) or str(ids)
+    return {'writer': request.writer, 'ids': str(name), 'occurrence': int(request.occurrence)}
+
+
+@dataclass
+class FlushReport:
+    """What one flush attempted.  Writes are sequential, not a transaction: ``accepted`` stay accepted.
+
+    ``requested`` is every queued request in submission order; ``accepted`` the ones the backend took before any
+    failure; ``failed`` the request that raised (with the error) or ``None``; ``unattempted`` the requests after it,
+    which were dropped from the queue and never tried.  Identities are ``identity(request)``.
+    """
+
+    requested: list = field(default_factory=list)
+    accepted: list = field(default_factory=list)
+    failed: dict = None
+    unattempted: list = field(default_factory=list)
+
+    @property
+    def complete(self):
+        return self.failed is None and not self.unattempted
+
+    def as_dict(self):
+        return {'complete': self.complete, 'requested': list(self.requested), 'accepted': list(self.accepted),
+                'failed': self.failed, 'unattempted': list(self.unattempted)}
 
 
 class ImasStore:
@@ -38,15 +68,26 @@ class ImasStore:
             write(request)
 
     def flush(self, write):
-        """Write every queued request in submission order.
+        """Write every queued request in submission order and return the :class:`FlushReport`.
 
-        A failing write stops the flush: the failing and the remaining requests are dropped, so
-        nothing is written twice and the exception reaches the caller (the runner), which names
-        the writer.  Requests accepted before the failure stay accepted.
+        A failing write stops the flush: the failing and the remaining requests are dropped, so nothing is written
+        twice, and the original exception reaches the caller (the runner), which names the writer.  The exception
+        carries ``publication_report``, the :class:`FlushReport`, so a partial publication is reported as requested,
+        accepted, failed and unattempted writes instead of being inferred from a log.  Requests accepted before the
+        failure stay accepted: there is no rollback, deletion or rewrite.
         """
         queue, self._queue = self._queue, []
-        for request in queue:
-            write(request)
+        report = FlushReport(requested=[identity(request) for request in queue])
+        for position, request in enumerate(queue):
+            try:
+                write(request)
+            except Exception as exc:
+                report.failed = {**identity(request), 'error': f'{type(exc).__name__}: {exc}'}
+                report.unattempted = [identity(rest) for rest in queue[position + 1:]]
+                exc.publication_report = report
+                raise
+            report.accepted.append(identity(request))
+        return report
 
     def discard(self):
         """Drop queued requests (a writer failed before its output was complete)."""

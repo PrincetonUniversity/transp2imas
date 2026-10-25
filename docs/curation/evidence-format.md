@@ -1,4 +1,4 @@
-# Evidence sidecar format (v1)
+# Evidence sidecar format (v2; v1 still accepted)
 
 The JSON file is validated by `curation.manifest.validate_manifest`. Unknown keys, nonfinite numbers,
 inverted windows, duplicate species, inconsistent types and unsupported derivative conventions are
@@ -150,3 +150,69 @@ to a CDF residual definition. Even a residual-screening pass does not certify no
 
 Optional top-level `notes` is free text. No general-purpose expressions, executable callbacks or
 automatic corrective actions are accepted from this sidecar.
+
+
+## Version 2 (`transp2imas.curation.inputs.v2`)
+
+A v1 document stays valid and is evaluated as a v2 document without the new sections; it may not use a v2 key.
+v2 adds, all strictly validated (unknown keys, bad types, duplicate ids, nonfinite numbers are errors):
+
+```json
+{
+  "schema_version": "transp2imas.curation.inputs.v2",
+  "run_identity": {"device": "NSTX", "shot": 141711, "campaign": "..."},
+  "evidence_sources": [
+    {"id": "efit_run_7", "description": "EFIT reconstruction, run 7", "source": "...", "sha256": "<64 hex>",
+     "parents": [], "usage": ["constraint"]}
+  ],
+  "evidence": {
+    "electron_temperature": {"origin": "measured", "source": "...", "id": "te_fit", "parents": ["efit_run_7"],
+                             "usage": ["constraint"], "revision": "r3", "sha256": "<64 hex>",
+                             "applicability": {"device": "NSTX", "shot_min": 141000, "shot_max": 142000}}
+  },
+  "resolved_inputs": {
+    "code": {"name": "TRANSP", "version": "21.X.X"},
+    "inputs": [{"role": "trdat", "path": "runTR.DAT", "sha256": "<64 hex>"}],
+    "controls": [{"name": "NLMDIF", "resolved": true,
+                  "segments": [{"start": null, "end": 0.5, "value": true}, {"start": 0.5, "end": null, "value": false}]}]
+  },
+  "events": [{"id": "saw_1", "type": "sawtooth", "start": 0.31, "end": 0.32, "rules": ["PROFILE.TE.*"]}],
+  "input_expectations": [{"name": "EINJA(1)", "expected": 80.0, "units": "keV", "reference": "...",
+                          "applicability": {"shot_min": 141000, "time_max": 0.5},
+                          "override": {"value": 70.0, "reason": "...", "reviewer": "..."},
+                          "power_accounting_boundary": "injected"}]
+}
+```
+
+- **Usage** replaces the v1 roles with one vocabulary: `constraint`, `initial_condition`, `boundary_condition`,
+  `calibration_target`, `independent_validation`. The v1 `roles` (`input`, `calibration`, `validation`, ...) and
+  `independent_validation: true` are normalised into it, so both spellings mean the same thing.
+- **Dependency graph.** Every evidence record has an id (`evidence:<role>` unless given) and optional `parents`
+  (ids of the sources it was derived from); `evidence_sources` declares sources that are not themselves one of the
+  six roles. Unknown parents, duplicate ids and cycles are rejected. A validator is reported as *not independent*
+  when its ancestry meets the ancestry of anything used to constrain the run, or when it has the same source string
+  or SHA-256. Finding no shared lineage is **not** proof of independence: undeclared dependencies are invisible.
+- **Applicability** (`device`, `campaign`, `shot_min`/`shot_max`, `time_min`/`time_max`) limits where a record or a
+  reference applies. A criterion the run does not establish (no shot number, say) makes the answer *unknown*, which
+  is reported as `not_assessed`, never as "applies". Time bounds restrict which declared TR.DAT intervals a
+  reference is compared with. Non-applicable evidence is left out of the dependency analysis.
+- **Override.** A reviewed deviation: `value`, `reason` and `reviewer`, all three required. The override value is
+  what is compared; the original and the override are both kept in the finding. It is not a correction of the input.
+- **Resolved inputs** are analyst-supplied (from the TRANSP log, namelist dump, or run record). `inputs` are compared
+  by SHA-256 with the file named; `code.version` with the `TRANSP_version` attribute of the CDF; each control with the
+  TR.DAT declaration over the same time. `resolved: false` marks a declaration, which cannot confirm the run. Segments
+  are half-open `[start, end)`, ordered and non-overlapping; values are scalars and are never coerced between
+  numbers, booleans and text.
+- **Events** are analyst declarations, never detected. Each names the rule ids (shell-style patterns) it applies to;
+  samples in its closed window are removed from those rules and accounted for as *excluded* (a `__excluded` mask, and
+  counts in the finding), which is neither "evaluated" nor "unflagged". An event matching no rule, or outside the
+  source's time span, is a warning in `EVENTS.INVENTORY`.
+- **`power_accounting_boundary`** (`injected`, `launched`, `absorbed`, `other`) records what a power reference means;
+  it is carried into the report and is not used to convert anything.
+
+## Pilot facts
+
+`curate.py --pilot facts.json` builds a v2 manifest from `transp2imas.curation.pilot.v1` facts: the sections above
+plus `files` (`role`, `path`, optional `revision`/`source`). The adapter **computes** each file's SHA-256 (a supplied
+hash is rejected) and refuses any string still containing `TO_BE_SUPPLIED`, so the template
+(`examples/curation/pilot-template.json`) cannot be run unfilled. The adapter invents nothing.
