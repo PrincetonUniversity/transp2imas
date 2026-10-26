@@ -8,6 +8,8 @@ import tempfile
 
 import numpy as np
 
+from curation.schema import validate_structure
+
 
 def _escape(value):
     return str(value).replace('|', '\\|').replace('\n', ' ').replace('\r', ' ')
@@ -29,6 +31,18 @@ def markdown_report(document):
     lines += ['', '## Application-specific preliminary status', '',
               '| Application | Status |', '|---|---|']
     lines += [f'| {name} | {status} |' for name, status in summary['applications'].items()]
+    coverage = summary['rule_coverage']
+    lines += ['', '## Rule execution', '',
+              f"Required (source-integrity) rules executed: {coverage['required']['executed']} of {coverage['required']['total']}; "
+              f"optional rules executed: {coverage['optional']['executed']} of {coverage['optional']['total']}.", '']
+    not_run = {**coverage['required']['not_executed'], **coverage['optional']['not_executed']}
+    if not_run:
+        lines += ['Rules that did not execute (their checks are **unassessed**, not passed):', '']
+        lines += [f'- `{rule}`: {state}' for rule, state in sorted(not_run.items())]
+        lines += ['']
+    fingerprints = document['fingerprints']
+    lines += [f"Policy: `{document['policy'].get('name')}`; evidence fingerprint `{fingerprints['evidence_sha256']}`; "
+              f"assessment fingerprint `{fingerprints['assessment_sha256']}`.", '']
     lines += ['', 'Missing uncertainties are not zero uncertainties. A passed accounting check does not validate',
               'a diagnostic, fitted profile, heating configuration, or transport model.', '',
               '## Findings', '', '| Rule | Status | Variables | Finding |', '|---|---|---|---|']
@@ -97,8 +111,9 @@ def write_report(report, directory, *, protected_paths=()):
     protected = {Path(p).resolve() for p in protected_paths if p is not None}
     if any(p.resolve() in protected for p in targets.values()):
         raise ValueError('A report destination would overwrite a protected input file')
-    directory.mkdir(parents=True, exist_ok=True)
     document = report.as_dict()
+    validate_structure(document, 'report.v3')              # a malformed report is a bug: refuse before touching files
+    directory.mkdir(parents=True, exist_ok=True)
     document['mask_storage']['path'] = targets['npz'].name
     # Render everything first: JSON validity and the Markdown text can fail, and must not leave a mixed bundle.
     serialized = json.dumps(document, indent=2, sort_keys=True, allow_nan=False) + '\n'

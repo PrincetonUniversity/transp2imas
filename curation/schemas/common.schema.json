@@ -1,0 +1,1233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:transp2imas:curation:common",
+  "title": "Shared definitions of the curation documents",
+  "$defs": {
+    "finite_number": {
+      "type": "number"
+    },
+    "positive_number": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "nonnegative_number": {
+      "type": "number",
+      "minimum": 0
+    },
+    "text": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "selector": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.:-]+$"
+      },
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number"
+        ]
+      }
+    },
+    "applicability": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "campaign": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "shot_min": {
+          "type": "integer"
+        },
+        "shot_max": {
+          "type": "integer"
+        },
+        "time_min": {
+          "type": "number"
+        },
+        "time_max": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "override": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "reviewer": {
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "reason",
+        "reviewer"
+      ]
+    },
+    "boundary": {
+      "enum": [
+        "injected",
+        "launched",
+        "absorbed",
+        "other"
+      ]
+    },
+    "assessment_window": {
+      "type": "object",
+      "properties": {
+        "time_min": {
+          "type": "number"
+        },
+        "time_max": {
+          "type": "number"
+        },
+        "rho_min": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rho_max": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "thresholds": {
+      "type": "object",
+      "properties": {
+        "quasineutrality_relative": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+        },
+        "weak_gradient_relative": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+        },
+        "gradient_sigma_multiplier": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+        },
+        "newton_iterations_warning": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+        },
+        "residual_limits": {
+          "type": "object",
+          "properties": {
+            "RESL2TE": {
+              "type": "object",
+              "properties": {
+                "limit": {
+                  "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+                },
+                "rationale": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "limit",
+                "rationale"
+              ]
+            },
+            "RESL2TI": {
+              "type": "object",
+              "properties": {
+                "limit": {
+                  "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+                },
+                "rationale": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "limit",
+                "rationale"
+              ]
+            },
+            "RESL2OMG": {
+              "type": "object",
+              "properties": {
+                "limit": {
+                  "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+                },
+                "rationale": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "limit",
+                "rationale"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "composition": {
+      "type": "object",
+      "properties": {
+        "electron_density": {
+          "type": "string",
+          "minLength": 1
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "includes_fast_ions": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "species": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "density": {
+                "type": "string",
+                "minLength": 1
+              },
+              "charge": {
+                "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+              },
+              "charge_variable": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "density"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "gradient_uncertainties": {
+      "type": "object",
+      "properties": {
+        "TE": {
+          "type": "object",
+          "properties": {
+            "sigma_variable": {
+              "type": "string",
+              "minLength": 1
+            },
+            "coordinate": {
+              "const": "X"
+            },
+            "method": {
+              "const": "numpy_gradient_edge_order_1"
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "sigma_variable",
+            "coordinate",
+            "method",
+            "source"
+          ]
+        },
+        "TI": {
+          "type": "object",
+          "properties": {
+            "sigma_variable": {
+              "type": "string",
+              "minLength": 1
+            },
+            "coordinate": {
+              "const": "X"
+            },
+            "method": {
+              "const": "numpy_gradient_edge_order_1"
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "sigma_variable",
+            "coordinate",
+            "method",
+            "source"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence_record_v1": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "enum": [
+            "measured",
+            "fitted",
+            "manual",
+            "automatic",
+            "assumed",
+            "inferred",
+            "predicted",
+            "missing",
+            "unknown"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "uncertainty": {
+          "enum": [
+            "provided",
+            "unknown",
+            "not_applicable"
+          ]
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "input",
+              "calibration",
+              "validation",
+              "initial_condition",
+              "boundary_condition"
+            ]
+          }
+        },
+        "reliability": {
+          "enum": [
+            "reviewed",
+            "unreliable",
+            "unknown"
+          ]
+        },
+        "independent_validation": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence_record": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "enum": [
+            "measured",
+            "fitted",
+            "manual",
+            "automatic",
+            "assumed",
+            "inferred",
+            "predicted",
+            "missing",
+            "unknown"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "uncertainty": {
+          "enum": [
+            "provided",
+            "unknown",
+            "not_applicable"
+          ]
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "input",
+              "calibration",
+              "validation",
+              "initial_condition",
+              "boundary_condition"
+            ]
+          }
+        },
+        "reliability": {
+          "enum": [
+            "reviewed",
+            "unreliable",
+            "unknown"
+          ]
+        },
+        "independent_validation": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+          }
+        },
+        "usage": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "constraint",
+              "initial_condition",
+              "boundary_condition",
+              "calibration_target",
+              "independent_validation"
+            ]
+          }
+        },
+        "applicability": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/applicability"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "sha256": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+        },
+        "units": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "power_accounting_boundary": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/boundary"
+        },
+        "override": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/override"
+        },
+        "selector": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/selector"
+        }
+      },
+      "additionalProperties": false
+    },
+    "input_expectation_v1": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "expected": {
+          "type": "number"
+        },
+        "atol": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rtol": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reference": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "units": {
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "expected",
+        "reference",
+        "units"
+      ]
+    },
+    "input_expectation": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "expected": {
+          "type": "number"
+        },
+        "atol": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rtol": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reference": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "units": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "applicability": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/applicability"
+        },
+        "evidence_id": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "sha256": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+        },
+        "override": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/override"
+        },
+        "power_accounting_boundary": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/boundary"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "expected",
+        "reference",
+        "units"
+      ]
+    },
+    "run_identity": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "shot": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "campaign": {
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence_source_v2": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+        },
+        "description": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "source": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "sha256": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+          }
+        },
+        "usage": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "constraint",
+              "initial_condition",
+              "boundary_condition",
+              "calibration_target",
+              "independent_validation"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description"
+      ]
+    },
+    "evidence_source": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+        },
+        "description": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "source": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "sha256": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+          }
+        },
+        "usage": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "constraint",
+              "initial_condition",
+              "boundary_condition",
+              "calibration_target",
+              "independent_validation"
+            ]
+          }
+        },
+        "selector": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/selector"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description"
+      ]
+    },
+    "resolved_inputs": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "executable_sha256": {
+              "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+            },
+            "source": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version"
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "enum": [
+                  "trdat",
+                  "namelist",
+                  "pt_template",
+                  "ufile",
+                  "other"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "resolved_path": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "sha256": {
+                "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "source": {
+                "type": "string",
+                "pattern": "\\S"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "path"
+            ]
+          }
+        },
+        "controls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "resolved": {
+                "type": "boolean"
+              },
+              "segments": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "end": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "type": [
+                        "number",
+                        "string",
+                        "boolean"
+                      ]
+                    },
+                    "source": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "value"
+                  ]
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "resolved",
+              "segments"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "event_v2": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+        },
+        "type": {
+          "enum": [
+            "startup",
+            "termination",
+            "sawtooth",
+            "elm",
+            "pellet",
+            "heating_transition",
+            "diagnostic_outage"
+          ]
+        },
+        "start": {
+          "type": "number"
+        },
+        "end": {
+          "type": "number"
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "source": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "note": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "origin": {
+          "enum": [
+            "experimental_observation",
+            "actuator_command",
+            "modeled_transp",
+            "analyst_declaration",
+            "automatic_candidate"
+          ]
+        },
+        "policy": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "legacy_exclusion"
+            },
+            "rules": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "rules"
+          ]
+        },
+        "applications": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "start",
+        "end",
+        "rules"
+      ]
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+        },
+        "type": {
+          "enum": [
+            "startup",
+            "termination",
+            "sawtooth",
+            "elm",
+            "pellet",
+            "heating_transition",
+            "diagnostic_outage",
+            "unclassified_transient"
+          ]
+        },
+        "start": {
+          "type": "number"
+        },
+        "end": {
+          "type": "number"
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "source": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "note": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "origin": {
+          "enum": [
+            "experimental_observation",
+            "actuator_command",
+            "modeled_transp",
+            "analyst_declaration",
+            "automatic_candidate"
+          ]
+        },
+        "policy": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "legacy_exclusion"
+            },
+            "rules": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "rules"
+          ]
+        },
+        "applications": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "reference": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "diagnostic": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "detector": {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "settings": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "version"
+          ]
+        },
+        "timing_uncertainty": {
+          "type": "number",
+          "minimum": 0
+        },
+        "padding": {
+          "type": "number",
+          "minimum": 0
+        },
+        "review_state": {
+          "enum": [
+            "unreviewed",
+            "reviewed_accepted",
+            "reviewed_rejected"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "start",
+        "end",
+        "rules"
+      ]
+    },
+    "sample_support": {
+      "type": "object",
+      "properties": {
+        "TIME": {
+          "type": "object",
+          "properties": {
+            "averaging_interval": {
+              "type": "number",
+              "minimum": 0
+            },
+            "alignment": {
+              "enum": [
+                "center",
+                "trailing"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "averaging_interval"
+          ]
+        },
+        "TIME3": {
+          "type": "object",
+          "properties": {
+            "averaging_interval": {
+              "type": "number",
+              "minimum": 0
+            },
+            "alignment": {
+              "enum": [
+                "center",
+                "trailing"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "averaging_interval"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "event_detector": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+        },
+        "method": {
+          "const": "abrupt_drop"
+        },
+        "diagnostic": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "clock": {
+          "enum": [
+            "TIME",
+            "TIME3"
+          ]
+        },
+        "radial_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_units": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "mode": {
+          "enum": [
+            "causal",
+            "noncausal"
+          ]
+        },
+        "max_sample_interval": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "threshold": {
+              "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+            },
+            "min_relative_drop": {
+              "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+            },
+            "window": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "min_baseline": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "max_gap_factor": {
+              "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+            },
+            "timing_padding": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "method",
+        "diagnostic",
+        "clock",
+        "expected_units",
+        "mode",
+        "max_sample_interval"
+      ]
+    },
+    "covariance_resource": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+        },
+        "quantity": {
+          "enum": [
+            "TE",
+            "TI"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "covariance"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "resolved_path": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "sha256": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+        },
+        "units": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "coordinate": {
+          "const": "X"
+        },
+        "ordering": {
+          "const": "ascending_coordinate"
+        },
+        "estimator": {
+          "const": "numpy_gradient_edge_order_1"
+        },
+        "provenance": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "included_sources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "max_regularization": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "quantity",
+        "kind",
+        "path",
+        "sha256",
+        "units",
+        "coordinate",
+        "ordering",
+        "estimator",
+        "provenance"
+      ]
+    },
+    "uncertainty": {
+      "type": "object",
+      "properties": {
+        "covariances": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:transp2imas:curation:common#/$defs/covariance_resource"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+      },
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "migration": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "enum": [
+            "transp2imas.curation.inputs.v1",
+            "transp2imas.curation.inputs.v2",
+            "transp2imas.curation.inputs.v3"
+          ]
+        },
+        "raw_sha256": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "raw_sha256",
+        "steps"
+      ]
+    }
+  }
+}

@@ -1,7 +1,7 @@
 numpy
 scipy
 netCDF4
-f90nml
+f90nml>=1.4
 matplotlib
 PyYAML
 imas-python

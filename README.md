@@ -77,7 +77,10 @@ make verify-curation
 
 Optional `--evidence my-evidence.json` supplies diagnostic/uncertainty declarations and configuration
 references. Reports include JSON, Markdown and local evaluated/flagged masks. Missing evidence stays
-unassessed; a screening pass is not scientific certification. See [curation guide](docs/curation/README.md).
+unassessed; a screening pass is not scientific certification. Curation needs no IMAS:
+`pip install -r requirements-curation.txt`; check a sidecar without a CDF with
+`python3 curate.py --validate-only --evidence my-evidence.json`, or run a rule subset with `--policy`.
+See [curation guide](docs/curation/README.md).
 
 ## Repository layout and documentation
 

@@ -123,7 +123,7 @@ class ManifestTests(unittest.TestCase):
                 load_manifest(path)
 
     def test_unknown_keys_rejected(self):
-        with self.assertRaisesRegex(ValueError, 'unknown keys'):
+        with self.assertRaisesRegex(ValueError, r'\[schema evidence\.v3\] <document>: Additional properties are not allowed \(.evidnce. was unexpected\)'):
             validate_manifest({'schema_version': MANIFEST_SCHEMA, 'evidnce': {}})
 
     def test_boolean_numbers_and_nonfinite_thresholds_rejected(self):
@@ -173,9 +173,9 @@ class ManifestV2Tests(unittest.TestCase):
         self.assertEqual(result['evidence']['rotation']['usage'], ['independent_validation'])
 
     def test_a_v1_document_may_not_use_v2_keys(self):
-        self.rejects({'schema_version': MANIFEST_SCHEMA_V1, 'events': []}, 'need schema_version')
+        self.rejects({'schema_version': MANIFEST_SCHEMA_V1, 'events': []}, 'are not part of schema')
         self.rejects({'schema_version': MANIFEST_SCHEMA_V1,
-                      'evidence': {'rotation': {'origin': 'measured', 'id': 'x'}}}, 'need schema_version')
+                      'evidence': {'rotation': {'origin': 'measured', 'id': 'x'}}}, '[schema evidence.v1] evidence.rotation')
 
     def test_legacy_roles_map_to_one_usage_vocabulary(self):
         result = validate_manifest(self.v2(evidence={'heating': {
@@ -185,8 +185,8 @@ class ManifestV2Tests(unittest.TestCase):
 
     def test_unknown_usage_hash_and_identifier_are_rejected(self):
         self.rejects(self.v2(evidence={'rotation': {'origin': 'measured', 'usage': ['proof']}}), 'usage')
-        self.rejects(self.v2(evidence={'rotation': {'origin': 'measured', 'sha256': 'abc'}}), 'SHA-256')
-        self.rejects(self.v2(evidence={'rotation': {'origin': 'measured', 'id': 'has space'}}), 'identifier')
+        self.rejects(self.v2(evidence={'rotation': {'origin': 'measured', 'sha256': 'abc'}}), 'evidence.rotation.sha256')
+        self.rejects(self.v2(evidence={'rotation': {'origin': 'measured', 'id': 'has space'}}), 'evidence.rotation.id')
 
     def test_parents_must_exist_and_may_not_form_a_cycle(self):
         self.rejects(self.v2(evidence_sources=[{'id': 'a', 'description': 'x', 'parents': ['ghost']}]), 'ghost')
@@ -220,7 +220,7 @@ class ManifestV2Tests(unittest.TestCase):
                                                           'segments': segments, **extra}]})
         validate_manifest(control([{'start': 0, 'end': 1, 'value': 1}, {'start': 1, 'end': None, 'value': 2}]))
         self.rejects(control([{'start': 0, 'end': 2, 'value': 1}, {'start': 1, 'end': 3, 'value': 2}]), 'overlap')
-        self.rejects(control([{'start': 0, 'end': 1, 'value': [1, 2]}]), 'scalar')
+        self.rejects(control([{'start': 0, 'end': 1, 'value': [1, 2]}]), 'resolved_inputs.controls[0].segments[0].value')
         self.rejects(control([{'start': 1, 'end': 0, 'value': 1}]), 'before')
         self.rejects(self.v2(resolved_inputs={'controls': [{'name': 'M', 'segments': [{'value': 1}]}]}), 'resolved')
 
@@ -251,32 +251,33 @@ class EngineV2Tests(unittest.TestCase):
         return data
 
     # events
-    def test_a_negative_sample_inside_a_declared_event_is_excluded_and_accounted_for(self):
+    def test_a_negative_sample_inside_a_declared_event_stays_flagged_and_is_excluded_by_policy(self):
         _r, found = run_screen(self.negative_te())
         self.assertEqual(found['PROFILE.TE.NEGATIVE'].status, 'fail')
         event = {'id': 'saw1', 'type': 'sawtooth', 'start': 0.9, 'end': 1.1, 'rules': ['PROFILE.TE.NEGATIVE']}
         report, found = run_screen(self.negative_te(), self.v2(events=[event]))
         finding = found['PROFILE.TE.NEGATIVE']
-        self.assertEqual(finding.status, 'pass')
-        self.assertEqual(finding.scope['excluded_by_events'], 3)                  # the whole TIME3=1.0 row
-        self.assertEqual(finding.scope['excluding_events'], ['saw1'])
-        self.assertEqual(report.event_exclusions['PROFILE.TE.NEGATIVE']['excluded_count'], 3)
-        self.assertEqual(found['PROFILE.TE.ZERO'].scope.get('excluded_by_events', 0), 0)        # other rules untouched
+        self.assertEqual(finding.status, 'fail')                                  # the raw observation is unchanged
+        self.assertEqual(finding.scope['flagged_count'], 1)
+        record = report.policy_exclusions['PROFILE.TE.NEGATIVE']
+        self.assertEqual((record['excluded_count'], record['events']), (3, ['saw1']))   # the whole TIME3=1.0 row
+        self.assertNotIn('PROFILE.TE.ZERO', report.policy_exclusions)             # other rules untouched
         self.assertEqual(found['EVENTS.INVENTORY'].status, 'pass')
 
-    def test_excluded_samples_are_not_counted_as_evaluated_or_unflagged(self):
+    def test_excluded_samples_stay_in_the_raw_evaluated_mask_and_have_their_own_mask(self):
         event = {'id': 'e', 'type': 'elm', 'start': 0.9, 'end': 1.1, 'rules': ['PROFILE.TE.*']}
         report, found = run_screen(self.negative_te(), self.v2(events=[event]))
         scope = found['PROFILE.TE.FINITE'].scope
-        self.assertEqual((scope['evaluated_count'], scope['excluded_by_events']), (3, 3))
+        self.assertEqual(scope['evaluated_count'], 6)
         self.assertTrue(report.masks['PROFILE_TE_FINITE__excluded'][1].all())
-        self.assertFalse(report.masks['PROFILE_TE_FINITE__evaluated'][1].any())
+        self.assertTrue(report.masks['PROFILE_TE_FINITE__evaluated'][1].all())     # still evaluated, just ineligible
+        self.assertEqual(report.policy_exclusions['PROFILE.TE.FINITE']['eligible_count'], 3)
 
-    def test_when_every_sample_is_excluded_the_rule_is_not_assessed(self):
+    def test_when_every_sample_is_excluded_the_policy_not_the_finding_is_unassessed(self):
         event = {'id': 'all', 'type': 'diagnostic_outage', 'start': -1.0, 'end': 5.0, 'rules': ['PROFILE.TE.NEGATIVE']}
-        _r, found = run_screen(self.negative_te(), self.v2(events=[event]))
-        self.assertEqual(found['PROFILE.TE.NEGATIVE'].status, 'not_assessed')
-        self.assertIn('inside declared events', found['PROFILE.TE.NEGATIVE'].message)
+        report, found = run_screen(self.negative_te(), self.v2(events=[event]))
+        self.assertEqual(found['PROFILE.TE.NEGATIVE'].status, 'fail')
+        self.assertEqual(report.policy_exclusions['PROFILE.TE.NEGATIVE']['policy_status'], 'not_assessed')
 
     def test_an_event_matching_no_rule_or_outside_the_source_is_reported(self):
         events = [{'id': 'typo', 'type': 'pellet', 'start': 0.0, 'end': 1.0, 'rules': ['NO.SUCH.RULE']},

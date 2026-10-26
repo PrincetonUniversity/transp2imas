@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:transp2imas:curation:policy.v1",
+  "title": "Curation policy v1",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "transp2imas.curation.policy.v1"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "rules": {
+      "type": "object",
+      "properties": {
+        "enable_only": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+          }
+        },
+        "disable": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "quasineutrality_relative": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+        },
+        "weak_gradient_relative": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+        },
+        "gradient_sigma_multiplier": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+        },
+        "newton_iterations_warning": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/positive_number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "applications": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "heat_transport",
+          "momentum_transport",
+          "current_evolution",
+          "surrogate_training"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "additionalProperties": false
+}

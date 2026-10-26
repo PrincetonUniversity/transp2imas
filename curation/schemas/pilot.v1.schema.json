@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:transp2imas:curation:pilot.v1",
+  "title": "Curation pilot facts v1",
+  "type": "object",
+  "properties": {
+    "assessment_window": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/assessment_window"
+    },
+    "evidence": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "electron_temperature",
+          "ion_temperature",
+          "electron_density",
+          "rotation",
+          "composition",
+          "heating"
+        ]
+      },
+      "additionalProperties": {
+        "$ref": "urn:transp2imas:curation:common#/$defs/evidence_record"
+      }
+    },
+    "evidence_sources": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:transp2imas:curation:common#/$defs/evidence_source"
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:transp2imas:curation:common#/$defs/event"
+      }
+    },
+    "input_expectations": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:transp2imas:curation:common#/$defs/input_expectation"
+      }
+    },
+    "composition": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/composition"
+    },
+    "thresholds": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/thresholds"
+    },
+    "gradient_uncertainties": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/gradient_uncertainties"
+    },
+    "run_identity": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/run_identity"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "sample_support": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/sample_support"
+    },
+    "event_detectors": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:transp2imas:curation:common#/$defs/event_detector"
+      }
+    },
+    "uncertainty": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/uncertainty"
+    },
+    "extensions": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/extensions"
+    },
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "transp2imas.curation.pilot.v1"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "enum": [
+              "trdat",
+              "namelist",
+              "pt_template",
+              "ufile",
+              "other"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "source": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "path"
+        ]
+      }
+    },
+    "resolved_inputs": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/resolved_inputs"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "additionalProperties": false
+}
