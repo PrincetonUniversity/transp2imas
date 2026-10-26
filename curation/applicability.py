@@ -7,6 +7,8 @@ but the run does not establish the fact it needs (no shot number, no device); it
 
 import fnmatch
 
+from curation import intervals
+
 APPLIES, NOT_APPLICABLE, UNKNOWN = 'applies', 'not_applicable', 'unknown'
 
 
@@ -45,11 +47,11 @@ def judge(spec, identity):
 def overlaps(spec, start, end):
     """Whether the interval ``[start, end)`` (``None`` = unbounded) meets the time bounds of ``spec``."""
     lo, hi = (spec or {}).get('time_min'), (spec or {}).get('time_max')
-    if lo is not None and end is not None and end <= lo:
-        return False
-    if hi is not None and start is not None and start > hi:
-        return False
-    return True
+    if lo is None and hi is None:
+        return True
+    # the spec's bounds are a closed span [lo, hi]; an interval that merely ends at lo does not meet it
+    return (intervals.bound(start, 'start') <= intervals.bound(hi, 'end')
+            and intervals.bound(end, 'end') > intervals.bound(lo, 'start'))
 
 
 def rule_matches(patterns, identifier):

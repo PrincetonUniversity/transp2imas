@@ -1,4 +1,7 @@
-# Evidence sidecar format (v2; v1 still accepted)
+# Evidence sidecar format (v3; v1 and v2 still accepted)
+
+The current schema is `transp2imas.curation.inputs.v3`. Older documents are validated against their own version and
+migrated (see [schema-migration.md](schema-migration.md)); the sections below describe v1, v2 and then the v3 additions.
 
 The JSON file is validated by `curation.manifest.validate_manifest`. Unknown keys, nonfinite numbers,
 inverted windows, duplicate species, inconsistent types and unsupported derivative conventions are
@@ -216,3 +219,42 @@ v2 adds, all strictly validated (unknown keys, bad types, duplicate ids, nonfini
 plus `files` (`role`, `path`, optional `revision`/`source`). The adapter **computes** each file's SHA-256 (a supplied
 hash is rejected) and refuses any string still containing `TO_BE_SUPPLIED`, so the template
 (`examples/curation/pilot-template.json`) cannot be run unfilled. The adapter invents nothing.
+
+
+## Version 3 (`transp2imas.curation.inputs.v3`)
+
+v3 is a superset of v2 and is the canonical internal form: every older document is migrated to it and carries a
+`migration` record (`from`, `raw_sha256`, `steps`). It is described by `curation/schemas/evidence.v3.schema.json`.
+New in v3:
+
+* **Event catalog fields**: `origin`, `reference`, `diagnostic`, `detector`, `timing_uncertainty`, `padding`,
+  `review_state`, `applications`, `policy`, and the type `unclassified_transient` (see [events.md](events.md)).
+* `sample_support`: per clock, `{"TIME3": {"averaging_interval": 0.02, "alignment": "center"}}`. Without it samples are
+  treated as points (an approximation that is reported).
+* `event_detectors`: explicit detector configuration (see [events.md](events.md)).
+* `uncertainty.covariances`: supplied fixed-grid covariance resources for `TE` or `TI`:
+
+  ```json
+  "uncertainty": {"covariances": [{
+    "id": "te_cov", "quantity": "TE", "kind": "covariance",
+    "path": "te_covariance.npz", "sha256": "<64 hex>", "units": "EV",
+    "coordinate": "X", "ordering": "ascending_coordinate", "estimator": "numpy_gradient_edge_order_1",
+    "provenance": "where this covariance came from", "included_sources": ["statistical fit error"]
+  }]}
+  ```
+
+  The `.npz` holds `time` (exactly the source `TIME3`) and `covariance` of shape `(nt, nr, nr)`. The path resolves
+  beside the sidecar and the SHA-256 is checked at load. See [uncertainty.md](uncertainty.md) for the scope: profile and
+  gradient uncertainty conditional on the supplied reconstruction, cross-time correlation and an uncertain radial
+  coordinate unmodeled.
+* `selector` on evidence records and `evidence_sources`: which dataset, channel, fit or calibration inside a container
+  the record refers to (`{"dataset": "TE", "channel": 3}`), so a shared file hash is not mistaken for a shared
+  measurement (and not mistaken for independence either).
+* `extensions`: namespaced objects (`"vendor.rule": {...}`) for trusted plugin rules; built-in rules ignore them.
+* `$schema`: an editor hint, dropped from the canonical form.
+
+Integer fields: `run_identity.shot` and the applicability `shot_min`/`shot_max` are integers; booleans, text and
+fractions are rejected, not coerced.
+
+Time applicability of evidence (`applicability.time_min`/`time_max`) now limits where a record counts: see
+`evidence.coverage` in the report and [schema-migration.md](schema-migration.md).

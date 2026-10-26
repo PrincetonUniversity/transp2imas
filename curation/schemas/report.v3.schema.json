@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:transp2imas:curation:report.v3",
+  "title": "Curation report v3 (structure only)",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "transp2imas.curation.report.v3"
+    },
+    "curation_version": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "source": {
+      "type": "object"
+    },
+    "manifest_sha256": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+    },
+    "effective_manifest": {
+      "type": "object"
+    },
+    "fingerprints": {
+      "type": "object",
+      "properties": {
+        "evidence_sha256": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+        },
+        "policy_sha256": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+        },
+        "assessment_sha256": {
+          "$ref": "urn:transp2imas:curation:common#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "evidence_sha256",
+        "policy_sha256",
+        "assessment_sha256"
+      ]
+    },
+    "declared_input_timeline": {
+      "type": "object"
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "counts": {
+          "type": "object"
+        },
+        "scientifically_certified": {
+          "const": false
+        },
+        "applications": {
+          "type": "object"
+        },
+        "rule_coverage": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "counts",
+        "scientifically_certified",
+        "applications",
+        "rule_coverage"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "warning",
+              "fail",
+              "not_assessed",
+              "not_applicable",
+              "error"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "message"
+        ]
+      }
+    },
+    "execution_ledger": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule": {
+            "$ref": "urn:transp2imas:curation:common#/$defs/identifier"
+          },
+          "state": {
+            "enum": [
+              "executed",
+              "policy_disabled",
+              "missing_prerequisite",
+              "execution_error"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "rule",
+          "state",
+          "required"
+        ]
+      }
+    },
+    "policy": {
+      "type": "object"
+    },
+    "registry": {
+      "type": "object"
+    },
+    "events": {
+      "type": "array"
+    },
+    "detected_events": {
+      "type": "array"
+    },
+    "policy_exclusions": {
+      "type": "object"
+    },
+    "uncertainty": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "summary",
+    "findings",
+    "execution_ledger",
+    "fingerprints"
+  ]
+}

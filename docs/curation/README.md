@@ -32,13 +32,19 @@ There is no automatic search for a TR.DAT or evidence file: association must be 
 reuse a template's numerical assumptions for an unrelated discharge. No external reference is
 retrieved or authenticated by this first version.
 
-A complete synthetic demonstration needs no experimental data or IMAS installation:
+Curation-only installation (no IMAS): `pip install -r requirements-curation.txt` (or `make install-curation`). Validate a
+sidecar without a CDF with `python curate.py --validate-only --evidence my-evidence.json`; run a subset of rules with
+`--policy policy.json` (see [architecture.md](architecture.md)).
+
+A complete synthetic demonstration needs no experimental data or IMAS installation (its declared event, covariance and
+policy are explicitly synthetic):
 
 ```bash
 python3 examples/make_curation_demo.py --output-dir build/curation-demo
 python3 curate.py -i build/curation-demo/synthetic.CDF \
   --trdat build/curation-demo/syntheticTR.DAT \
   --evidence build/curation-demo/evidence.json \
+  --policy build/curation-demo/policy.json \
   --output-dir build/curation-demo/report
 ```
 
@@ -101,6 +107,11 @@ scientific findings fail a batch job. The report is still written for ordinary s
 ## Documents
 
 - [Scientific design and curation ideas](design.md)
+- [Architecture: rules, policy, ledger, provenance](architecture.md)
+- [Schemas, migration and report changes](schema-migration.md)
+- [Namelist resolution](namelist-resolution.md)
+- [Events and the optional detector](events.md), [detector details](event-detector.md)
+- [Covariance and uncertainty scope](uncertainty.md)
 - [Scientific policy and guardrails](scientific-policy.md)
 - [Evidence sidecar format](evidence-format.md)
 - [Implemented rules and threshold semantics](rules.md)

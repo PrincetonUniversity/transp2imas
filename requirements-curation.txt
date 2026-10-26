@@ -1,0 +1,8 @@
+# Curation-only installation: the standalone read-only screening (curate.py) needs no IMAS.
+#   pip install -r requirements-curation.txt
+numpy
+scipy
+# netCDF4 is optional: classic CDF files are read through SciPy without it; NetCDF4/HDF5 and CDF5 inputs need it.
+f90nml>=1.4
+jsonschema>=4.18,<5
+referencing>=0.30

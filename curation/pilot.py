@@ -11,7 +11,8 @@ computed from files on disk, the SHA-256 of each listed input, and refuses a fac
 from pathlib import Path
 
 from curation import MANIFEST_SCHEMA
-from curation.manifest import read_json, validate_manifest
+from curation.manifest import read_json, validate_manifest, validate_resources
+from curation.schema import validate_structure
 from curation.resolved import sha256_of
 
 PILOT_SCHEMA = 'transp2imas.curation.pilot.v1'
@@ -41,6 +42,7 @@ def build_manifest(facts, base):
     open_items = placeholders(facts)
     if open_items:
         raise ValueError(f'pilot facts still contain {PLACEHOLDER}: ' + ', '.join(open_items))
+    validate_structure(facts, 'pilot.v1')
     manifest = {'schema_version': MANIFEST_SCHEMA}
     manifest.update({key: facts[key] for key in PASSED_THROUGH if key in facts})
     resolved = dict(facts.get('resolved_inputs', {}))
@@ -55,7 +57,9 @@ def build_manifest(facts, base):
         resolved['inputs'] = inputs
     if resolved:
         manifest['resolved_inputs'] = resolved
-    return validate_manifest(manifest)
+    result = validate_manifest(manifest, base_dir=base)
+    validate_resources(result)
+    return result
 
 
 def load_pilot(path):

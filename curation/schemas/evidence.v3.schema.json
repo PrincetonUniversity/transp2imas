@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:transp2imas:curation:evidence.v3",
+  "title": "Curation evidence sidecar transp2imas.curation.inputs.v3",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "transp2imas.curation.inputs.v3"
+    },
+    "assessment_window": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/assessment_window"
+    },
+    "evidence": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "electron_temperature",
+          "ion_temperature",
+          "electron_density",
+          "rotation",
+          "composition",
+          "heating"
+        ]
+      },
+      "additionalProperties": {
+        "$ref": "urn:transp2imas:curation:common#/$defs/evidence_record"
+      }
+    },
+    "thresholds": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/thresholds"
+    },
+    "composition": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/composition"
+    },
+    "input_expectations": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:transp2imas:curation:common#/$defs/input_expectation"
+      }
+    },
+    "gradient_uncertainties": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/gradient_uncertainties"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "run_identity": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/run_identity"
+    },
+    "evidence_sources": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:transp2imas:curation:common#/$defs/evidence_source"
+      }
+    },
+    "resolved_inputs": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/resolved_inputs"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:transp2imas:curation:common#/$defs/event"
+      }
+    },
+    "sample_support": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/sample_support"
+    },
+    "event_detectors": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:transp2imas:curation:common#/$defs/event_detector"
+      }
+    },
+    "uncertainty": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/uncertainty"
+    },
+    "extensions": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/extensions"
+    },
+    "migration": {
+      "$ref": "urn:transp2imas:curation:common#/$defs/migration"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "additionalProperties": false
+}

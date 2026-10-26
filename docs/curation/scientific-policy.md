@@ -44,3 +44,26 @@ Writes to an IMAS entry are sequential, not transactional. When a backend write 
 requested, accepted, failed and left unattempted; accepted writes stay accepted and there is no rollback. The journal
 records `publication.status` (`none`, `partial`, `complete`) and a partial conversion does not print the completion
 marker. Remove or rebuild the entry yourself after a partial publication.
+
+
+## Added with the rule/policy/schema work
+
+- **Raw findings are never rewritten by an exclusion.** A declared event can make samples ineligible for an application;
+  the finding stays as observed and the exclusion is a separate, counted record. Source-integrity checks cannot be
+  excluded at all, and an automatic candidate or rejected event excludes nothing.
+- **A check that did not run is not a check that passed.** Rules disabled by policy, rules whose prerequisites did not
+  execute, and rules that raised leave every application out of `screening_only_not_certified`. An exception in a rule
+  is an execution error, never `not_assessed`.
+- **Evidence covers only the time it applies to.** A record whose time applicability does not meet the quantity's native
+  support supplies no coverage, and partial coverage is reported with its unassessed intervals.
+- **Aliases are not independence.** Different strings or hashes never prove independence; a shared container with
+  different selectors is reported as a distinction, not as dependence and not as independence.
+- **A conflicting declared identity is not trusted, and the file's value is not silently substituted.** The item becomes
+  unknown and authorizes no reference.
+- **Unresolved array updates leave nothing stale.** An update the reader cannot resolve invalidates the elements it may
+  have changed.
+- **Uncertainty scope is labelled.** A supplied covariance gives profile/gradient uncertainty conditional on the supplied
+  reconstruction and grid; it says what it does not include (cross-time correlation, radial-coordinate uncertainty, any
+  source not listed). Missing uncertainty stays unknown. Detector scores are uncalibrated and an absence of detected
+  events is not evidence of an event-free plasma.
+- **A schema-valid sidecar is not authenticated evidence.**

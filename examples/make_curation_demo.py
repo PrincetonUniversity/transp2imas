@@ -2,6 +2,7 @@
 """Generate a tiny, explicitly synthetic curation demonstration (no IMAS needed)."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -22,7 +23,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     directory = args.output_dir
     directory.mkdir(parents=True, exist_ok=True)
-    paths = [directory / 'synthetic.CDF', directory / 'syntheticTR.DAT', directory / 'evidence.json']
+    paths = [directory / 'synthetic.CDF', directory / 'syntheticTR.DAT', directory / 'evidence.json',
+             directory / 'covariance.npz', directory / 'policy.json']
     if not args.force and any(path.exists() for path in paths):
         parser.error('demo files already exist; choose a new directory or use --force')
     x = np.tile([.1, .5, .9], (2, 1))
@@ -51,7 +53,12 @@ def main(argv=None):
     paths[1].write_text('! SYNTHETIC EXAMPLE ONLY\nLPREDICT_NE=0\nNLMDIF=.TRUE.\n'
                         'EINJA(1)=95000\nFFULLA(1)=0.65\nFHALFA(1)=0.2\n'
                         '~update_time=0.5\nLPREDICT_NE=1\n')
+    # EXPLICITLY SYNTHETIC covariance of the synthetic TE profile: independent 15 eV errors on each of the three
+    # radii, one slice per TIME3 sample.  It is not a diagnostic covariance and calibrates nothing.
+    covariance = np.stack([np.diag(np.full(3, 15.0 ** 2))] * 2)
+    np.savez(paths[3], time=np.array([0., 1.]), covariance=covariance)
     evidence = {
+        '$schema': '../../curation/schemas/evidence.v3.schema.json',
         'schema_version': MANIFEST_SCHEMA,
         'assessment_window': {'time_min': 0, 'time_max': 1, 'rho_min': .1, 'rho_max': .9},
         'evidence': {
@@ -66,8 +73,24 @@ def main(argv=None):
                                          'method': 'numpy_gradient_edge_order_1', 'source': 'synthetic derivative ensemble'}},
         'thresholds': {'newton_iterations_warning': 40,
                        'residual_limits': {'RESL2TE': {'limit': .01, 'rationale': 'Synthetic demonstration threshold only'}}},
+        'run_identity': {'device': 'SYNTHETIC', 'shot': 1},
+        'sample_support': {'TIME3': {'averaging_interval': 0.1, 'alignment': 'center'}},
+        'events': [{'id': 'synthetic_pellet', 'type': 'pellet', 'origin': 'actuator_command',
+                    'start': 0.45, 'end': 0.55, 'timing_uncertainty': 0.02, 'rules': ['PROFILE.TE.*'],
+                    'applications': ['heat_transport'], 'reference': 'SYNTHETIC actuator log, not a delivered pellet',
+                    'note': 'A commanded event is not proof of a delivered one.'}],
+        'uncertainty': {'covariances': [{
+            'id': 'synthetic_te_covariance', 'quantity': 'TE', 'kind': 'covariance', 'path': 'covariance.npz',
+            'sha256': hashlib.sha256(paths[3].read_bytes()).hexdigest(), 'units': 'EV', 'coordinate': 'X',
+            'ordering': 'ascending_coordinate', 'estimator': 'numpy_gradient_edge_order_1',
+            'provenance': 'SYNTHETIC diagonal covariance written by make_curation_demo.py; not diagnostic data',
+            'included_sources': ['synthetic independent statistical error']}]},
         'notes': 'Every value and reference in this demonstration is synthetic; do not reuse as machine inputs.'}
     paths[2].write_text(json.dumps(evidence, indent=2) + '\n')
+    paths[4].write_text(json.dumps({
+        '$schema': '../../curation/schemas/policy.v1.schema.json', 'schema_version': 'transp2imas.curation.policy.v1',
+        'name': 'synthetic-demo-subset', 'rules': {'disable': {'numerics.runtime': 'the demo has no solver runtime channels worth reviewing'}},
+        'parameters': {'gradient_sigma_multiplier': 2.0}, 'applications': ['heat_transport']}, indent=2) + '\n')
     for path in paths:
         print(path)
     return 0

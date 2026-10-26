@@ -9,9 +9,11 @@ import json
 import math
 from pathlib import Path
 
+import hashlib
 import re
 
-from curation import ACCEPTED_MANIFEST_SCHEMAS, MANIFEST_SCHEMA, MANIFEST_SCHEMA_V1
+from curation import ACCEPTED_MANIFEST_SCHEMAS, MANIFEST_SCHEMA, MANIFEST_SCHEMA_V1, MANIFEST_SCHEMA_V2
+from curation.schema import loads_strict, reject_nonfinite, validate_structure
 
 ROLES = ('electron_temperature', 'ion_temperature', 'electron_density',
          'rotation', 'composition', 'heating')
@@ -23,25 +25,23 @@ USAGE = ('constraint', 'initial_condition', 'boundary_condition', 'calibration_t
 LEGACY_USAGE = {'input': 'constraint', 'calibration': 'calibration_target', 'validation': 'independent_validation',
                 'initial_condition': 'initial_condition', 'boundary_condition': 'boundary_condition'}
 CONSTRAINING = ('constraint', 'initial_condition', 'boundary_condition', 'calibration_target')
-EVENT_TYPES = ('startup', 'termination', 'sawtooth', 'elm', 'pellet', 'heating_transition', 'diagnostic_outage')
+EVENT_TYPES = ('startup', 'termination', 'sawtooth', 'elm', 'pellet', 'heating_transition', 'diagnostic_outage',
+               'unclassified_transient')
 BOUNDARIES = ('injected', 'launched', 'absorbed', 'other')
 INPUT_ROLES = ('trdat', 'namelist', 'pt_template', 'ufile', 'other')
 V2_TOP_LEVEL = ('run_identity', 'evidence_sources', 'resolved_inputs', 'events')
+V3_TOP_LEVEL = ('sample_support', 'event_detectors', 'uncertainty', 'extensions')
+SCHEMA_OF = {MANIFEST_SCHEMA_V1: 'evidence.v1', MANIFEST_SCHEMA_V2: 'evidence.v2', MANIFEST_SCHEMA: 'evidence.v3'}
+MIGRATION_KEY = 'migration'       # written by this module; a raw v1 document may not carry it
+EVENT_ORIGINS = ('experimental_observation', 'actuator_command', 'modeled_transp', 'analyst_declaration',
+                 'automatic_candidate')
 V2_EVIDENCE = ('id', 'parents', 'usage', 'applicability', 'revision', 'sha256', 'units', 'power_accounting_boundary',
-               'override')
+               'override', 'selector')
 V2_EXPECTATION = ('applicability', 'evidence_id', 'revision', 'sha256', 'override', 'power_accounting_boundary')
 ID_PATTERN = re.compile(r'[A-Za-z0-9_.:-]+\Z')
 SHA256 = re.compile(r'[0-9a-fA-F]{64}\Z')
 DEFAULT_THRESHOLDS = {'quasineutrality_relative': 0.02,
                       'weak_gradient_relative': 0.001, 'gradient_sigma_multiplier': 2.0}
-
-
-def _keys(obj, allowed, where):
-    if not isinstance(obj, dict):
-        raise ValueError(f'{where}: expected an object')
-    unknown = set(obj) - set(allowed)
-    if unknown:
-        raise ValueError(f'{where}: unknown keys: {", ".join(sorted(unknown))}')
 
 
 def _number(value, where, *, positive=False):
@@ -68,7 +68,6 @@ def _hash(value, where):
 
 def _validate_applicability(spec, where):
     """Where a configuration or reference applies: device, campaign, a shot range and a time window (all optional)."""
-    _keys(spec, ('device', 'campaign', 'shot_min', 'shot_max', 'time_min', 'time_max'), where)
     for key in ('device', 'campaign'):
         if key in spec:
             _text(spec[key], f'{where}.{key}')
@@ -82,7 +81,6 @@ def _validate_applicability(spec, where):
 
 def _validate_override(spec, where):
     """A reviewed, deliberate deviation: the value, why, and who reviewed it.  None of the three may be left out."""
-    _keys(spec, ('value', 'reason', 'reviewer'), where)
     if 'value' not in spec or isinstance(spec['value'], bool) or not isinstance(spec['value'], (int, float, str)):
         raise ValueError(f'{where}.value: expected a number or text')
     if isinstance(spec['value'], float) and not math.isfinite(spec['value']):
@@ -107,6 +105,17 @@ def _validate_reference_v2(item, where):
         raise ValueError(f'{where}.power_accounting_boundary: expected one of {BOUNDARIES}')
 
 
+def _selector(spec, where):
+    """Resource selector: which dataset/channel/fit/calibration inside a container the record refers to."""
+    if not isinstance(spec, dict) or not spec:
+        raise ValueError(f'{where}: expected a nonempty object naming the dataset, channel, fit or calibration')
+    for key, value in spec.items():
+        if not ID_PATTERN.match(key) or isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            raise ValueError(f'{where}.{key}: expected a text or number value')
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError(f'{where}.{key}: expected a finite number')
+
+
 def _validate_evidence_v2(role, item):
     where = 'evidence.' + role
     _validate_reference_v2(item, where)
@@ -119,6 +128,8 @@ def _validate_evidence_v2(role, item):
             _identifier(parent, where + '.parents')
     if 'units' in item:
         _text(item['units'], where + '.units')
+    if 'selector' in item:
+        _selector(item['selector'], where + '.selector')
     if 'usage' in item:
         if not isinstance(item['usage'], list) or any(u not in USAGE for u in item['usage']):
             raise ValueError(f'{where}.usage: expected a list drawn from {USAGE}')
@@ -127,7 +138,6 @@ def _validate_evidence_v2(role, item):
 def _validate_v2_sections(result):
     """Run identity, evidence sources, resolved inputs and events (v2), and the evidence graph's references."""
     identity = result.setdefault('run_identity', {})
-    _keys(identity, ('device', 'shot', 'campaign'), 'run_identity')
     for key in ('device', 'campaign'):
         if key in identity:
             _text(identity[key], 'run_identity.' + key)
@@ -140,13 +150,14 @@ def _validate_v2_sections(result):
     ids = {}
     for index, node in enumerate(sources):
         where = f'evidence_sources[{index}]'
-        _keys(node, ('id', 'description', 'source', 'sha256', 'parents', 'usage'), where)
         _identifier(node.get('id'), where + '.id')
         _text(node.get('description'), where + '.description')
         if 'source' in node:
             _text(node['source'], where + '.source')
         if 'sha256' in node:
             _hash(node['sha256'], where + '.sha256')
+        if 'selector' in node:
+            _selector(node['selector'], where + '.selector')
         node.setdefault('parents', [])
         if not isinstance(node['parents'], list):
             raise ValueError(f'{where}.parents: expected a list of evidence ids')
@@ -178,9 +189,7 @@ def _validate_v2_sections(result):
             raise ValueError(f'input_expectations: evidence_id {expectation["evidence_id"]!r} is not a declared evidence id')
 
     resolved = result.setdefault('resolved_inputs', {})
-    _keys(resolved, ('code', 'inputs', 'controls'), 'resolved_inputs')
     if 'code' in resolved:
-        _keys(resolved['code'], ('name', 'version', 'executable_sha256', 'source'), 'resolved_inputs.code')
         for key in ('name', 'version'):
             _text(resolved['code'].get(key), 'resolved_inputs.code.' + key)
         if 'executable_sha256' in resolved['code']:
@@ -192,7 +201,6 @@ def _validate_v2_sections(result):
         raise ValueError('resolved_inputs.inputs: expected a list')
     for index, item in enumerate(inputs):
         where = f'resolved_inputs.inputs[{index}]'
-        _keys(item, ('role', 'path', 'sha256', 'revision', 'source'), where)
         if item.get('role') not in INPUT_ROLES:
             raise ValueError(f'{where}.role: expected one of {INPUT_ROLES}')
         _text(item.get('path'), where + '.path')
@@ -207,7 +215,6 @@ def _validate_v2_sections(result):
     seen = set()
     for index, control in enumerate(controls):
         where = f'resolved_inputs.controls[{index}]'
-        _keys(control, ('name', 'segments', 'resolved'), where)
         _text(control.get('name'), where + '.name')
         key = re.sub(r'\s+', '', control['name']).upper()
         if key in seen:
@@ -221,7 +228,6 @@ def _validate_v2_sections(result):
         previous_end = None
         for number, segment in enumerate(segments):
             at = f'{where}.segments[{number}]'
-            _keys(segment, ('start', 'end', 'value', 'source'), at)
             for edge in ('start', 'end'):
                 if segment.get(edge) is not None:
                     _number(segment[edge], f'{at}.{edge}')
@@ -240,7 +246,6 @@ def _validate_v2_sections(result):
     event_ids = set()
     for index, event in enumerate(events):
         where = f'events[{index}]'
-        _keys(event, ('id', 'type', 'start', 'end', 'rules', 'source', 'note'), where)
         _identifier(event.get('id'), where + '.id')
         if event['id'] in event_ids:
             raise ValueError(f'{where}.id: duplicate event id {event["id"]!r}')
@@ -258,6 +263,38 @@ def _validate_v2_sections(result):
         for key in ('source', 'note'):
             if key in event:
                 _text(event[key], f'{where}.{key}')
+        if event.setdefault('origin', 'analyst_declaration') not in EVENT_ORIGINS:
+            raise ValueError(f'{where}.origin: expected one of {EVENT_ORIGINS}')
+        # The legacy ``rules`` list is an analyst exclusion *policy*, not an assertion about event physics.
+        legacy = {'kind': 'legacy_exclusion', 'rules': list(rules)}
+        if event.setdefault('policy', legacy) != legacy:
+            raise ValueError(f'{where}.policy: only the legacy exclusion policy over the declared rules is supported')
+        if 'applications' in event and (not isinstance(event['applications'], list) or not event['applications']
+                                        or any(not isinstance(a, str) for a in event['applications'])):
+            raise ValueError(f'{where}.applications: expected a nonempty list of application names')
+
+
+    # --- v3: sample support, detectors, covariance resources, extensions (structure is the schema's job)
+    result.setdefault('sample_support', {})
+    result.setdefault('extensions', {})
+    detector_ids = set()
+    for index, detector in enumerate(result.setdefault('event_detectors', [])):
+        if detector['id'] in detector_ids:
+            raise ValueError(f'event_detectors[{index}].id: duplicate detector id {detector["id"]!r}')
+        detector_ids.add(detector['id'])
+        params = detector.get('parameters', {})
+        if 'window' in params and 'min_baseline' in params and params['min_baseline'] >= params['window']:
+            raise ValueError(f'event_detectors[{index}].parameters: min_baseline must be smaller than window')
+    covariances = result.setdefault('uncertainty', {}).setdefault('covariances', [])
+    seen_ids, seen_quantities = set(), set()
+    for index, spec in enumerate(covariances):
+        if spec['id'] in seen_ids:
+            raise ValueError(f'uncertainty.covariances[{index}].id: duplicate id {spec["id"]!r}')
+        if spec['quantity'] in seen_quantities:
+            raise ValueError(f'uncertainty.covariances[{index}].quantity: {spec["quantity"]} already has a covariance; '
+                             'two covariances for one quantity would be ambiguous (merge them upstream)')
+        seen_ids.add(spec['id'])
+        seen_quantities.add(spec['quantity'])
 
 
 def _reject_cycles(graph):
@@ -278,18 +315,105 @@ def _reject_cycles(graph):
         visit(node, [])
 
 
-def validate_manifest(document):
-    """Return an independent normalized copy; reject typos and ambiguous contracts."""
-    _keys(document, ('schema_version', 'assessment_window', 'evidence', 'thresholds',
-                     'composition', 'input_expectations', 'gradient_uncertainties', 'notes', *V2_TOP_LEVEL), 'manifest')
-    if document.get('schema_version') not in ACCEPTED_MANIFEST_SCHEMAS:
+def _canonical_sha256(document):
+    return hashlib.sha256(json.dumps(document, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
+def _migration_record(document, raw_sha256):
+    """The migration history of a canonical (v3) manifest.
+
+    A raw v1 or v2 document is migrated by an explicit, listed set of steps; a canonical document that already
+    carries a record keeps it unchanged, which makes normalization idempotent.
+    """
+    if MIGRATION_KEY in document:
+        return copy.deepcopy(document[MIGRATION_KEY])             # structure already checked by the v3 schema
+    steps = []
+    if document['schema_version'] == MANIFEST_SCHEMA_V1:
+        steps += [f'{MANIFEST_SCHEMA_V1} -> {MANIFEST_SCHEMA_V2}: added empty run_identity, evidence_sources, '
+                  'resolved_inputs and events sections',
+                  'evidence usage derived from the v1 roles and independent_validation fields']
+    if document['schema_version'] in (MANIFEST_SCHEMA_V1, MANIFEST_SCHEMA_V2):
+        steps += [f'{MANIFEST_SCHEMA_V2} -> {MANIFEST_SCHEMA}: added empty sample_support, event_detectors, uncertainty '
+                  'and extensions sections',
+                  'declared events keep their legacy exclusion policy and take origin analyst_declaration']
+    return {'from': document['schema_version'], 'raw_sha256': raw_sha256 or _canonical_sha256(document), 'steps': steps}
+
+
+def validate_raw(document):
+    """Stages 1-2, without touching ``document``: finite numbers, declared version, structure and compatibility.
+
+    A document is judged against *its own* declared schema.  A v1 document may not use v2 fields and a v2 document
+    may not use v3 fields (or a migration record): it is migrated by this module, not extended in place.  Structure
+    comes from the packaged JSON Schema; the cross-field checks that follow are semantic, not structural.
+    """
+    if not isinstance(document, dict):
+        raise ValueError('manifest: expected an object')
+    reject_nonfinite(document, 'manifest')
+    version = document.get('schema_version')
+    if version not in ACCEPTED_MANIFEST_SCHEMAS:
         raise ValueError(f'manifest.schema_version must be one of {ACCEPTED_MANIFEST_SCHEMAS}')
-    version2 = document['schema_version'] == MANIFEST_SCHEMA
-    if not version2 and any(key in document for key in V2_TOP_LEVEL):
-        raise ValueError(f'manifest: {", ".join(k for k in V2_TOP_LEVEL if k in document)} need schema_version {MANIFEST_SCHEMA}')
+    newer = {MANIFEST_SCHEMA_V1: V2_TOP_LEVEL + V3_TOP_LEVEL + (MIGRATION_KEY,),
+             MANIFEST_SCHEMA_V2: V3_TOP_LEVEL + (MIGRATION_KEY,), MANIFEST_SCHEMA: ()}[version]
+    used = [key for key in newer if key in document]
+    if used:
+        raise ValueError(f'manifest: {", ".join(used)} are not part of schema {version}; declare {MANIFEST_SCHEMA} '
+                         '(an older document is migrated by this module, not by adding newer fields to it)')
+    validate_structure(document, SCHEMA_OF[version])
+
+
+def _resolve_references(manifest, base_dir):
+    """Add ``resolved_path`` next to each declared file reference; the declared ``path`` is kept as written.
+
+    Relative paths resolve against ``base_dir`` (the sidecar's directory), never the working directory, so a sidecar
+    means the same thing wherever it is run.  An already-resolved reference is left alone (idempotent).
+    """
+    if base_dir is None:
+        return
+    references = list(manifest['resolved_inputs'].get('inputs', [])) + list(manifest['uncertainty']['covariances'])
+    for item in references:
+        if 'resolved_path' not in item:
+            path = Path(item['path'])
+            item['resolved_path'] = str(path if path.is_absolute() else Path(base_dir) / path)
+
+
+def referenced_paths(manifest):
+    """Every file the evidence refers to (resolved where the sidecar location was known): protected inputs."""
+    paths = []
+    for item in list(manifest['resolved_inputs'].get('inputs', [])) + list(manifest['uncertainty']['covariances']):
+        paths.append(Path(item.get('resolved_path', item['path'])))
+    return paths
+
+
+def validate_resources(manifest):
+    """Stage 4, resource validation: covariance resources must exist and match their declared SHA-256.
+
+    A missing or substituted file is an error here, before any assessment, not a quiet ``not_assessed``.  Input files
+    declared under ``resolved_inputs`` are compared by the rules instead (their disagreement is a finding).
+    """
+    for spec in manifest['uncertainty']['covariances']:
+        path = Path(spec.get('resolved_path', spec['path']))
+        if not path.is_file():
+            raise ValueError(f'uncertainty.covariances[{spec["id"]}].path: {spec["path"]!r} is not a file '
+                             f'(resolved to {str(path)!r})')
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if digest != spec['sha256'].lower():
+            raise ValueError(f'uncertainty.covariances[{spec["id"]}]: sha256 {digest} of {str(path)!r} does not match '
+                             f'the declared {spec["sha256"]}')
+
+
+def validate_manifest(document, raw_sha256=None, base_dir=None):
+    """Return an independent canonical (v3) copy; reject typos and ambiguous contracts.
+
+    Pipeline: ``validate_raw`` (finite numbers, declared version, JSON Schema) -> migration to the canonical v3
+    representation with a migration record -> the semantic checks below (ordering, graph, units and numerical
+    constraints no schema can express).  Applying this to its own result changes nothing, and the caller's document
+    is never modified.  ``raw_sha256`` is the hash of the file the document was read from, when there is one;
+    ``base_dir`` is the directory file references resolve against (the sidecar's own).
+    """
+    validate_raw(document)
     result = copy.deepcopy(document)
+    result.pop('$schema', None)                       # an editor hint, not evidence
     window = result.setdefault('assessment_window', {})
-    _keys(window, ('time_min', 'time_max', 'rho_min', 'rho_max'), 'assessment_window')
     for key, value in window.items():
         _number(value, f'assessment_window.{key}')
     for prefix in ('time', 'rho'):
@@ -300,12 +424,7 @@ def validate_manifest(document):
         if key in window and not 0 <= window[key] <= 1:
             raise ValueError(f'assessment_window.{key}: expected normalized radius in [0, 1]')
     evidence = result.setdefault('evidence', {})
-    _keys(evidence, ROLES, 'evidence')
     for role, item in evidence.items():
-        _keys(item, ('origin', 'source', 'uncertainty', 'roles', 'reliability',
-                     'independent_validation', 'notes', *V2_EVIDENCE), 'evidence.' + role)
-        if not version2 and any(key in item for key in V2_EVIDENCE):
-            raise ValueError(f'evidence.{role}: {", ".join(k for k in V2_EVIDENCE if k in item)} need schema_version {MANIFEST_SCHEMA}')
         if item.get('origin', 'unknown') not in ORIGINS:
             raise ValueError(f'evidence.{role}: unsupported origin')
         if item.get('uncertainty', 'unknown') not in ('provided', 'unknown', 'not_applicable'):
@@ -327,22 +446,18 @@ def validate_manifest(document):
             usage.add('independent_validation')
         item['usage'] = sorted(usage)                       # one vocabulary downstream, whichever spelling was used
     thresholds = result.setdefault('thresholds', {})
-    _keys(thresholds, (*DEFAULT_THRESHOLDS, 'newton_iterations_warning', 'residual_limits'), 'thresholds')
     for key, default in DEFAULT_THRESHOLDS.items():
         thresholds.setdefault(key, default)
     for key, value in thresholds.items():
         if key != 'residual_limits':
             _number(value, 'thresholds.' + key, positive=True)
     limits = thresholds.setdefault('residual_limits', {})
-    _keys(limits, ('RESL2TE', 'RESL2TI', 'RESL2OMG'), 'thresholds.residual_limits')
     for name, spec in limits.items():
-        _keys(spec, ('limit', 'rationale'), 'residual_limits.' + name)
         _number(spec.get('limit'), name + '.limit', positive=True)
         if not isinstance(spec.get('rationale'), str) or not spec['rationale'].strip():
             raise ValueError(f'{name}: a residual threshold requires its normalization/rationale')
     comp = result.get('composition')
     if comp is not None:
-        _keys(comp, ('electron_density', 'species', 'complete', 'includes_fast_ions', 'source'), 'composition')
         for flag in ('complete', 'includes_fast_ions'):
             if flag in comp and not isinstance(comp[flag], bool):
                 raise ValueError(f'composition.{flag}: expected boolean')
@@ -355,7 +470,6 @@ def validate_manifest(document):
             raise ValueError('composition.species: expected a list')
         seen = set()
         for item in species:
-            _keys(item, ('density', 'charge', 'charge_variable'), 'composition.species')
             name = item.get('density')
             if not isinstance(name, str) or not name or name in seen:
                 raise ValueError('composition.species: density names must be nonempty and unique')
@@ -372,9 +486,6 @@ def validate_manifest(document):
     if not isinstance(expectations, list):
         raise ValueError('input_expectations: expected a list')
     for item in expectations:
-        _keys(item, ('name', 'expected', 'atol', 'rtol', 'reference', 'units', *V2_EXPECTATION), 'input_expectations')
-        if not version2 and any(key in item for key in V2_EXPECTATION):
-            raise ValueError(f'input_expectations: {", ".join(k for k in V2_EXPECTATION if k in item)} need schema_version {MANIFEST_SCHEMA}')
         _validate_reference_v2(item, 'input_expectations')
         if not all(isinstance(item.get(k), str) and item[k].strip() for k in ('name', 'reference', 'units')):
             raise ValueError('input_expectations need name, reference and native units (or "1")')
@@ -385,9 +496,7 @@ def validate_manifest(document):
             if item[key] < 0:
                 raise ValueError(f'{key}: expected a nonnegative tolerance')
     gradients = result.setdefault('gradient_uncertainties', {})
-    _keys(gradients, ('TE', 'TI'), 'gradient_uncertainties')
     for name, spec in gradients.items():
-        _keys(spec, ('sigma_variable', 'coordinate', 'method', 'source'), 'gradient_uncertainties.' + name)
         if spec.get('coordinate') != 'X' or spec.get('method') != 'numpy_gradient_edge_order_1':
             raise ValueError('gradient uncertainty must refer to d(profile)/dX using numpy_gradient_edge_order_1')
         if not all(isinstance(spec.get(k), str) and spec[k] for k in ('sigma_variable', 'source')):
@@ -395,25 +504,23 @@ def validate_manifest(document):
     if 'notes' in result and not isinstance(result['notes'], str):
         raise ValueError('notes must be text')
     _validate_v2_sections(result)
+    _resolve_references(result, base_dir)
+    result[MIGRATION_KEY] = _migration_record(document, raw_sha256)
+    result['schema_version'] = MANIFEST_SCHEMA
     return result
 
 
 def read_json(path):
-    """Strict JSON: duplicate keys and NaN/Infinity are rejected."""
-    def reject_constant(value):
-        raise ValueError(f'nonfinite JSON constant: {value}')
-
-    def unique_object(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f'duplicate JSON key: {key}')
-            result[key] = value
-        return result
-    return json.loads(Path(path).read_text(encoding='utf-8'), parse_constant=reject_constant,
-                      object_pairs_hook=unique_object)
+    """Strict JSON: duplicate keys, NaN/Infinity and numeric overflow (``1e999``) are rejected."""
+    return loads_strict(Path(path).read_text(encoding='utf-8'))
 
 
 def load_manifest(path=None):
-    document = {'schema_version': MANIFEST_SCHEMA} if path is None else read_json(path)
-    return validate_manifest(document)
+    """Read, validate and migrate an evidence sidecar; file references resolve against its directory."""
+    if path is None:
+        return validate_manifest({'schema_version': MANIFEST_SCHEMA})
+    path = Path(path)
+    manifest = validate_manifest(read_json(path), raw_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                                 base_dir=path.resolve().parent)
+    validate_resources(manifest)
+    return manifest

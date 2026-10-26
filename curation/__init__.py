@@ -1,12 +1,16 @@
 #!/usr/bin/python
-"""Read-only scientific screening of TRANSP inputs and output; no IMAS import."""
+"""Read-only TRANSP curation. It does not import IMAS and does not change inputs.
 
-__version__ = '0.2.0'
-# Report schema: v2 adds per-rule excluded/unassessed accounting, the event inventory, the run identity, the
-# resolved-input and evidence-dependency findings, and the manifest schema it was evaluated with.
-REPORT_SCHEMA = 'transp2imas.curation.report.v2'
-# Manifest schema: v2 is a superset of v1 (explicit evidence ids, parents and usage, applicability, overrides,
-# resolved inputs, events, run identity).  A v1 document stays valid and is evaluated as a v2 document without them.
-MANIFEST_SCHEMA = 'transp2imas.curation.inputs.v2'
+Schema identities (the documents are described by the offline JSON Schemas in ``curation/schemas``):
+
+* evidence sidecars ``inputs.v1`` and ``inputs.v2`` are still accepted and migrated to the canonical ``inputs.v3``;
+* reports are written as ``report.v3`` (v2 had no execution ledger, policy, registry or fingerprints).
+"""
+
+__version__ = '0.3.0'
+REPORT_SCHEMA_V2 = 'transp2imas.curation.report.v2'
+REPORT_SCHEMA = 'transp2imas.curation.report.v3'
 MANIFEST_SCHEMA_V1 = 'transp2imas.curation.inputs.v1'
-ACCEPTED_MANIFEST_SCHEMAS = (MANIFEST_SCHEMA_V1, MANIFEST_SCHEMA)
+MANIFEST_SCHEMA_V2 = 'transp2imas.curation.inputs.v2'
+MANIFEST_SCHEMA = 'transp2imas.curation.inputs.v3'
+ACCEPTED_MANIFEST_SCHEMAS = (MANIFEST_SCHEMA_V1, MANIFEST_SCHEMA_V2, MANIFEST_SCHEMA)

@@ -4,6 +4,32 @@ Notable changes to transp2imas are recorded here. Future entries and GitHub
 releases are managed automatically by Release Please from Conventional Commit
 messages.
 
+- Fix six curation gaps from the t2i4 review, each with a permanent regression test (`examples/verify_curation_gaps.py`):
+  a v1 sidecar now runs through load, engine and CLI (explicit migration record instead of a second validation that
+  rejected the migrated document); resolved controls are compared over atomic half-open intervals, so a runtime change
+  inside one declared interval is a mismatch and gaps are not a pass; evidence is covered only where its time
+  applicability meets the quantity's native clock, and a declared identity that contradicts the CDF authorizes nothing;
+  shared-resource aliases are found throughout the evidence ancestry, with resource selectors separating a shared
+  container from a shared measurement; declared events no longer rewrite raw integrity findings (the exclusion is a
+  separate counted policy record, and source-integrity rules cannot be excluded); and an unresolved array update
+  invalidates the elements it may affect. Behaviour differences and migration notes: `docs/curation/schema-migration.md`.
+- Replace the scalar TR.DAT reader of curation by an f90nml-based namelist adapter (source collection, syntax parsing and
+  state resolution kept apart) behind the unchanged `declared_timeline`: indexed state with actual Fortran indices, repeat
+  notation, slices, null entries, derived-type names, followed PT-template references with hashes and cycle/depth/root
+  checks, parser kind and version recorded, and a clearly reported scalar fallback. No TRANSP defaults or model-execution
+  semantics are inferred (`docs/curation/namelist-resolution.md`); `f90nml>=1.4` is declared.
+- Split the curation engine into registered, versioned rules with prerequisites, a policy (`--policy`) that selects rules
+  and screening parameters without changing findings, an execution ledger (executed, policy-disabled,
+  missing-prerequisite, execution error; a rule that raised exits 2), required-versus-optional coverage, explicit opt-in
+  plugins (`--plugin`) and separate evidence and assessment fingerprints. Add offline JSON Schemas (Draft 2020-12) for
+  evidence v1/v2/v3, pilot facts, policy and report v3, strict decoding of duplicate keys, nonfinite numbers and
+  overflow, resource references resolved beside the sidecar, and `curate.py --validate-only`
+  (`requirements-curation.txt`; `docs/curation/architecture.md`).
+- Extend events and uncertainty in curation: event origin, review state, timing uncertainty and support-aware padded
+  membership with exact assessed/excluded/unassessed counts, an optional abrupt-drop candidate detector (scores are
+  uncalibrated; no candidates is not evidence of an event-free plasma), and a bounded offline covariance capability
+  (fixed-grid `D C D^T` gradient propagation, seeded sampling, ratio statistics) wired in as an optional rule. Tested on
+  synthetic and analytical cases only, not against diagnostic data (`docs/curation/events.md`, `uncertainty.md`).
 - Extend curation to manifest/report schema v2 (v1 documents still load). Added: run identity checked against the CDF,
   an evidence dependency graph (ids, parents, usage) for lineage-based independence, applicability and reviewed
   overrides for evidence and campaign references, resolved-input comparison (code version, input-file SHA-256,

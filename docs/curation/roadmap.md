@@ -67,6 +67,41 @@ Acceptance: representative real runs plus deliberately incorrect source identiti
 valid missing-data cases, and independent expert-reviewed expected outcomes. A bare parser/test pass
 is not a valid scientific acceptance criterion.
 
+## Stage 1 extensions delivered after the t2i4 review
+
+Done, each with tests that do not depend on IMAS (`make verify-curation`) or, where a bundled input is required,
+strict fixture tests (`make verify-curation-fixtures`):
+
+- *Correctness gaps P0.1 to P0.6*: v1 sidecars through the whole CLI with an explicit migration record; resolved controls
+  compared over atomic half-open intervals; evidence time coverage on the quantity's native clock; shared-resource
+  aliases throughout ancestry with resource selectors; events separated from raw integrity findings; unresolved array
+  updates that invalidate the elements they may affect. See [schema-migration.md](schema-migration.md).
+- *Namelist adapter*: an f90nml-based adapter in three stages (source collection, syntax, state resolution) behind the
+  unchanged `declared_timeline`, with indexed state, repeats, slices, null entries and followed PT-template references.
+  See [namelist-resolution.md](namelist-resolution.md).
+- *Rules, policy and ledger*: the former single-class engine is a registry of versioned rules with prerequisites; a
+  policy selects rules and screening parameters; an execution ledger distinguishes executed, policy-disabled,
+  missing-prerequisite and errored rules. See [architecture.md](architecture.md).
+- *Versioned JSON Schemas* for evidence (v1/v2/v3), pilot facts, policy and report, offline, with an explicit migration
+  to the canonical v3 and a `--validate-only` mode that needs no CDF.
+- *Event catalog* with origin, padding, support-aware membership, exact accounting, review state, and one optional
+  abrupt-drop candidate detector. See [events.md](events.md).
+- *Bounded covariance capability*: fixed-grid `D C D^T` gradient propagation, sample generation and ratio statistics with
+  analytical tests, wired in as an optional rule. See [uncertainty.md](uncertainty.md).
+
+Still not done, and not claimed:
+
+- No real campaign evidence or independently reviewed expectation is bundled; the pilot tests mechanics only.
+- The detector and the covariance module are validated against synthetic traces and analytical results only, not against
+  diagnostic data. Detector scores are uncalibrated.
+- Cross-time and cross-diagnostic correlation and uncertain radial coordinates are not modeled; TRANSP-rerun ensembles
+  (tier 3 in uncertainty.md) do not exist here.
+- Defaults, omitted array bounds, preprocessing and model-execution semantics of TRANSP are not resolved; the adapter
+  reports declared state only. PT_SOLVER replace-versus-add semantics remain unverified.
+- Multidimensional element starts with several values, strided or bound-less sections, expression subscripts and
+  `include` execution are unresolved (they invalidate what they may affect).
+- f90nml is tested against 1.5.0 only; the `>=1.4` floor is declared but not exercised.
+
 ## Stage 2: uncertainty-aware transport products
 
 Implement correlated profile/gradient ensembles, systematic diagnostic shifts, equilibrium/radial

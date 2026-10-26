@@ -60,6 +60,14 @@ help:
 quick:
 	$(PYTHON) -m py_compile $(wildcard *.py)
 	$(PYTHON) verify_curation.py
+	$(PYTHON) verify_curation_gaps.py
+	$(PYTHON) verify_curation_rules.py
+	$(PYTHON) verify_curation_schema.py
+	$(PYTHON) verify_curation_events.py
+	$(PYTHON) verify_curation_detectors.py
+	$(PYTHON) verify_curation_uncertainty.py
+	$(PYTHON) verify_curation_gradient_covariance.py
+	$(PYTHON) verify_curation_namelist.py
 	$(PYTHON) verify_curation_pilot.py
 	$(PYTHON) verify_conversion_runner.py
 	$(PYTHON) verify_cocos_signs.py

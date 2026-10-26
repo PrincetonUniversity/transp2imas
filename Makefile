@@ -22,11 +22,14 @@ CURATION_TRDAT ?=
 CURATION_EVIDENCE ?=
 CURATION_PILOT ?=
 CURATION_DIR ?= $(CURDIR)/build/curation/$(basename $(notdir $(CDF)))
-PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not -path './build/*' | sort)
+# ./instructions is an external hand-off bundle (review evidence), not repository code
+PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not -path './build/*' -not -path './instructions/*' | sort)
+CURATION_TESTS := verify_curation verify_curation_gaps verify_curation_rules verify_curation_schema verify_curation_events \
+	verify_curation_detectors verify_curation_uncertainty verify_curation_gradient_covariance
 
 .DEFAULT_GOAL := help
 
-.PHONY: curate curate-pilot verify-curation verify-curation-pilot help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-readback verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
+.PHONY: curate curate-pilot curate-validate install-curation verify-curation verify-curation-pilot verify-curation-fixtures help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-readback verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
 
 help:
 	@echo "TRANSP-to-IMAS developer commands"
@@ -35,8 +38,10 @@ help:
 	@echo "  make install      Install requirements into the local environment"
 	@echo "  make convert      Convert CDF into OUTPUT_DIR (fresh HDF5 entry by default)"
 	@echo "  make test         Verify and convert both NSTX regression cases"
-	@echo "  make verify-curation  Run independent curation tests (no IMAS or real fixtures required)"
-	@echo "  make verify-curation-pilot  Run the pilot on the bundled NSTX and DIII-D cases (fixtures required)"
+	@echo "  make verify-curation  Run the independent curation tests (no IMAS, no real fixtures; needs requirements-curation.txt)"
+	@echo "  make install-curation  Install the curation-only requirements (no IMAS)"
+	@echo "  make curate-validate CURATION_EVIDENCE=e.json  Validate a sidecar without a CDF (structure, migration, semantics)"
+	@echo "  make verify-curation-fixtures  Namelist adapter and pilot on the bundled NSTX/DIII-D/ITER/C-Mod inputs (strict)"
 	@echo "  make curate-pilot CURATION_PILOT=facts.json  Curate CDF with analyst-supplied pilot facts"
 	@echo "  make curate       Screen CDF without changing it; optional CURATION_TRDAT/CURATION_EVIDENCE"
 	@echo "  make check        Enforce Python headers, compile-check Python, and run fast regressions"
@@ -197,7 +202,14 @@ clean:
 
 # Scientific screening is independent of conversion/database creation.
 verify-curation:
-	$(PYTHON) examples/verify_curation.py
+	@set -e; for test in $(CURATION_TESTS); do echo "== $$test"; $(PYTHON) examples/$$test.py; done
+
+install-curation:
+	$(PYTHON) -m pip install -r requirements-curation.txt
+
+# Real bundled inputs are required here; a missing fixture fails instead of skipping.
+verify-curation-fixtures: verify-curation-pilot
+	$(PYTHON) examples/verify_curation_namelist.py
 
 verify-curation-pilot:
 	$(PYTHON) examples/verify_curation_pilot.py
@@ -207,6 +219,10 @@ curate-pilot:
 	@test -n "$(CURATION_PILOT)" || { echo "set CURATION_PILOT=<facts.json>" >&2; exit 2; }
 	$(PYTHON) curate.py -i "$(CDF)" --output-dir "$(CURATION_DIR)" --pilot "$(CURATION_PILOT)" \
 		$(if $(CURATION_TRDAT),--trdat "$(CURATION_TRDAT)")
+
+curate-validate:
+	@test -n "$(CURATION_EVIDENCE)$(CURATION_PILOT)" || { echo "set CURATION_EVIDENCE=<e.json> or CURATION_PILOT=<facts.json>" >&2; exit 2; }
+	$(PYTHON) curate.py --validate-only $(if $(CURATION_EVIDENCE),--evidence "$(CURATION_EVIDENCE)") $(if $(CURATION_PILOT),--pilot "$(CURATION_PILOT)")
 
 curate:
 	$(PYTHON) curate.py -i "$(CDF)" --output-dir "$(CURATION_DIR)" \
