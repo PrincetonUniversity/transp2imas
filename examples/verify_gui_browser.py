@@ -119,7 +119,8 @@ def workflow(playwright, python, check, fast_ion_writer=None):
             for digit in '4321':
                 page.keyboard.type(digit)
                 page.wait_for_timeout(700)
-            check(page.input_value('input[aria-label="Run number"]') == '4321', f'digits were not kept in order: {page.input_value("input[aria-label=\"Run number\"]")}')
+            run_number = page.input_value('input[aria-label="Run number"]')
+            check(run_number == '4321', f'digits were not kept in order: {run_number}')
             check('4321' in page.inner_text('.plancol'), 'the plan does not show the typed run number')
             page.fill('input[aria-label="Run number"]', '')
             page.click('input[aria-label="Machine / database name"]')
