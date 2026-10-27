@@ -4,6 +4,29 @@ Notable changes to transp2imas are recorded here. Future entries and GitHub
 releases are managed automatically by Release Please from Conventional Commit
 messages.
 
+- Extend the workbench's Explore view: 80 recipes grouped by quantity (ion density, temperature and pressure per species,
+  momentum, heat/particle/momentum diffusivities and fluxes, sources, equilibrium profiles and B-field maps, fast-ion moments,
+  distribution sources, radiation, PF currents), the wall as an R,Z outline and overlay, flux-surface contours with a
+  chosen count, and fast-ion distribution-function plots (energy-pitch map, spectra, R,Z zone map) whose layout is verified
+  against the stored particle number and density profile.
+- Add a local web workbench (`python -m gui`, `make gui`). Reports view: curation and conversion reports (findings, rule
+  ledger, evidence lineage and time coverage, events, mask heat maps, parsed inputs, publication status, mapping journal).
+  Convert view (with `--enable-run`): choose the CDF, backend, DD version, run, occurrence, IDSs and mapping options in a form
+  built from `convert.py`'s own parser, see the exact command and the target entry computed as the converter computes it, run
+  it with a live log and cancel, with an overwrite guard that needs the existing entry's path typed back. Explore view: plot
+  converted HDF5 entries (curated recipes and a node browser: profiles with a time slider, play, overlay and log axis, time
+  traces, flux map with boundary, comparison of two entries, PNG/SVG/CSV export), read in a worker subprocess. The default
+  stays read-only; the server binds to loopback with a token, POSTs need a header token, JSON and the viewer's own origin, and
+  only `convert.py` is ever started, from a validated argument list. `utilities.build_parser` exposes the converter's parser.
+  The CDF being converted has no size cap (only report files the viewer reads into memory do), `--imas-python` accepts a
+  virtual-environment directory, the page says why Run is disabled, the views are ordered Convert, Explore, Reports, and the
+  converter's `--lenient-mapping` is labelled "Skip variables that cannot be mapped". The form no longer rebuilds while you type
+  (a rebuilt form put each digit of a run number on the left), an existing entry can be overwritten with a deliberate
+  confirmation (path typed or filled in) or avoided with the next free run number, and Explore re-reads an entry that was
+  overwritten meanwhile. Real overwrite and extend behaviour of the converter (new entry deletes the old contents; extending
+  keeps other IDSs) is tested.
+  Tested by `examples/verify_gui.py`, `verify_gui_convert.py`, `verify_gui_plots.py` (real conversion read back and compared with
+  the source CDF) and an opt-in Playwright run of the whole workflow (`make verify-gui-browser`); see `docs/gui.md`.
 - Fix six curation gaps from the t2i4 review, each with a permanent regression test (`examples/verify_curation_gaps.py`):
   a v1 sidecar now runs through load, engine and CLI (explicit migration record instead of a second validation that
   rejected the migrated document); resolved controls are compared over atomic half-open intervals, so a runtime change

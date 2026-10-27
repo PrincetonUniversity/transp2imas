@@ -2,6 +2,7 @@
 """Read-only TRANSP data curation CLI. Does not import IMAS or run a converter."""
 
 import argparse
+from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 import sys
 
@@ -68,7 +69,11 @@ def main(argv=None):
         report.source['evidence_file'] = (None if given is None else
                                          {'path': str(given.resolve()), 'sha256': digest_file(given),
                                           'kind': 'pilot_facts' if args.pilot else 'evidence_sidecar'})
-        report.source['converter_version'] = (Path(__file__).parent / 'version.txt').read_text().strip()
+        try:
+            installed_version = package_version('transp2imas')
+        except PackageNotFoundError:
+            installed_version = (Path(__file__).parent / 'version.txt').read_text().strip()
+        report.source['converter_version'] = installed_version
         identity = code_identity()                          # hashed once per invocation, recursively
         report.source['code_identity'] = identity
         report.source['curation_module_sha256'] = identity['modules']

@@ -21,6 +21,9 @@ PF_ACTIVE_GEOMETRY ?=
 CURATION_TRDAT ?=
 CURATION_EVIDENCE ?=
 CURATION_PILOT ?=
+GUI_ROOT ?= $(CURDIR)/build
+GUI_FLAGS ?=
+PLAYWRIGHT_PYTHON ?=
 CURATION_DIR ?= $(CURDIR)/build/curation/$(basename $(notdir $(CDF)))
 # ./instructions is an external hand-off bundle (review evidence), not repository code
 PYTHON_FILES := $(shell find . -type f -name '*.py' -not -path './.venv/*' -not -path './build/*' -not -path './instructions/*' | sort)
@@ -29,7 +32,7 @@ CURATION_TESTS := verify_curation verify_curation_gaps verify_curation_rules ver
 
 .DEFAULT_GOAL := help
 
-.PHONY: curate curate-pilot curate-validate install-curation verify-curation verify-curation-pilot verify-curation-fixtures help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-readback verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
+.PHONY: gui verify-gui verify-gui-browser curate curate-pilot curate-validate install-curation verify-curation verify-curation-pilot verify-curation-fixtures help venv install convert check check-shebang check-literals check-exceptions test verify verify-all verify-examples verify-deep verify-waves verify-neoclassical verify-neutrals verify-theory verify-mmm verify-pt-solver verify-sawteeth verify-readback verify-nubeam-fi verify-pf-passive verify-pf-active verify-isolver verify-core-profiles verify-equilibrium verify-dd verify-end-to-end verify-end-to-end-plan audit inspect plot-ids fortran clean
 
 help:
 	@echo "TRANSP-to-IMAS developer commands"
@@ -39,6 +42,8 @@ help:
 	@echo "  make convert      Convert CDF into OUTPUT_DIR (fresh HDF5 entry by default)"
 	@echo "  make test         Verify and convert both NSTX regression cases"
 	@echo "  make verify-curation  Run the independent curation tests (no IMAS, no real fixtures; needs requirements-curation.txt)"
+	@echo "  make gui [GUI_ROOT=dir] [GUI_FLAGS=--enable-run]  Serve the workbench on localhost (read-only unless --enable-run)"
+	@echo "  make verify-gui  Test the workbench (viewer, conversion interface, plotting); verify-gui-browser PLAYWRIGHT_PYTHON=... drives it in Chromium"
 	@echo "  make install-curation  Install the curation-only requirements (no IMAS)"
 	@echo "  make curate-validate CURATION_EVIDENCE=e.json  Validate a sidecar without a CDF (structure, migration, semantics)"
 	@echo "  make verify-curation-fixtures  Namelist adapter and pilot on the bundled NSTX/DIII-D/ITER/C-Mod inputs (strict)"
@@ -83,7 +88,7 @@ venv:
 	$(VENV_PYTHON) -m pip install --upgrade pip setuptools wheel
 
 install: venv
-	$(VENV_PYTHON) -m pip install -r requirements.txt
+	$(VENV_PYTHON) -m pip install -e .
 
 convert:
 	@test -f "$(CDF)" || { echo "CDF not found: $(CDF)" >&2; exit 1; }
@@ -203,6 +208,22 @@ clean:
 # Scientific screening is independent of conversion/database creation.
 verify-curation:
 	@set -e; for test in $(CURATION_TESTS); do echo "== $$test"; $(PYTHON) examples/$$test.py; done
+
+# The workbench binds to the loopback interface and prints a tokenized URL (use an SSH tunnel on a remote host).
+# Read-only report viewer by default; GUI_FLAGS="--enable-run --imas-python /path/to/python" lets it start conversions.
+gui:
+	$(PYTHON) -m gui --root "$(GUI_ROOT)" $(GUI_FLAGS)
+
+# The plotting tests convert the bundled NSTX case for real and need IMAS-Python (they are skipped, not passed, without it).
+verify-gui:
+	$(PYTHON) examples/verify_gui.py
+	$(PYTHON) examples/verify_gui_convert.py
+	$(PYTHON) examples/verify_gui_plots.py
+
+# Opt-in: needs Playwright with a Chromium build and IMAS-Python in the server interpreter; converts the NSTX case for real.
+verify-gui-browser:
+	@test -n "$(PLAYWRIGHT_PYTHON)" || { echo "set PLAYWRIGHT_PYTHON=<python with playwright installed>" >&2; exit 2; }
+	"$(PLAYWRIGHT_PYTHON)" examples/verify_gui_browser.py --server-python "$(shell command -v $(PYTHON))"
 
 install-curation:
 	$(PYTHON) -m pip install -r requirements-curation.txt

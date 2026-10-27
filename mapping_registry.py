@@ -8,10 +8,15 @@ a CDF are in ``examples/verify_mapping_registry.py`` and receive those as argume
 
 import fnmatch
 from pathlib import Path
+import sysconfig
 
 import yaml
 
 REGISTRY_PATH = Path(__file__).resolve().parent / 'mapping_registry.yaml'
+if not REGISTRY_PATH.is_file():
+    # Wheels install this project-level resource in the interpreter's data
+    # directory. Source checkouts and editable installs use the adjacent file.
+    REGISTRY_PATH = Path(sysconfig.get_path('data')) / 'mapping_registry.yaml'
 
 KINDS = ('direct_typed', 'derived_typed', 'xml_only', 'input_consumed', 'deferred')
 TYPED_KINDS = ('direct_typed', 'derived_typed')
