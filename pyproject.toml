@@ -1,0 +1,111 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transp2imas"
+dynamic = ["version"]
+description = "Convert TRANSP simulation outputs to IMAS IDSs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "TRANSP2IMAS contributors" },
+]
+dependencies = [
+  "numpy",
+  "scipy",
+  "netCDF4",
+  "f90nml>=1.4",
+  "matplotlib",
+  "PyYAML",
+  "imas-python",
+  "jsonschema>=4.18,<5",
+  "referencing>=0.30",
+]
+
+[project.scripts]
+transp2imas = "convert:main"
+transp2imas-curate = "curate:main"
+transp2imas-gui = "gui.__main__:main"
+
+[tool.setuptools]
+include-package-data = true
+py-modules = [
+  "atoms_class",
+  "cocos_signs",
+  "code_provenance",
+  "contour_lines",
+  "conversion_context",
+  "conversion_plan",
+  "conversion_provenance",
+  "convert",
+  "curate",
+  "dd_adapter",
+  "fortran_literals",
+  "grid_services",
+  "ids_assignment",
+  "ids_identity",
+  "imas_class",
+  "imas_core_profiles",
+  "imas_core_sources",
+  "imas_core_transport",
+  "imas_dataset_fair",
+  "imas_distribution_sources",
+  "imas_distributions",
+  "imas_ec_launchers",
+  "imas_edge_sources",
+  "imas_equilibrium",
+  "imas_ic_antennas",
+  "imas_lh_antennas",
+  "imas_nbi",
+  "imas_pf_active",
+  "imas_pf_passive",
+  "imas_radiation",
+  "imas_sawteeth",
+  "imas_store",
+  "imas_summary",
+  "imas_tf",
+  "imas_transport_solver_numerics",
+  "imas_wall",
+  "imas_waves",
+  "imas_workflow",
+  "input_provenance",
+  "mapping_registry",
+  "mapping_status",
+  "name_patterns",
+  "namelist_reader",
+  "nc2imas",
+  "netcdf_class",
+  "neutral_profiles_mapping",
+  "nubeam_fbm",
+  "nubeam_fi",
+  "nubeam_outputs",
+  "pf_active_mapping",
+  "pf_passive_mapping",
+  "plasma_betas",
+  "plotter",
+  "pt_solver_diagnostics",
+  "pt_solver_regions",
+  "radial_interpolation",
+  "sawteeth_mapping",
+  "theory_transport_mapping",
+  "transp_acfile",
+  "utilities",
+  "writer_base",
+]
+
+[tool.setuptools.dynamic]
+version = { file = ["version.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["curation", "curation.*", "gui", "gui.*"]
+exclude = ["examples", "examples.*", "transp2imas-review", "transp2imas-review.*"]
+
+[tool.setuptools.package-data]
+curation = ["schemas/*.json"]
+gui = ["static/*.html", "static/*.js", "static/*.css"]
+
+[tool.setuptools.data-files]
+"." = ["mapping_registry.yaml"]

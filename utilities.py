@@ -156,7 +156,8 @@ def profile_it(funct):
     return func
 
 
-def get_args(argv=None):
+def build_parser():
+    """The converter's command-line parser, without parsing anything (the GUI derives its form from it)."""
     desc = f' (To run all CDF files in <dir_path> and its subdirs: -i all -d <dir_path>)'
     parser = argparse.ArgumentParser(description='Convert TRANSP output CDF to IMAS IDS' + desc)
     parser.add_argument('-i', '--input-cdf', type=str,
@@ -202,7 +203,11 @@ def get_args(argv=None):
     parser.add_argument('-v', '--verbose', action='count', default=0, help='increase output verbosity')
     parser.add_argument("-l", "--log", choices=['debug','info','warn','error','critical'],
         help="Provide logging level")
+    return parser
 
+
+def get_args(argv=None):
+    parser = build_parser()
     args = parser.parse_args(argv[1:] if argv is not None else None)
     mapping_status.set_strict(not args.lenient_mapping)
 

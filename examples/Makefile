@@ -69,6 +69,9 @@ quick:
 	$(PYTHON) verify_curation_gradient_covariance.py
 	$(PYTHON) verify_curation_namelist.py
 	$(PYTHON) verify_curation_pilot.py
+	$(PYTHON) verify_gui.py
+	$(PYTHON) verify_gui_convert.py
+	$(PYTHON) verify_gui_plots.py
 	$(PYTHON) verify_conversion_runner.py
 	$(PYTHON) verify_cocos_signs.py
 	$(PYTHON) verify_code_provenance.py

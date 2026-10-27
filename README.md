@@ -13,6 +13,16 @@ make install
 source .venv/bin/activate
 ```
 
+To install into an already active environment (including the command-line
+entry points), use:
+
+```bash
+python -m pip install .
+```
+
+For development, use `python -m pip install -e .` so edits in the checkout are
+immediately available in that environment.
+
 Alternatively, activate an existing IMAS-Python environment. On systems with an old IMAS Access Layer in `PYTHONPATH`, remove the conflicting setting before running the converter:
 
 ```bash
@@ -81,6 +91,10 @@ unassessed; a screening pass is not scientific certification. Curation needs no 
 `pip install -r requirements-curation.txt`; check a sidecar without a CDF with
 `python3 curate.py --validate-only --evidence my-evidence.json`, or run a rule subset with `--policy`.
 See [curation guide](docs/curation/README.md).
+
+A local web workbench reads curation and conversion reports and, with `--enable-run`, lets you choose a CDF, the IMAS
+backend, Data Dictionary version and IDSs, preview and run the conversion with a live log, and plot the converted data
+(`python3 -m gui --root build`); see [the workbench](docs/gui.md).
 
 ## Repository layout and documentation
 

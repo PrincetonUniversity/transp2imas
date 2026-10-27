@@ -64,3 +64,4 @@ historical development milestones, not public semantic versions.
 - [Curation scientific policy](curation/scientific-policy.md) -- missing data, guardrails, model-semantics status and publication reporting.
 - [Converter input contracts](conversion-contracts.md) -- namelist values, profile shape, missing data, NBI species and torque.
 - [Curation architecture](curation/architecture.md), [schema migration](curation/schema-migration.md), [events](curation/events.md), [namelist resolution](curation/namelist-resolution.md), [uncertainty](curation/uncertainty.md) -- the rule/policy/schema structure of the standalone curation package.
+- [Workbench (GUI)](gui.md) -- a local web page to read curation and conversion reports, run conversions with a guarded command preview, and plot converted IMAS data: views, security model, tests and what is not built yet.

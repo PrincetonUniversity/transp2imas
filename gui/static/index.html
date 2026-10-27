@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TRANSP2IMAS workbench</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>TRANSP2IMAS workbench</h1>
+    <span id="mode-badge" class="pill readonly">read-only</span>
+    <nav id="views" class="views" aria-label="Views"></nav>
+    <div id="reportbar" class="reportbar">
+      <label class="picker">Report
+        <select id="report-select" aria-label="Report"></select>
+      </label>
+      <button id="rescan" type="button">Rescan</button>
+      <form id="open-form" class="open">
+        <input id="open-path" type="text" placeholder="path to curation.json or a conversion report" aria-label="Report path">
+        <button type="submit">Open</button>
+      </form>
+    </div>
+  </header>
+  <div id="notices" class="notices" role="note"></div>
+  <nav id="tabs" class="tabs" role="tablist"></nav>
+  <main id="view" tabindex="-1"><p class="empty">Choose a report above.</p></main>
+  <footer class="foot"><span id="roots"></span></footer>
+  <script src="/static/core.js"></script>
+  <script src="/static/charts.js"></script>
+  <script src="/static/app.js"></script>
+  <script src="/static/convert.js"></script>
+  <script src="/static/explore.js"></script>
+</body>
+</html>

@@ -106,7 +106,8 @@ def do_convert(argvs):
     return journal.data
 
 
-if __name__ == '__main__':
+def main():
+    """Command-line entry point for installed and source-tree use."""
     argv = sys.argv
     indices = [i for i, value in enumerate(argv)
                if value == 'all' and i > 0 and argv[i - 1] in ('-i', '--input-cdf')]
@@ -129,3 +130,8 @@ if __name__ == '__main__':
                     args[j + 1] = str(dest.with_name(dest.stem + '-' + Path(file).stem + dest.suffix))
                     break
             do_convert(args)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
