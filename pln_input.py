@@ -9,7 +9,6 @@ from pathlib import Path
 import re
 
 import numpy as np
-from netCDF4 import Dataset
 
 from mapping_status import MappingLedger, RecordingDataset
 
@@ -172,6 +171,11 @@ class PlnInput:
 
     def _read_cdf_schema(self):
         """Use a matching CDF's declarations to label YF columns when TF.PLN is absent."""
+        # Import NetCDF support only for the optional CDF schema fallback.
+        # Importing nc2imas or reading a self-describing TF.PLN must not make
+        # the NetCDF package an unconditional dependency.
+        from netCDF4 import Dataset
+
         profiles = {}
         scalar_names = []
         schema = {}
