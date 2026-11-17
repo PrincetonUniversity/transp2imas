@@ -602,7 +602,7 @@ class imas_equilibrium(IdsWriter):
         eqm.ids_properties.homogeneous_time = 1
         # All equilibrium time slices and 1-D/2-D profiles use TIME3.
         # Scalars read from TIME above were explicitly interpolated to TIME3.
-        eqm.time.resize(ntimep)
+        eqm.time.resize(ntimep, refcheck=False)
         eqm.time[:] = timep
         # j_parallel and rho_tor of this IDS are defined with this IDS's vacuum_toroidal_field/b0.
         self.fill.fill_vac_tor_field(eqm)
@@ -797,7 +797,7 @@ class imas_equilibrium(IdsWriter):
             self.fill.fill_data(prof2.grid.dim2, zgrid, ind=it, name='zgrid')
 
             if self.fill.is_valid(rgrid, zgrid, ind=it, name='grid') and self.fill.is_valid(psirz, name='prirz'):
-                prof2.psi.resize((nr, nz))
+                prof2.psi.resize((nr, nz), refcheck=False)
                 # PSIRZ is relative to the magnetic axis; profiles_1d/psi and psi_magnetic_axis are
                 # absolute, so shift by the axis value to keep one reference in the IDS.  The boundary
                 # was traced on the relative field above.
@@ -821,16 +821,16 @@ class imas_equilibrium(IdsWriter):
                 b_r = self.signs.poloidal_field_sign * bfield[0]
                 b_phi = bt_sign * bfield[1]
                 b_z = self.signs.poloidal_field_sign * bfield[2]
-                prof2.b_field_r.resize((nr, nz))
+                prof2.b_field_r.resize((nr, nz), refcheck=False)
                 prof2.b_field_r = b_r.T
                 # DD3.39 uses b_field_tor; DD4.1.1 uses b_field_phi.
                 if self.dd.dd_at_least(3, 42, 0):
-                    prof2.b_field_phi.resize((nr, nz))
+                    prof2.b_field_phi.resize((nr, nz), refcheck=False)
                     prof2.b_field_phi = b_phi.T
                 else:
-                    prof2.b_field_tor.resize((nr, nz))
+                    prof2.b_field_tor.resize((nr, nz), refcheck=False)
                     prof2.b_field_tor = b_phi.T
-                prof2.b_field_z.resize((nr, nz))
+                prof2.b_field_z.resize((nr, nz), refcheck=False)
                 prof2.b_field_z = b_z.T
                 if it==ntimep-1:
                     self.logger.info(f't {it}: wrote B_FIELD {bfield.shape}')
@@ -850,10 +850,10 @@ class imas_equilibrium(IdsWriter):
                self.fill.fill_data(coord.grid.dim1, coord_xb, ind=it, name='grid_r')
                #self.fill.fill_data(coord.grid.dim2, self.inv_grid_theta, name='grid_theta')
                self.fill.fill_data(coord.grid.dim2, inv_theta, name='grid_theta')
-               coord.r.resize(ncoord_xb, ntheta)
+               coord.r.resize(ncoord_xb, ntheta, refcheck=False)
                if self.fill.is_valid(rsurf):
                   coord.r = rsurf
-               coord.z.resize(ncoord_xb, ntheta)
+               coord.z.resize(ncoord_xb, ntheta, refcheck=False)
                if self.fill.is_valid(ysurf):
                   coord.z = ysurf
 

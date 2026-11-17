@@ -63,7 +63,7 @@ class imas_summary(IdsWriter):
 
         sid.ids_properties.homogeneous_time = 1
         times = np.asarray(self.grid.timesc, dtype=np.float64)
-        sid.time.resize(len(times))
+        sid.time.resize(len(times), refcheck=False)
         sid.time[:] = times
 
         # DD4.1+ dataset/simulation metadata. Do not fabricate experimental

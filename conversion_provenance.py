@@ -70,7 +70,17 @@ class ProvenanceRecorder:
         source = self.source
         if self._file_records is not None:
             return list(self._file_records)
-        candidates = [('TRANSP CDF', source.ncfile)]
+        if getattr(source, 'input_format', 'netcdf') == 'pln':
+            prefix = source.ncfile[:-6]
+            candidates = [('TRANSP XF.PLN', source.ncfile), ('TRANSP YF.PLN', prefix + 'YF.PLN')]
+            pln_input = getattr(source, '_pln_input', None)
+            if pln_input is not None and pln_input.tf_path.is_file():
+                candidates.append(('TRANSP TF.PLN', str(pln_input.tf_path)))
+            schema_cdf = getattr(pln_input, 'cdf_path', None)
+            if schema_cdf:
+                candidates.append(('TRANSP CDF schema', str(schema_cdf)))
+        else:
+            candidates = [('TRANSP CDF', source.ncfile)]
         if source.nml_name:
             candidates.append(('TRANSP TR.DAT', source.nml_name))
         # Include resolved model/template files when present, up to the DD cap.
@@ -132,17 +142,22 @@ class ProvenanceRecorder:
                 metadata[key] = None
         self._code_parameters_xml = build_code_parameters_xml(
             dd_version=source.dd_version, signs=source.signs, device=source.device, shot=source.shot,
-            imas_run=source.run, occurrence=source.occur, source_cdf=source.ncfile,
+            imas_run=source.run, occurrence=source.occur,
+            source_cdf=source.ncfile if getattr(source, 'input_format', 'netcdf') == 'netcdf' else '',
+            source_format=getattr(source, 'input_format', 'netcdf'), source_input=source.ncfile,
             converter_version=self.converter_version, metadata=metadata, inventory=self.input_inventory())
         return self._code_parameters_xml
 
     def fill_code_properties(self, ids):
         """Fill common code provenance, if this IDS contains a code node."""
+        source = self.source
         if not hasattr(ids, 'code'):
             return ids
         ids.code.name = 'transp2imas'
         if hasattr(ids.code, 'description'):
-            ids.code.description = 'TRANSP CDF to IMAS converter'
+            ids.code.description = ('TRANSP native PLN to IMAS converter'
+                                    if getattr(source, 'input_format', 'netcdf') == 'pln'
+                                    else 'TRANSP CDF to IMAS converter')
         if hasattr(ids.code, 'version'):
             ids.code.version = self.converter_version
         if hasattr(ids.code, 'repository'):

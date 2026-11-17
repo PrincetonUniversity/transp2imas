@@ -198,7 +198,7 @@ class imas_edge_sources(IdsWriter):
         q.grid_index = self.GRID_INDEX
         q.grid_subset_index = self.GRID_SUBSET_INDEX
         data = sign * np.asarray(values[it], dtype=np.float64)
-        q.values.resize(len(data))
+        q.values.resize(len(data), refcheck=False)
         q.values[:] = data
         return True
 
@@ -219,7 +219,7 @@ class imas_edge_sources(IdsWriter):
         q.grid_subset_index = self.GRID_SUBSET_INDEX
         data = sign * np.asarray(values[it], dtype=np.float64)
         arr = getattr(q, field)
-        arr.resize(len(data))
+        arr.resize(len(data), refcheck=False)
         arr[:] = data
         return True
 
