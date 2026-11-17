@@ -2,6 +2,15 @@
 
 **TRANSP → IMAS converter** for transporting TRANSP NetCDF (`<runid>.CDF`) results into IMAS Interface Data Structures (IDSs). When available, the matching `<runid>TR.DAT`, PT_SOLVER namelists, and other referenced model inputs provide model configuration and provenance. The converter supports IMAS Data Dictionary 3.x/4.x families and HDF5 and MDSplus backends.
 
+Native TRANSP plotting output is also supported from `<runid>YF.PLN` and `<runid>XF.PLN`, with `<runid>TF.PLN` preferred for variable labels. If TF.PLN is absent, a matching `<runid>.CDF` supplies the variable schema. NetCDF remains the default input format. Select native input and its time scope explicitly:
+
+```sh
+python3 convert.py -i /path/to/141633P26XF.PLN --input-format pln --pln-time-selection last -m NSTU -new
+python3 convert.py -i /path/to/141633P26XF.PLN --input-format pln --pln-time-selection all -m NSTU -new
+```
+
+The GUI offers the same input-format and `last`/`all` controls. The native reader indexes XF.PLN on disk and loads profile arrays only when a selected IDS writer requests them.
+
 ## Requirements and setup
 
 Python 3.10+ with IMAS-Python, NumPy, SciPy, netCDF4 and f90nml. See [requirements.txt](requirements.txt) and [setup details](docs/legacy-usage.md).
