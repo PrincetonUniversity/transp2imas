@@ -23,15 +23,14 @@ BACKENDS = ('HDF5', 'HDF', 'MDS', 'MDSPLUS')
 DEFAULT_BACKEND = 'HDF5'                      # the converter's own default is MDS; the form always sends one explicitly
 DD_VERSION = re.compile(r'^\d+\.\d+\.\d+$')
 MACHINE = re.compile(r'^[A-Za-z0-9_.-]{1,32}$')
-INPUT_SUFFIXES = ('.cdf', '.pln')
+CDF_SUFFIXES = ('.cdf',)
 JSON_SUFFIXES = ('.json',)
 CHOICES = {'ip_direction': ('auto', 'ccw', 'cw'), 'bt_direction': ('auto', 'ccw', 'cw'), 'moments': ('yes', 'no'),
            'ec_nml_launch': ('yes', 'no'), 'log': ('debug', 'info', 'warn', 'error', 'critical')}
 # parser dest -> how the GUI treats it.  'managed' options are set by the GUI itself (never taken from the form).
-MANAGED = {'input_cdf': 'chosen with the TRANSP input picker', 'input_dir': 'batch conversion (-i all -d) is not offered',
+MANAGED = {'input_cdf': 'chosen with the CDF picker', 'input_dir': 'batch conversion (-i all -d) is not offered',
            'user': 'database location is chosen in the Database section', 'report_json': 'always written into the job directory'}
-EXPOSED = ('backend', 'run', 'new_db', 'occur', 'machine', 'input_format', 'pln_time_selection',
-           'ip_direction', 'bt_direction', 'dd_version',
+EXPOSED = ('backend', 'run', 'new_db', 'occur', 'machine', 'ip_direction', 'bt_direction', 'dd_version',
            'pf_passive_geometry', 'pf_active_geometry', 'ids', 'lenient_mapping', 'moments', 'nzones', 'ec_nml_launch',
            'debug', 'debug_max', 'verbose', 'log')
 DD_CHOICES = ('auto', '4.1.1', '3.39.0')
@@ -122,31 +121,26 @@ def _flag(value, field, errors):
     return False
 
 
-def identify(input_path, machine_override=None, input_format='netcdf'):
-    """Return machine, shot, run and run id from CDF metadata or a native PLN file name."""
+def identify(cdf_path, machine_override=None):
+    """``(machine, shot, run, rid)`` as the converter derives them: ``-m`` or the CDF ``device``; the CDF ``shot``."""
+    from curation.source import open_cdf
     try:
-        run_name = str(input_path)
-        if input_format == 'pln':
-            if not Path(run_name).name.upper().endswith('XF.PLN'):
-                raise ValueError('choose the run XF.PLN file')
-            run_name = str(Path(run_name).with_name(Path(run_name).name[:-6]))
-        runno, shot, rid = utilities.find_runid_shot_code(run_name)
+        runno, shot, rid = utilities.find_runid_shot_code(str(cdf_path))
     except ValueError:
-        raise PlanError([{'field': 'cdf', 'message': f'the file name {Path(input_path).name!r} does not give a shot and run id'}])
+        raise PlanError([{'field': 'cdf', 'message': f'the file name {Path(cdf_path).name!r} does not give a shot and run id '
+                          '(TRANSP names look like 141711Y05.CDF)'}])
     device = None
-    if input_format == 'netcdf':
-        from curation.source import open_cdf
-        try:
-            with open_cdf(input_path) as source:
-                device = source.global_attribute('device')
-                attribute = source.global_attribute('shot')
-                if isinstance(attribute, int):
-                    shot = attribute
-        except (OSError, ValueError, TypeError, RuntimeError, ImportError) as exc:
-            raise PlanError([{'field': 'cdf', 'message': f'cannot read the CDF: {exc}'}])
+    try:
+        with open_cdf(cdf_path) as source:
+            device = source.global_attribute('device')
+            attribute = source.global_attribute('shot')
+            if isinstance(attribute, int):
+                shot = attribute
+    except (OSError, ValueError, TypeError, RuntimeError, ImportError) as exc:
+        raise PlanError([{'field': 'cdf', 'message': f'cannot read the CDF: {exc}'}])
     machine = machine_override or device
     if not machine:
-        raise PlanError([{'field': 'machine', 'message': 'the input file does not identify the machine; give a machine name'}])
+        raise PlanError([{'field': 'machine', 'message': 'the CDF does not name its device; give a machine name'}])
     return machine, shot, runno, rid
 
 
@@ -206,21 +200,9 @@ def validate(request, config, report_json='<job directory>/conversion-report.jso
     unknown = sorted(set(options) - set(EXPOSED))
     if unknown:
         errors.append({'field': 'options', 'message': f'unknown or unmanaged option(s): {", ".join(unknown)}'})
-    input_format = _choice(options.get('input_format') or 'netcdf', 'input_format', errors, ('netcdf', 'pln')) or 'netcdf'
-    pln_time_selection = _choice(options.get('pln_time_selection') or 'all', 'pln_time_selection', errors, ('last', 'all')) or 'all'
     cdf = None
     try:
-        cdf = browse.resolve(config.input_roots, str((request or {}).get('cdf') or ''), INPUT_SUFFIXES, max_bytes=None)
-        if input_format == 'pln' and not cdf.name.upper().endswith('XF.PLN'):
-            raise browse.AccessError('native TRANSP input must be the run XF.PLN file')
-        if input_format == 'pln':
-            prefix = cdf.name[:-6]
-            browse.resolve(config.input_roots, str(cdf.with_name(prefix + 'YF.PLN')), ('.pln',), max_bytes=None)
-            tf_path = cdf.with_name(prefix + 'TF.PLN')
-            if not tf_path.is_file():
-                browse.resolve(config.input_roots, str(cdf.with_name(prefix + '.CDF')), ('.cdf',), max_bytes=None)
-        if input_format == 'netcdf' and cdf.suffix.lower() != '.cdf':
-            raise browse.AccessError('NetCDF input must be a .CDF file')
+        cdf = browse.resolve(config.input_roots, str((request or {}).get('cdf') or ''), CDF_SUFFIXES, max_bytes=None)   # no size cap on TRANSP output
     except browse.AccessError as exc:
         errors.append({'field': 'cdf', 'message': str(exc)})
 
@@ -269,7 +251,7 @@ def validate(request, config, report_json='<job directory>/conversion-report.jso
     target = None
     if cdf is not None and not any(e['field'] in ('cdf', 'machine') for e in errors):
         try:
-            machine, shot, default_run, rid = identify(cdf, machine_override, input_format)
+            machine, shot, default_run, rid = identify(cdf, machine_override)
         except PlanError as exc:
             errors.extend(exc.errors)
     if root is not None and machine and shot is not None:
@@ -307,9 +289,7 @@ def validate(request, config, report_json='<job directory>/conversion-report.jso
     if errors:
         raise PlanError(errors)
 
-    argv = ['-i', str(cdf), '--input-format', input_format, '-b', backend]
-    if input_format == 'pln':
-        argv += ['--pln-time-selection', pln_time_selection]
+    argv = ['-i', str(cdf), '-b', backend]
     if run:
         argv += ['-r', str(run)]
     if occur:
@@ -350,8 +330,7 @@ def validate(request, config, report_json='<job directory>/conversion-report.jso
     needs = bool(target['exists'] or target['exists_unknown'])
     return {'argv': argv, 'display': shlex.join(['python', 'convert.py', *argv]), 'target': target, 'warnings': warnings,
             'needs_confirmation': needs, 'confirm_phrase': target['primary'] if needs else None,
-            'selected_ids': ids or list(conversion_plan.WRITER_ORDER), 'cdf': str(cdf),
-            'input_format': input_format, 'pln_time_selection': pln_time_selection}
+            'selected_ids': ids or list(conversion_plan.WRITER_ORDER), 'cdf': str(cdf)}
 
 
 def confirm(plan, supplied):
@@ -386,15 +365,14 @@ def scan_inputs(roots, max_depth=5, limit=500):
                 subdirs[:] = []
             subdirs[:] = [d for d in subdirs if not d.startswith('.') and d not in ('__pycache__', 'build')]
             for name in sorted(files):
-                if is_run_cdf(name) or name.upper().endswith('XF.PLN'):
+                if is_run_cdf(name):
                     path = Path(directory) / name
                     try:
                         stat = path.stat()
                     except OSError:
                         continue
                     shot_tr = [f for f in files if f.upper().endswith('TR.DAT') and f.upper().startswith(path.stem.upper())]
-                    found.append({'path': str(path), 'size': stat.st_size, 'mtime': stat.st_mtime,
-                                  'trdat': bool(shot_tr), 'format': 'pln' if name.upper().endswith('XF.PLN') else 'netcdf'})
+                    found.append({'path': str(path), 'size': stat.st_size, 'mtime': stat.st_mtime, 'trdat': bool(shot_tr)})
                     if len(found) >= limit:
                         return sorted(found, key=lambda i: -i['mtime'])
     return sorted(found, key=lambda i: -i['mtime'])

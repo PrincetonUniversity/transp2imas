@@ -261,53 +261,7 @@ class InputInventory:
         self.truncated = False
         self._collect()
 
-    def _renamed_template_candidates(self, filename, parent, key):
-        """Likely TRDAT-staged names for a missing, run-referenced template.
-
-        TRDAT rewrites some model template filenames to stable run-scoped names
-        (for example ``PT_TEMPLATE(1)`` becomes ``<RUNID>_pt.nml``). Keep the
-        original reference in the inventory, but resolve its content from the
-        staged copy when the original is no longer alongside the run output.
-        """
-        if not self.runid or parent is None:
-            return []
-        original = Path(os.path.expandvars(filename)).expanduser()
-        if original.suffix.lower() not in ('.nml', '.namelist', '.inp'):
-            return []
-        directory = Path(parent).parent
-        runid = self.runid
-        candidates = [directory / f'{runid}_{original.name}']
-
-        model = file_model(key, filename)
-        aliases = {
-            'PT_SOLVER': 'pt',
-            'MMM': 'mmm',
-            'TGLF': 'tglf',
-            'GLF23': 'glf23',
-            'NUBEAM': 'nubeam',
-            'TORIC': 'toric',
-            'FPP': 'fpp',
-            'GENRAY': 'genray',
-            'TORBEAM': 'torbeam',
-            'TORAY': 'toray',
-            'CQL3D': 'cql3d',
-            'LSC': 'lsc',
-        }
-        alias = aliases.get(model)
-        if alias:
-            index_match = re.search(r'\((\d+)\)', str(key))
-            index = int(index_match.group(1)) if index_match else 1
-            if alias == 'pt' and index > 1:
-                candidates.append(directory / f'{runid}_{alias}_backup{original.suffix.lower()}')
-                candidates.append(directory / f'{runid}_{alias}_{index}{original.suffix.lower()}')
-            candidates.append(directory / f'{runid}_{alias}{original.suffix.lower()}')
-        try:
-            available = {path.name.casefold(): path for path in directory.iterdir() if path.is_file()}
-        except OSError:
-            return candidates
-        return [available.get(path.name.casefold(), path) for path in candidates]
-
-    def _resolve(self, filename, parent, key=''):
+    def _resolve(self, filename, parent):
         candidate = Path(os.path.expandvars(filename)).expanduser()
         # The top-level TR.DAT path comes from convert.py, which may pass a
         # relative path containing parent directories (e.g. examples/data/...).
@@ -326,11 +280,6 @@ class InputInventory:
             path = (root / candidate).resolve()
             if path.is_file():
                 return path
-        # The TR.DAT may still name the pre-staging template while TRDAT has
-        # copied it to a run-scoped filename next to the run's TR.DAT/output.
-        for path in self._renamed_template_candidates(filename, parent, key):
-            if path.is_file():
-                return path.resolve()
         return (roots[0] / candidate).resolve()
 
     def _collect(self):
@@ -374,7 +323,7 @@ class InputInventory:
         while i < len(pending) and len(self.records) < MAX_INPUT_FILES:
             role, key, filename, parent, depth, inherited_model = pending[i]
             i += 1
-            path = self._resolve(filename, parent, key)
+            path = self._resolve(filename, parent)
             # One entry per physical file avoids cyclic inclusion or redundant
             # copies; its earliest parent reference provides the provenance.
             if path in seen:

@@ -477,7 +477,7 @@ class imas_waves(IdsWriter):
         self.fill.fill_code_properties(ids)
         self.fill.fill_external_model_inputs(ids, 'waves')
         ids.ids_properties.homogeneous_time = 1
-        ids.time.resize(self.nt, refcheck=False)
+        ids.time.resize(self.nt)
         ids.time[:] = self.time
         self.logger.info(f'Done: {len(ec_indices)} EC + {len(ic_indices)} IC coherent wave(s)')
         return [ids]

@@ -23,7 +23,6 @@ TRANSP2IMAS_VERSION = __version__
 import re
 import logging
 from netcdf_class import netcdf_connection
-from pln_input import PlnInput
 from radial_interpolation import interpolate_radial_profiles
 from cocos_signs import direction_override, resolve_signs
 from ids_assignment import (check_1dim, fill_data, fill_value, is_valid, node_path, np_multiply_sum,
@@ -62,22 +61,8 @@ RADIAL_DIMENSIONS = ('X', 'XB')
 class nc2imas(imas_connection, netcdf_connection):
     def __init__(self, run, backend, occur, user, machine, new_db, ncfile,
          nml_file:str=None, log:str='error', debug:int=0,
-         ip_direction:str='auto', bt_direction:str='auto', dd_version:str=None,
-         input_format:str='netcdf', pln_time_selection:str='all'):
-        self.input_format = input_format
-        if input_format == 'pln':
-            self._pln_input = PlnInput(ncfile, machine, pln_time_selection)
-            self.nc = self._pln_input.nc
-            self.mapping = self._pln_input.mapping
-            self.vars_ = self._pln_input.vars_
-            self.ncfile = str(ncfile)
-            self.device = machine
-            self.shot = self._pln_input.shot
-            self.timesc = self._pln_input.timesc
-            self.timep = self._pln_input.timep
-        else:
-            self._pln_input = None
-            netcdf_connection.__init__(self, ncfile, machine)
+         ip_direction:str='auto', bt_direction:str='auto', dd_version:str=None):
+        netcdf_connection.__init__(self, ncfile, machine)
         imas_connection.__init__(self, self.device, self.shot, run, backend, occur, user, new_db, dd_version=dd_version)
         self.nml_name = nml_file
         self.logger = None
@@ -203,11 +188,6 @@ class nc2imas(imas_connection, netcdf_connection):
         print(signs.summary())
 
     def get_nc_times(self):
-        if self._pln_input is not None:
-            self.timesc = np.asarray(self._pln_input.timesc, dtype=np.float64)
-            self.timep = np.asarray(self._pln_input.timep, dtype=np.float64)
-            self.ntimes, self.ntimep = len(self.timesc), len(self.timep)
-            return
         self.timesc, self.ntimes, self.timep, self.ntimep = grid_services.read_time_bases(self.get_ncvar, self.logger)
 
 

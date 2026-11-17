@@ -67,12 +67,7 @@ def make_writers(nci, moments, nzones, ec_nml_launch, pf_passive_geometry,
 def do_convert(argvs):
     print(f'transp2imas patchlevel {TRANSP2IMAS_DD4_PATCHLEVEL}')
     parsed_args = get_args(argvs)
-    if len(parsed_args) == 22:
-        (backend, run, occur, user, machine, newdb, ncfile, nml, log,
-         moments, nzones, deb, ec_nml_launch, ip_direction, bt_direction,
-         dd_version, pf_passive_geometry, pf_active_geometry, requested,
-         report_json, input_format, pln_time_selection) = parsed_args
-    elif len(parsed_args) == 20:
+    if len(parsed_args) == 20:
         (backend, run, occur, user, machine, newdb, ncfile, nml, log,
          moments, nzones, deb, ec_nml_launch, ip_direction, bt_direction,
          dd_version, pf_passive_geometry, pf_active_geometry, requested,
@@ -92,8 +87,7 @@ def do_convert(argvs):
                      machine=machine, new_db=newdb, ncfile=ncfile,
                      nml_file=nml, log=log, debug=deb,
                      ip_direction=ip_direction, bt_direction=bt_direction,
-                     dd_version=dd_version, input_format=input_format,
-                     pln_time_selection=pln_time_selection) as nci:
+                     dd_version=dd_version) as nci:
             journal.attach_converter(nci)
             journal.data['setup_reads'] = nci.mapping.consumed(None)
             journal.data['mapping_policy'] = 'strict' if mapping_status.is_strict() else 'lenient'

@@ -20,7 +20,7 @@ class imas_lh_antennas(IdsWriter):
         lha = self.fill.fill_properties(lha)
         self.fill.fill_code_properties(lha)
         lha.ids_properties.homogeneous_time = 1
-        lha.time.resize(ntimes, refcheck=False)
+        lha.time.resize(ntimes)
         lha.time = timesc
 
         nant = self.cdf.get_var_names_re('PLHANT?', nd1=1, nd2=2, length=True)

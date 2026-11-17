@@ -27,7 +27,7 @@ class imas_ec_launchers(IdsWriter):
         ec = self.fill.fill_properties(ec)
         ec = self.fill.fill_code_properties(ec)
         ec.ids_properties.homogeneous_time = 1
-        ec.time.resize(ntimes, refcheck=False)
+        ec.time.resize(ntimes)
         ec.time = timesc
 
         nbeams = self.cdf.get_var_names_re('PECIN?', nd1=1, nd2=2, length=True)
@@ -105,7 +105,7 @@ class imas_ec_launchers(IdsWriter):
                curv_hor = get_namelist_data('ECB_CURV_HOR', float, i, cm2m, ntimes, fill=True)
                curv_vert = get_namelist_data('ECB_CURV_VERT', float, i, cm2m, ntimes, fill=True)
                if self.fill.is_valid(spot_hor, spot_vert, ind=ntimes-1):
-                  beam.spot.size.resize((2,ntimes), refcheck=False);
+                  beam.spot.size.resize((2,ntimes));
                   beam.spot.size[si,:] = spot_hor
                   beam.spot.size[sj,:] = spot_vert
 
@@ -113,7 +113,7 @@ class imas_ec_launchers(IdsWriter):
                   if np.all(curv_hor) and np.all(curv_vert) :
                      curv_hor = -1.0/curv_hor
                      curv_vert = -1.0/curv_vert
-                  beam.phase.curvature.resize((2,ntimes), refcheck=False);
+                  beam.phase.curvature.resize((2,ntimes));
                   beam.phase.curvature[si,:] = curv_hor
                   beam.phase.curvature[sj,:] = curv_vert
             # --- above for testing only ---

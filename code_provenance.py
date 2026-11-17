@@ -111,7 +111,7 @@ def properties_comment(runid, device, year, cdf_date, build_date, tglf, glf23, d
 
 
 def build_code_parameters_xml(*, dd_version, signs, device, shot, imas_run, occurrence, source_cdf,
-                              converter_version, metadata, inventory, source_format='netcdf', source_input=None):
+                              converter_version, metadata, inventory):
     """XML for ``code.parameters``: complete TRANSP inputs verbatim (escaped) with hashes and CDF metadata.
 
     ``metadata`` maps TRANSP attribute names to values (bytes are decoded, ``None`` is skipped);
@@ -125,11 +125,7 @@ def build_code_parameters_xml(*, dd_version, signs, device, shot, imas_run, occu
     run = ET.SubElement(root, 'run', {
         'device': str(device), 'shot': str(shot), 'imas_run': str(imas_run), 'occurrence': str(occurrence),
     })
-    if source_format == 'netcdf':
-        run.set('source_cdf', str(source_cdf))
-    else:
-        run.set('source_format', str(source_format))
-        run.set('source_input', str(source_input or source_cdf))
+    run.set('source_cdf', str(source_cdf))
     ET.SubElement(root, 'converter', {'name': 'transp2imas', 'version': converter_version})
 
     block = ET.SubElement(root, 'transp_metadata')

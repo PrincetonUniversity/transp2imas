@@ -29,7 +29,7 @@ class imas_tf(IdsWriter):
         tf = self.fill.fill_properties(tf)
         self.fill.fill_code_properties(tf)
         tf.ids_properties.homogeneous_time = 1
-        tf.time.resize(ntimes, refcheck=False)
+        tf.time.resize(ntimes)
         tf.time = timesc
         self.logger.info('Done TF')
         return [tf]

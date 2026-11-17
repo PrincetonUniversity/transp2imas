@@ -6,7 +6,7 @@
 
   const CORE = ['core_profiles', 'equilibrium', 'summary', 'core_sources', 'core_transport', 'radiation', 'workflow'];
   const HARDWARE = ['wall', 'tf', 'pf_active', 'pf_passive', 'ec_launchers', 'ic_antennas', 'lh_antennas', 'nbi'];
-  const form = { cdf: '', options: { backend: 'HDF5', dd_version: '4.1.1', new_db: true, ids: null, input_format: 'netcdf', pln_time_selection: 'all', ip_direction: 'auto', bt_direction: 'auto', moments: 'no',
+  const form = { cdf: '', options: { backend: 'HDF5', dd_version: '4.1.1', new_db: true, ids: null, ip_direction: 'auto', bt_direction: 'auto', moments: 'no',
     ec_nml_launch: 'no', nzones: 0, verbose: 0, log: '', run: '', occur: 0, machine: '', pf_passive_geometry: '', pf_active_geometry: '',
     lenient_mapping: false, debug: false, debug_max: false }, database: { mode: 'scratch', path: '' }, confirm: '' };
   const ui = { schema: null, inputs: [], plan: null, error: null, job: null, jobs: [], poll: null, offset: 0, timer: null, root: null };
@@ -31,7 +31,7 @@
   let planTimer = null;
   function schedulePlan() { clearTimeout(planTimer); planTimer = setTimeout(refreshPlan, 350); }
   async function refreshPlan() {
-    if (!form.cdf) { ui.plan = null; ui.error = { message: 'Choose a TRANSP input file.', errors: [] }; draw(); return; }
+    if (!form.cdf) { ui.plan = null; ui.error = { message: 'Choose a CDF to convert.', errors: [] }; draw(); return; }
     try { ui.plan = (await post('convert/plan', request())).plan; ui.error = null; }
     catch (error) { ui.plan = null; ui.error = { message: error.message, errors: (error.body && error.body.errors) || [] }; }
     applyFieldErrors();
@@ -74,26 +74,12 @@
 
   function inputSection() {
     const cdfs = ui.inputs, known = cdfs.some((c) => c.path === form.cdf);
-    const picker = h('select', { 'aria-label': 'TRANSP input file' }, h('option', { value: '', text: cdfs.length ? 'choose a TRANSP file…' : 'no CDF or XF.PLN files under the input roots' }),
-      cdfs.map((c) => h('option', { value: c.path, selected: c.path === form.cdf, text: `${fileName(c.path)} · ${c.format === 'pln' ? 'native PLN' : 'NetCDF'} · ${(c.size / 1e6).toFixed(1)} MB · ${c.path.split('/').slice(-3, -1).join('/')}` })));
-    picker.addEventListener('change', () => {
-      form.cdf = picker.value;
-      const selected = cdfs.find((c) => c.path === form.cdf);
-      if (selected) form.options.input_format = selected.format;
-      schedulePlan(); drawForm();
-    });
-    const manual = h('input', { type: 'text', value: known ? '' : form.cdf, placeholder: 'or a path below the input roots', 'aria-label': 'TRANSP input path' });
-    manual.addEventListener('input', () => {
-      form.cdf = manual.value.trim();
-      if (form.cdf.toUpperCase().endsWith('XF.PLN')) form.options.input_format = 'pln';
-      else if (form.cdf.toUpperCase().endsWith('.CDF')) form.options.input_format = 'netcdf';
-      schedulePlan(); drawForm();
-    });
-    const fmt = select('input_format', 'Input format', ['netcdf', 'pln'], () => form.options.input_format, (v) => { form.options.input_format = v; }, 'NetCDF CDF remains the default. Native PLN uses XF.PLN and YF.PLN; TF.PLN supplies labels, or a matching CDF can supply the schema.');
-    const plnTime = select('pln_time_selection', 'Native PLN times', ['all', 'last'], () => form.options.pln_time_selection, (v) => { form.options.pln_time_selection = v; }, 'Use all samples for the history or only the final sample for a time slice.');
-    return h('section', { class: 'fsection' }, h('h3', { text: '1. What to convert' }), fmt,
-      form.options.input_format === 'pln' ? plnTime : null,
-      wrap('cdf', 'TRANSP output file', picker, 'CDF entries use NetCDF. For native input select the run XF.PLN; the matching YF.PLN and either TF.PLN or CDF schema must be beside it.'),
+    const picker = h('select', { 'aria-label': 'CDF file' }, h('option', { value: '', text: cdfs.length ? 'choose a CDF…' : 'no <runid>.CDF files under the input roots' }),
+      cdfs.map((c) => h('option', { value: c.path, selected: c.path === form.cdf, text: `${fileName(c.path)} · ${(c.size / 1e6).toFixed(1)} MB · TR.DAT ${c.trdat ? 'found' : 'not found'} · ${c.path.split('/').slice(-3, -1).join('/')}` })));
+    picker.addEventListener('change', () => { form.cdf = picker.value; schedulePlan(); });
+    const manual = h('input', { type: 'text', value: known ? '' : form.cdf, placeholder: 'or a path below the input roots', 'aria-label': 'CDF path' });
+    manual.addEventListener('input', () => { form.cdf = manual.value.trim(); schedulePlan(); });
+    return h('section', { class: 'fsection' }, h('h3', { text: '1. What to convert' }), wrap('cdf', 'TRANSP output (CDF)', picker, '<runid>.CDF files found below the input roots (PH.CDF and plasma-state files are not converted, so they are not listed); the TR.DAT beside it is used for the converter\'s namelist.'),
       h('div', { class: 'fieldwrap' }, manual));
   }
 
@@ -106,7 +92,7 @@
     return h('section', { class: 'fsection' }, h('h3', { text: '2. How: target entry' }),
       select('backend', 'IMAS backend', ui.schema.backends, () => o.backend, (v) => { o.backend = v; }, 'HDF5 entries can be plotted here; MDSplus entries cannot (and their existence cannot be checked).'),
       wrap('dd_version', 'Data Dictionary version', h('div', { class: 'inline' }, ddSelect, ddText), help('dd_version')),
-      input('machine', 'Machine / database name', () => o.machine, (v) => { o.machine = v; }, 'text', 'CDF default: the device named in the CDF. Native PLN needs this value.', 'machine name'),
+      input('machine', 'Machine / database name', () => o.machine, (v) => { o.machine = v; }, 'text', 'Default: the device named in the CDF. ' + help('machine'), 'from the CDF'),
       input('run', 'Run number', () => o.run, (v) => { o.run = v; }, 'number', help('run'), 'derived from the file name'),
       input('occur', 'Occurrence', () => o.occur, (v) => { o.occur = v; }, 'number', help('occur')),
       check('new_db', 'Create a new entry', () => o.new_db, (v) => { o.new_db = v; }, 'Replaces an existing entry of the same machine, DD major, shot and run; the next section shows whether it exists.'));
@@ -252,7 +238,7 @@
   }
   function historyCard() {
     return card('Recent jobs', table([{ label: 'Job', render: (j) => h('code', { text: j.id }) }, { label: 'State', render: (j) => jobBadge(j) },
-      { label: 'Input', render: (j) => fileName((j.plan && j.plan.cdf) || '') }, { label: 'Entry', render: (j) => h('code', { text: (j.plan && j.plan.target && j.plan.target.primary) || '' }) },
+      { label: 'CDF', render: (j) => fileName((j.plan && j.plan.cdf) || '') }, { label: 'Entry', render: (j) => h('code', { text: (j.plan && j.plan.target && j.plan.target.primary) || '' }) },
       { label: 'Started', render: (j) => new Date(j.started * 1000).toLocaleString() }, { label: '', render: (j) => button('Show', () => showJob(j)) }], ui.jobs, 'No jobs yet.'));
   }
 
@@ -284,14 +270,8 @@
     main.replaceChildren(h('p', { class: 'empty', text: 'Loading the converter options…' }));
     try {
       [ui.schema, ui.inputs, ui.jobs] = await Promise.all([api('convert/schema'), api('inputs').then((r) => r.cdfs), api('jobs').then((r) => r.jobs)]);
-      if (!form.cdf && ui.inputs.length === 1) {
-        form.cdf = ui.inputs[0].path;
-        form.options.input_format = ui.inputs[0].format || 'netcdf';
-      }
-      if (argument && argument.cdf) {
-        form.cdf = argument.cdf;
-        if (form.cdf.toUpperCase().endsWith('XF.PLN')) form.options.input_format = 'pln';
-      }
+      if (!form.cdf && ui.inputs.length === 1) form.cdf = ui.inputs[0].path;
+      if (argument && argument.cdf) form.cdf = argument.cdf;
       if (state.view !== 'convert' || ui.root !== main) return;      // the user switched views while this was loading
       main.replaceChildren(h('div', { class: 'convert' }, ui.formcol, ui.plancol));
       drawForm();
