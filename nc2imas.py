@@ -17,7 +17,7 @@ from scipy.interpolate import interp1d
 from datetime import datetime, timezone
 from input_provenance import InputInventory, append_file_xml, fill_model_libraries
 
-__version__ = "0.15.0"  # x-release-please-version
+__version__ = "0.16.0"  # x-release-please-version
 VERSION = __version__
 TRANSP2IMAS_VERSION = __version__
 import re
