@@ -97,10 +97,12 @@ def main(argv=None):
         return 2
     port = server.server_address[1]
     url = f'http://{args.host}:{port}/?token={server.token}'
-    mode = 'conversion enabled' if args.enable_run and python else 'read-only (no conversion can be started)'
+    mode = 'conversion enabled' if args.enable_run and python else 'conversion off (no conversion can be started)'
     if python and not args.enable_run:
         mode += '; plotting is on, add --enable-run to allow conversions'
-    print(f'Report viewer and conversion interface: {mode}.', flush=True)
+    print(f'Report viewer, curation and conversion interface: {mode}.', flush=True)
+    print('Curation can be run from the page: it reads its inputs and writes only a report into the job directory below '
+          f'{output_roots[0]}.', flush=True)
     if note:
         print('Note: ' + note, flush=True)
     elif args.enable_run and not python:

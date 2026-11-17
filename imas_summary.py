@@ -63,8 +63,7 @@ class imas_summary(IdsWriter):
 
         sid.ids_properties.homogeneous_time = 1
         times = np.asarray(self.grid.timesc, dtype=np.float64)
-        sid.time.resize(len(times))
-        sid.time[:] = times
+        sid.time = times
 
         # DD4.1+ dataset/simulation metadata. Do not fabricate experimental
         # wall-clock timestamps; TRANSP time is relative simulation time.

@@ -60,7 +60,7 @@ def read_only_page(playwright, python, check):
             options = page.eval_on_selector_all('select[aria-label="CDF file"] option', 'els => els.map(e => e.value)')
             page.select_option('select[aria-label="CDF file"]', value=[o for o in options if o.endswith('.CDF')][0])
             page.wait_for_selector('pre.command')
-            check(page.inner_text('#mode-badge') == 'read-only', 'the badge does not say read-only')
+            check(page.inner_text('#mode-badge') == 'conversion off', 'the badge does not say conversion is off')
             check(page.is_disabled('#run-button'), 'Run is enabled on a server without --enable-run')
             plan = page.inner_text('.plancol')
             check('--enable-run' in plan and 'switched off' in plan, f'the page does not say why Run is off: {plan[:300]}')
@@ -69,6 +69,33 @@ def read_only_page(playwright, python, check):
             labels = page.eval_on_selector_all('.convert .check span:first-of-type, .convert .flabel', 'els => els.map(e => e.textContent)')
             check(not [label for label in labels if 'enient' in label], f'the old wording is still a label: {labels}')
             check('--lenient-mapping' in body, 'the converter flag is no longer mentioned in the help')
+            # --- curation runs on this server although conversion is off: plan, run, outcome, open the report
+            page.click('.view-button[data-view=curate]')
+            page.wait_for_selector('select[aria-label="CDF file"] option:nth-child(2)', state='attached')
+            iter_cdf = [o for o in page.eval_on_selector_all('select[aria-label="CDF file"] option', 'els => els.map(e => e.value)') if o.endswith('38530P94.CDF')]
+            check(len(iter_cdf) == 1, 'the ITER CDF is not offered by the Curate view')
+            check(not [o for o in page.eval_on_selector_all('select[aria-label="CDF file"] option', 'els => els.map(e => e.value)') if o.upper().endswith('PH.CDF')],
+                  'a PH.CDF companion file is offered')
+            page.select_option('select[aria-label="CDF file"]', value=iter_cdf[0])
+            page.wait_for_selector('pre.command')
+            check('curate.py' in page.inner_text('pre.command') and '--output-dir' in page.inner_text('pre.command'), 'the curation command is not shown')
+            check('Plugins (--plugin) are not offered' in page.inner_text('.formcol'), 'the plugin note is missing')
+            check(page.is_enabled('#run-button'), 'Run curation is disabled on a server without --enable-run')
+            page.click('#run-button')
+            for _ in range(120):
+                if 'completed' in page.inner_text('#job-state') or 'failed' in page.inner_text('#job-state'):
+                    break
+                page.wait_for_timeout(250)
+            check('completed' in page.inner_text('#job-state'), f'the curation did not complete: {page.inner_text("#job-state")}')
+            check('NOT performed' in page.inner_text('#job-outcome'), 'the outcome does not say certification was not performed')
+            check('Curation screening:' in page.inner_text('#job-log'), 'the curation log is not shown')
+            page.click('#open-report')
+            page.wait_for_selector('.tab')
+            check(page.get_attribute('.view-button[data-view=reports]', 'aria-selected') == 'true', 'Open curation report did not open Reports')
+            check('conversion report' not in page.inner_text('#view').lower(), 'the curation report opened as a conversion report')
+            page.click('.view-button[data-view=convert]')
+            page.wait_for_selector('#run-button')
+            check(page.is_disabled('#run-button'), 'running curation enabled conversion')
             page.goto(url + '&view=reports')
             page.wait_for_selector('.tab, #view .empty')
             check(page.get_attribute('.view-button[data-view=reports]', 'aria-selected') == 'true', '?view=reports does not open Reports')
@@ -331,13 +358,13 @@ def main(argv=None):
                 page.goto(url)
                 page.wait_for_selector('.view-button')
                 labels = page.eval_on_selector_all('.view-button', 'els => els.map(e => e.textContent)')
-                check(labels == ['Convert', 'Explore', 'Reports'], f'view order: {labels}')
+                check(labels == ['Convert', 'Curate', 'Explore', 'Reports'], f'view order: {labels}')
                 check(page.get_attribute('.view-button[data-view=convert]', 'aria-selected') == 'true', 'the page does not land on Convert')
                 page.click('.view-button[data-view=reports]')
                 page.wait_for_selector('.tab')                       # one report under the root: opened automatically
                 tabs = page.eval_on_selector_all('.tab', 'els => els.map(e => e.textContent)')
                 check(tabs == ['Overview', 'Findings', 'Rules', 'Evidence', 'Events', 'Masks', 'Inputs'], f'tabs: {tabs}')
-                check(page.inner_text('#mode-badge') == 'read-only', 'a default server does not say read-only')
+                check(page.inner_text('#mode-badge') == 'conversion off', 'a default server does not say conversion is off')
                 for name in tabs:
                     page.click(f'.tab:text-is("{name}")')
                     page.wait_for_timeout(150)

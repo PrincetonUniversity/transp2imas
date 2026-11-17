@@ -239,7 +239,7 @@
   function historyCard() {
     return card('Recent jobs', table([{ label: 'Job', render: (j) => h('code', { text: j.id }) }, { label: 'State', render: (j) => jobBadge(j) },
       { label: 'CDF', render: (j) => fileName((j.plan && j.plan.cdf) || '') }, { label: 'Entry', render: (j) => h('code', { text: (j.plan && j.plan.target && j.plan.target.primary) || '' }) },
-      { label: 'Started', render: (j) => new Date(j.started * 1000).toLocaleString() }, { label: '', render: (j) => button('Show', () => showJob(j)) }], ui.jobs, 'No jobs yet.'));
+      { label: 'Started', render: (j) => new Date(j.started * 1000).toLocaleString() }, { label: '', render: (j) => button('Show', () => showJob(j)) }], ui.jobs.filter((j) => j.kind !== 'curate'), 'No jobs yet.'));
   }
 
   /* The form column is rebuilt only for structural changes (database mode, IDS choice). Everything else (plan, job, history,

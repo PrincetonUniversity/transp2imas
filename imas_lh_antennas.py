@@ -14,13 +14,11 @@ class imas_lh_antennas(IdsWriter):
 
         #scalar time
         timesc = self.cdf.get_ncvar('TIME')
-        ntimes = len(timesc)
         self.fill.checkErrExit(timesc)
 
         lha = self.fill.fill_properties(lha)
         self.fill.fill_code_properties(lha)
         lha.ids_properties.homogeneous_time = 1
-        lha.time.resize(ntimes)
         lha.time = timesc
 
         nant = self.cdf.get_var_names_re('PLHANT?', nd1=1, nd2=2, length=True)

@@ -77,6 +77,13 @@ class imas_connection:
         #if home dir, use default path
         if self.user == os.getenv('USER'):
             diry = os.path.expanduser('~') + '/public/imasdb'
+        elif self.user and (os.path.isabs(self.user) or os.sep in self.user or self.user.startswith(('.', '~'))):
+            # IMAS-Core interprets a relative legacy ``user`` value as a user
+            # locator, not as a path relative to the converter's working dir.
+            # Preserve the CLI's documented ``-u <path>`` behavior by making
+            # path-like values absolute before passing them to DBEntry below.
+            diry = os.path.abspath(os.path.expanduser(self.user))
+            self.user = diry
 
         dbpath = diry + '/' + self.imas_dbname
         dbpath = dbpath + '/' + self.dd_major_version

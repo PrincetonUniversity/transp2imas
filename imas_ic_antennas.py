@@ -13,13 +13,11 @@ class imas_ic_antennas(IdsWriter):
 
         #scalar time
         timesc = self.cdf.get_ncvar('TIME')
-        ntimes = len(timesc)
         self.fill.checkErrExit(timesc)
 
         ica = self.fill.fill_properties(ica)
         self.fill.fill_code_properties(ica)
         ica.ids_properties.homogeneous_time = 1
-        ica.time.resize(ntimes)
         ica.time = timesc
 
         nant = self.cdf.get_var_names_re('PICHA?', nd1=1, nd2=2, length=True)

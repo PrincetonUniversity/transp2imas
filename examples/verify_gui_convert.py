@@ -615,7 +615,7 @@ class InterpreterOptionTests(unittest.TestCase):
                 has_imas = 'imas' in subprocess.run([sys.executable, '-c', 'import importlib.util as u; print(u.find_spec("imas") is not None and "imas")'],
                                                     capture_output=True, text=True).stdout
                 if not has_imas:
-                    self.assertIn('read-only', output)
+                    self.assertIn('conversion off', output)
                     self.assertIn('cannot import imas', output)
                 self.assertIn('Open: http://127.0.0.1:', output)
             finally:
