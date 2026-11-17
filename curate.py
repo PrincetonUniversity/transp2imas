@@ -29,7 +29,8 @@ def validate_only(args, manifest, policy):
     return 0
 
 
-def main(argv=None):
+def build_parser():
+    """The command-line parser (also read by the GUI, so its form cannot drift from the options that exist)."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-i', '--input', type=Path, help='TRANSP CDF (never modified); required unless --validate-only')
     parser.add_argument('--trdat', type=Path, help='explicitly associated TR.DAT; omission is reported as unknown')
@@ -48,6 +49,11 @@ def main(argv=None):
                         'resources) without a CDF; checks that need source coordinates or units are NOT run')
     parser.add_argument('--require-complete', action='store_true', help='also exit 1 when any finding is not_assessed')
     parser.add_argument('--version', action='version', version='curation ' + __version__)
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
     args = parser.parse_args(argv)
     if args.input is None and not args.validate_only:
         parser.error('-i/--input is required unless --validate-only')

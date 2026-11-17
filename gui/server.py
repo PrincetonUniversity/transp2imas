@@ -6,12 +6,12 @@ Security posture (the viewer reads files, and with ``--enable-run`` starts conve
 * it binds to the loopback interface unless ``allow_remote`` is set, and a request must carry the one-time token
   (query string on the first visit, then an HttpOnly SameSite cookie, or an ``X-GUI-Token`` header);
 * the ``Host`` header must name the address the server listens on, which defeats DNS-rebinding from a web page;
-* GET and HEAD read; the only POST endpoints are ``/api/convert/plan`` (a dry run), ``/api/convert/start`` and
-  ``/api/jobs/<id>/cancel``.  A POST needs the token in the ``X-GUI-Token`` *header* (not the cookie, so another site
+* GET and HEAD read; the only POST endpoints are ``/api/convert/plan`` and ``/api/curate/plan`` (dry runs),
+  ``/api/convert/start``, ``/api/curate/start`` and ``/api/jobs/<id>/cancel``.  A POST needs the token in the ``X-GUI-Token`` *header* (not the cookie, so another site
   cannot make the browser send it), ``Content-Type: application/json``, a body of at most 64 KiB and, when an ``Origin``
-  header is present, the viewer's own origin.  Starting or cancelling a conversion also needs ``--enable-run``; without
-  it the viewer stays read-only.  The only program ever started is this repository's ``convert.py`` from a validated
-  argument list, never a shell string;
+  header is present, the viewer's own origin.  Starting or cancelling a *conversion* also needs ``--enable-run``; curation
+  does not (it needs no IMAS, reads its inputs and writes only a report into its job directory).  The only programs ever
+  started are this repository's ``convert.py`` and ``curate.py`` from a validated argument list, never a shell string;
 * every file goes through ``browse.resolve`` (roots, ``.json``/``.npz``, no escaping symlink, size cap);
 * a strict Content-Security-Policy and ``nosniff`` are sent, and the page builds its DOM with ``textContent`` only, so
   analyst-written text in a report cannot run as script.
@@ -27,16 +27,16 @@ from pathlib import Path
 import secrets
 from urllib.parse import parse_qs, urlsplit
 
-from gui import __version__, browse, convert_plan, imas_client, jobs as jobs_module, masks, reports
+from gui import __version__, browse, convert_plan, curate_plan, imas_client, jobs as jobs_module, masks, reports
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
 STATIC_FILES = {'index.html': 'text/html; charset=utf-8', 'style.css': 'text/css; charset=utf-8',
-                **{name: 'text/javascript; charset=utf-8' for name in ('core.js', 'charts.js', 'app.js', 'convert.js', 'explore.js')}}
+                **{name: 'text/javascript; charset=utf-8' for name in ('core.js', 'charts.js', 'app.js', 'convert.js', 'curate.js', 'explore.js')}}
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; "
        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
 COOKIE = 'gui_token'
 MAX_BODY = 64 * 1024
-POST_ROUTES = ('convert/plan', 'convert/start')
+POST_ROUTES = ('convert/plan', 'convert/start', 'curate/plan', 'curate/start')
 LOOPBACK = ('127.0.0.1', 'localhost', '::1')
 
 
@@ -144,6 +144,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(400, 'the body must be a JSON object')
         if cancel:
             return self._cancel(cancel.group(1))
+        if route.startswith('curate/'):
+            return self._curate(body, start=route == 'curate/start')
         if route == 'convert/plan':
             return self._plan(body, start=False)
         return self._plan(body, start=True)
@@ -172,13 +174,33 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(409, str(exc))
         return self._json(202, {'job': job})
 
-    def _cancel(self, job_id):
-        if not self.server.config.enable_run or not self.server.jobs:
-            return self._error(403, 'running conversions is disabled')
+    # -- curation: it reads the inputs and writes only into its job directory, so it is not behind --enable-run
+    def _curate(self, body, start):
+        server = self.server
+        job_id = server.jobs.reserve()[0]
+        output = server.jobs._dir(job_id) / 'curation' if start else '<job directory>/curation'
         try:
-            self.server.jobs.get(job_id)
+            plan = curate_plan.validate(body, server.config, output_dir=str(output))
+        except curate_plan.PlanError as exc:
+            return self._json(400, {'error': str(exc), 'errors': exc.errors})
+        if not start:
+            return self._json(200, {'plan': plan})
+        try:
+            job = server.jobs.start(job_id, plan, kind='curate')
+        except jobs_module.JobBusy as exc:
+            return self._error(409, str(exc))
+        return self._json(202, {'job': job})
+
+    def _cancel(self, job_id):
+        if not self.server.jobs:
+            return self._error(403, 'no jobs are available')
+        try:
+            job = self.server.jobs.get(job_id)
         except KeyError:
-            return self._error(404, 'no such job')
+            # with conversion off, an unknown id is refused like any cancel, so the answer does not reveal which jobs exist
+            return self._error(404 if self.server.config.enable_run else 403, 'no such job' if self.server.config.enable_run else 'running conversions is disabled')
+        if job.get('kind') != 'curate' and not self.server.config.enable_run:
+            return self._error(403, 'running conversions is disabled')
         return self._json(200, {'cancelled': self.server.jobs.cancel(job_id)})
 
     def _static(self, name, extra=()):
@@ -197,7 +219,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {'version': __version__, 'roots': [str(r) for r in roots], 'token': server.token,
                                         'run_enabled': bool(config.enable_run and config.imas_python),
                                         'run_requested': config.enable_run, 'imas_python': config.imas_python,
-                                        'imas_note': config.imas_note,
+                                        'imas_note': config.imas_note, 'curate_enabled': curate_plan.availability()[0],
+                                        'curate_reason': curate_plan.availability()[1],
                                         'input_roots': [str(r) for r in config.input_roots],
                                         'output_roots': [str(r) for r in config.output_roots],
                                         'scratch_database': str(config.scratch_database),
@@ -206,6 +229,12 @@ class Handler(BaseHTTPRequestHandler):
                                         'read_database_roots': [str(r) for r in server.entry_roots()]})
             if name == 'convert/schema':
                 return self._json(200, convert_plan.option_schema())
+            if name == 'curate/schema':
+                return self._json(200, curate_plan.option_schema())
+            if name == 'curate/inputs':
+                available, _reason = curate_plan.availability()
+                return self._json(200, {'cdfs': convert_plan.scan_inputs(server.config.input_roots),
+                                        'files': curate_plan.scan_json(server.config.input_roots) if available else {}})
             if name == 'inputs':
                 return self._json(200, {'cdfs': convert_plan.scan_inputs(server.config.input_roots)})
             if name == 'entries':
@@ -257,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _job_view(self, job):
         """A job record for the page: the command, plan, outcome and where its report is, without the full argv paths twice."""
-        keep = ('id', 'kind', 'state', 'started', 'finished', 'returncode', 'display', 'plan', 'report', 'report_written', 'note')
+        keep = ('id', 'kind', 'state', 'started', 'finished', 'returncode', 'display', 'plan', 'report', 'report_written', 'note', 'outcome')
         return {k: job.get(k) for k in keep}
 
     def _imas(self, name, query):
@@ -311,7 +340,7 @@ class ViewerServer(ThreadingHTTPServer):
 
 
 def make_server(roots, host='127.0.0.1', port=0, token=None, allow_remote=False, verbose=False, config=None,
-                database_roots=(), repo_root=None, convert_script=None):
+                database_roots=(), repo_root=None, convert_script=None, curate_script=None):
     """A configured, not yet serving, server.  Non-loopback hosts need ``allow_remote`` and are logged as such.
 
     ``config`` (``convert_plan.Config``) says where inputs may come from, where entries and jobs may go, whether
@@ -327,13 +356,11 @@ def make_server(roots, host='127.0.0.1', port=0, token=None, allow_remote=False,
     repo_root = Path(repo_root or Path(__file__).resolve().parent.parent)
     if config is None:
         config = convert_plan.Config(roots, [Path(os.path.realpath(roots[0]))], None, False, False)
-    manager = None
     if config.enable_run and config.imas_python:
         config.output_roots[0].mkdir(parents=True, exist_ok=True)
-        manager = jobs_module.JobManager(config.output_roots[0], config.imas_python, repo_root, convert_script)
-    elif config.output_roots[0].is_dir():
-        manager = jobs_module.JobManager(config.output_roots[0], config.imas_python, repo_root, convert_script)   # list past jobs, start none
-    report_roots = list(roots) + [r for r in config.output_roots if r.is_dir() and r not in roots]
+    # a manager always exists: curation is not behind --enable-run, and past jobs are listed either way
+    manager = jobs_module.JobManager(config.output_roots[0], config.imas_python, repo_root, convert_script, curate_script)
+    report_roots = list(roots) + [r for r in config.output_roots if r not in roots]    # curation reports land in the output root
     token = token or secrets.token_urlsafe(18)
     server = ViewerServer((host, port), report_roots, token, set(), verbose, config, manager, repo_root, database_roots)
     bound = server.server_address[1]

@@ -50,7 +50,10 @@ class Config:
     def __init__(self, input_roots, output_roots, imas_python=None, enable_run=False, allow_default_database=False,
                  home=None, imas_note=None):
         self.input_roots = [Path(r) for r in input_roots]
-        self.output_roots = [Path(r) for r in output_roots]
+        # IMAS-Core's legacy ``user`` locator cannot use a relative filesystem path.
+        # Canonicalize output roots here so scratch database paths passed to the
+        # converter are absolute, regardless of how --output-root was supplied.
+        self.output_roots = [Path(r).expanduser().resolve() for r in output_roots]
         self.imas_python = imas_python
         self.enable_run = enable_run
         self.allow_default_database = allow_default_database

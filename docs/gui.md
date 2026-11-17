@@ -1,11 +1,11 @@
 # Workbench (GUI)
 
-A local web page for TRANSP2IMAS: read curation and conversion reports, **run conversions**, and **plot the converted IMAS
-data**. It is a thin layer over the existing scripts: the form is built from the converter's own option parser, the page
-shows the exact command it will run, and `convert.py` stays the single implementation.
+A local web page for TRANSP2IMAS: read curation and conversion reports, **run curation**, **run conversions**, and **plot the
+converted IMAS data**. It is a thin layer over the existing scripts: the forms are built from the scripts' own option parsers,
+the page shows the exact command it will run, and `convert.py` and `curate.py` stay the single implementations.
 
 ```bash
-python3 -m gui --root build                     # read-only report viewer
+python3 -m gui --root build                     # report viewer; curation can be run, conversion cannot
 python3 -m gui --root examples/data --enable-run --imas-python /path/to/imas/python    # also convert and plot
 # Open: http://127.0.0.1:PORT/?token=...
 ```
@@ -15,11 +15,11 @@ On a remote or HPC host keep the default loopback binding and tunnel the port fr
 
 | Option | Meaning |
 |---|---|
-| `--root DIR` (repeatable) | reports that may be opened, and CDF files that may be converted (default: current directory) |
-| `--input-root DIR` | further directories CDF files and geometry JSON may come from |
-| `--output-root DIR` | where jobs and the **scratch IMAS database** are written (default `build/gui`) |
+| `--root DIR` (repeatable) | reports that may be opened, and CDF files that may be converted or screened (default: current directory) |
+| `--input-root DIR` | further directories CDF files, TR.DAT, geometry, evidence and policy JSON may come from |
+| `--output-root DIR` | where jobs (conversion and curation reports) and the **scratch IMAS database** are written (default `build/gui`) |
 | `--database-root DIR` | extra IMAS database whose HDF5 entries may be listed and plotted, read-only |
-| `--enable-run` | allow starting conversions (default: read-only; planning always works) |
+| `--enable-run` | allow starting **conversions** (default: off; planning always works). Curation is not behind it |
 | `--imas-python PATH` | interpreter with IMAS-Python **or the virtual-environment directory that has it** (`~/venvs/imas/` works), used to convert and to read entries (default: this interpreter if it has IMAS) |
 | `--allow-default-database` | allow writing to, and plotting from, your default IMAS database (`~/public/imasdb`) |
 | `--host`, `--port`, `--allow-remote`, `--open`, `--verbose` | network and convenience options (loopback by default) |
@@ -28,14 +28,15 @@ The page runs in the curation-only environment; conversion and plotting run in t
 If it cannot import IMAS the launcher and the page say so and conversion and plotting stay off.
 
 **Running needs both** `--enable-run` and an interpreter with IMAS. Giving `--imas-python` alone turns plotting on but leaves
-*Run conversion* disabled, and the page says so next to the button (the badge in the title bar reads *read-only* or
-*conversion enabled*). A bad `--imas-python` path stops the launcher with the reason.
+*Run conversion* disabled, and the page says so next to the button (the badge in the title bar reads *conversion off* or
+*conversion enabled*). **Curation is available either way**: it reads its inputs, needs no IMAS and writes only a report into
+its job directory, so it is not gated by `--enable-run`. A bad `--imas-python` path stops the launcher with the reason.
 
 ## Views
 
 ### Order of the views
 
-Convert, Explore, Reports. The page opens on Convert (or on Reports when the URL has `?open=<report path>` or `?view=reports`);
+Convert, Curate, Explore, Reports. The page opens on Convert (or on Reports when the URL has `?open=<report path>` or `?view=reports`);
 opening Reports with exactly one report available opens it.
 
 ### Reports
@@ -46,6 +47,25 @@ propagated uncertainty), **Events** (timeline, origins, candidates, policy exclu
 excluded samples as a heat map) and **Inputs** (parser, followed files, unresolved constructs, code identity).
 Conversion report: **Summary** (status, publication to the backend), **Writers**, **Mapping journal**. A report from an older
 curation version is shown with what it has and a notice. A curation report is a screening record, not a certification.
+
+### Curate
+
+Choose a `<runid>.CDF` (only run outputs are listed, as in Convert; any other name can be typed) and, optionally, the TR.DAT
+(by default the one beside the CDF), an **evidence sidecar** or **pilot facts** file, a **policy** file, how strict the exit
+status is (`--fail-on`) and whether a rule that did not run also counts (`--require-complete`). Files are found below the
+input roots and recognised by the `schema_version` inside them, so an evidence sidecar cannot be passed as a policy by
+mistake. "Validate the files only" runs `curate.py --validate-only` (no CDF needed) and says what it did not check. The form
+is built from `curate.py`'s own parser (a test fails if the script gains an option nobody decided about), the exact command is
+shown, and the run has a live log and a Cancel button.
+
+How a finished job is reported: exit 0 is *completed: nothing at the threshold*, exit 1 is *completed: findings at the
+threshold* (a finished screening, shown as a warning, not as a failure), exit 2 is *failed* (it could not complete: bad
+sidecar, unreadable CDF, a rule that raised). The counts come from the report the screening wrote, and the page repeats that
+**scientific certification was not performed**: a clean exit is not an acceptance. *Open curation report* shows the report in
+Reports. Reports and logs are kept under `<output root>/jobs/<id>/`; the screening never writes anywhere else.
+
+Not offered, on purpose: `--plugin` (a plugin is a Python module imported by name, so it would run arbitrary code inside the
+screening; use `curate.py --plugin` on the command line) and a free output directory.
 
 ### Convert
 
@@ -119,7 +139,7 @@ Zones are drawn with straight chords between the stored nodes, so where the grid
 are triangles) a zone is smaller than its stored area (those wedges are 2/pi of it); the density values are not affected.
 
 Plot options: a **time slider** with play/pause and step buttons (profile frames are fetched once and scrubbed locally;
-maps load the slice on release), **overlay eight times** (one colour per quantity, fading in with time), a **log y axis**,
+maps fetch a slice on release or during playback), **overlay eight times** (one colour per quantity, fading in with time), a **log y axis**,
 legend toggles, a hover readout, **compare with another entry** (overlaid, dashed; the page notes when the time bases
 differ), and **export** as PNG, SVG or CSV. Wildcards expand to every source, model or unit and label each element.
 A node the entry does not have is reported as not present, never drawn as zeros; long series are thinned for drawing and the
@@ -140,11 +160,14 @@ The page can now start a program, so the posture is stricter than a viewer's:
 
 * it binds to `127.0.0.1` (another `--host` needs `--allow-remote`); every request needs the token and a `Host` header
   naming the listening address (against DNS rebinding);
-* **running is off unless `--enable-run`**; without it every POST that starts or cancels a job is refused;
-* the only POST endpoints are `convert/plan` (a dry run), `convert/start` and `jobs/<id>/cancel`. A POST needs the token in
+* **conversion is off unless `--enable-run`**; without it every POST that starts or cancels a conversion is refused.
+  Curation is allowed without it because it only reads the inputs and writes a report into its job directory (it needs the
+  same token, header, content type and origin as any POST); one job of each kind runs at a time;
+* the only POST endpoints are `convert/plan` and `curate/plan` (dry runs), `convert/start`, `curate/start` and `jobs/<id>/cancel`. A POST needs the token in
   the **`X-GUI-Token` header** (a cookie or query token is refused, so another site cannot make the browser send it),
   `Content-Type: application/json`, a body of at most 64 KiB, and, if an `Origin` header is present, the viewer's own origin;
-* the only program ever started is this repository's `convert.py`, from an **argument list** built by validators (never a
+* the only programs ever started are this repository's `convert.py` (in the IMAS interpreter) and `curate.py` (in the viewer's
+  interpreter), from an **argument list** built by validators (never a
   shell string): unknown options are rejected, values are typed and range-checked, the CDF and geometry files must be
   below the input roots (symlinks that leave them are refused), a custom database must be inside an output root, and the
   default IMAS database needs `--allow-default-database`;
@@ -159,8 +182,8 @@ The page can now start a program, so the posture is stricter than a viewer's:
 
 | Command | What it covers |
 |---|---|
-| `make verify-gui` | `verify_gui.py` (53: view models, masks, path rules, server, static-page lint), `verify_gui_convert.py` (66: option schema vs the converter, planning and overwrite guard, jobs, POST API), `verify_gui_plots.py` (plot helpers, fast-ion layout and reductions, a synthetic `distributions` entry with hand-computed answers, a **real** conversion read back and compared with the source CDF and a direct IMAS read, and real overwrite/extend/free-run conversions on a private entry) |
-| `make verify-gui-browser PLAYWRIGHT_PYTHON=...` | opt-in: Chromium drives a hostile report, a server with running off, then the whole workflow for real: typing digits one at a time, converting, the overwrite guard and free-run suggestion, a real overwrite, plotting (flux-surface contours, wall outline, ion profiles, and the fast-ion distribution function on a small synthetic entry) and export |
+| `make verify-gui` | `verify_gui.py` (view models, masks, path rules, server, static-page lint), `verify_gui_convert.py` (option schema vs the converter, planning and overwrite guard, jobs, POST API), `verify_gui_curate.py` (option schema vs `curate.py`, plan validation and file-kind checks, the **real** `curate.py` run through the job manager with its exit-code mapping, guarded POST API without `--enable-run`), `verify_gui_plots.py` (plot helpers, fast-ion layout and reductions, a synthetic `distributions` entry with hand-computed answers, a **real** conversion read back and compared with the source CDF and a direct IMAS read, and real overwrite/extend/free-run conversions on a private entry) |
+| `make verify-gui-browser PLAYWRIGHT_PYTHON=...` | opt-in: Chromium drives a hostile report, a server with conversion off (which still runs a curation and opens its report), then the whole workflow for real: typing digits one at a time, converting, the overwrite guard and free-run suggestion, a real overwrite, plotting (flux-surface contours, wall outline, ion profiles, and the fast-ion distribution function on a small synthetic entry) and export |
 
 The real-conversion tests need IMAS-Python and are skipped with that reason otherwise. Guard tests were checked by breaking
 the guard (confirmation, Origin check, header token) and confirming the suite fails.
@@ -169,18 +192,19 @@ the guard (confirmation, Origin check, header token) and confirming the suite fa
 
 ```text
 gui/reports.py, masks.py, browse.py    view models, mask reduction, the one place that decides which paths may be read
-gui/convert_plan.py                    option schema, validation, command, target-entry guard (no IMAS, no subprocess)
-gui/jobs.py                            running convert.py: log, cancel, persistent job records
+gui/convert_plan.py, curate_plan.py   option schemas, validation, commands, target-entry guard (no IMAS, no subprocess)
+gui/jobs.py                            running convert.py and curate.py: log, cancel, exit-code mapping, persistent job records
 gui/imas_worker.py, imas_client.py, recipes.py    reading converted entries for plotting (worker subprocess in the IMAS environment)
 gui/server.py                          standard-library HTTP server and API
-gui/static/                            core.js, charts.js, app.js, convert.js, explore.js, index.html, style.css (no build step, no assets)
+gui/static/                            core.js, charts.js, app.js, convert.js, curate.js, explore.js, index.html, style.css (no build step, no assets)
 ```
 
 No third-party dependency. The planning, job and view-model modules do not depend on the web layer.
 
 ## Not built yet
 
-1. A curation runner (a form for the `curate.py` options with a live log), the counterpart of the Convert view.
+1. Authoring evidence sidecars and policies in the page (they are still JSON files you write; the form picks and checks them),
+   comparing two curation reports, and running curation with plugins.
 2. Batch conversion (`-i all -d dir`), which the form deliberately does not offer.
 3. Plotting MDSplus entries (HDF5 only), comparing maps, and overlaying a CDF variable on its converted counterpart.
 4. A run history with fingerprints and one-click reruns beyond the recent-jobs list.

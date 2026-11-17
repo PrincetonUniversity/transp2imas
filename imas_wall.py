@@ -16,14 +16,12 @@ class imas_wall(IdsWriter):
 
         #scalar time
         timesc = self.cdf.get_ncvar('TIME')
-        ntimes = len(timesc)
 
         self.fill.checkErrExit(timesc)
 
         wall = self.fill.fill_properties(wall)
         self.fill.fill_code_properties(wall)
         wall.ids_properties.homogeneous_time = 1
-        wall.time.resize(ntimes)
         wall.time = timesc
 
         limitr = self.cdf.get_ncvar('RLIM', cm2m)
@@ -67,8 +65,6 @@ class imas_wall(IdsWriter):
                 rout = np.append(limitr, limitr[0])
                 zout = np.append(limitz, limitz[0])
 
-        unit.outline.r.resize(len(rout))
-        unit.outline.z.resize(len(zout))
         unit.outline.r = rout
         unit.outline.z = zout
  

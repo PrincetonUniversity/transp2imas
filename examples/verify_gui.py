@@ -444,7 +444,7 @@ class ServerTests(unittest.TestCase):
 class StaticPageSafetyTests(unittest.TestCase):
     """The page builds its DOM from report text, which analysts write: it must never reach an HTML parser or eval."""
 
-    SCRIPTS = ('core.js', 'charts.js', 'app.js', 'convert.js', 'explore.js')
+    SCRIPTS = ('core.js', 'charts.js', 'app.js', 'convert.js', 'curate.js', 'explore.js')
 
     def setUp(self):
         static = ROOT / 'gui' / 'static'
@@ -477,11 +477,11 @@ class StaticPageSafetyTests(unittest.TestCase):
         self.assertEqual(re.findall(r'\son[a-z]+\s*=', self.html), [])
         self.assertNotIn('style=', self.html)
         sources = re.findall(r'<script src="/static/([^"]+)"', self.html)
-        self.assertEqual(sources, ['core.js', 'charts.js', 'app.js', 'convert.js', 'explore.js'])      # core first: the others use it
+        self.assertEqual(sources, ['core.js', 'charts.js', 'app.js', 'convert.js', 'curate.js', 'explore.js'])      # core first: the others use it
 
-    def test_the_views_come_in_the_order_convert_explore_reports_and_the_page_lands_on_convert(self):
+    def test_the_views_come_in_the_order_convert_curate_explore_reports_and_the_page_lands_on_convert(self):
         app = self.js['app.js']
-        self.assertIn("const VIEW_NAMES = [['convert', 'Convert'], ['explore', 'Explore'], ['reports', 'Reports']];", app)
+        self.assertIn("const VIEW_NAMES = [['convert', 'Convert'], ['curate', 'Curate'], ['explore', 'Explore'], ['reports', 'Reports']];", app)
         self.assertIn(": wanted ? 'reports' : 'convert'", app)
 
     def test_the_skip_option_is_worded_for_what_it_does_not_with_the_jargon_word(self):
@@ -499,7 +499,8 @@ class StaticPageSafetyTests(unittest.TestCase):
 
     def test_the_page_says_it_is_read_only_until_running_is_enabled(self):
         self.assertIn('read-only', self.html)
-        self.assertIn("config.run_enabled ? 'conversion enabled' : 'read-only'", self.js['app.js'])
+        self.assertIn('conversion off', self.js['app.js'])
+        self.assertIn("config.run_enabled ? 'conversion enabled' : 'conversion off'", self.js['app.js'])
 
     def test_report_and_form_text_goes_through_textcontent_or_text_nodes(self):
         self.assertIn('textContent', self.js['core.js'])

@@ -99,9 +99,7 @@ class imas_nbi(IdsWriter):
             self.ctx.mapping.broken(f'{len(data)} samples on a {len(times)}-sample TIME axis', source=name,
                                     target='unit/' + name)
             return
-        node.data.resize(len(data))
         node.data = data
-        node.time.resize(len(times))
         node.time = times
 
     def build(self):
@@ -138,7 +136,6 @@ class imas_nbi(IdsWriter):
         self.fill.fill_code_properties(nbi)
         self.fill.fill_external_model_inputs(nbi, 'nbi')
         nbi.ids_properties.homogeneous_time = 1
-        nbi.time.resize(len(times))
         nbi.time = times
         self.logger.info('Done NBI')
         return [nbi]

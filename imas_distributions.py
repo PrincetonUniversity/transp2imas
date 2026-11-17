@@ -126,11 +126,14 @@ class DistributionsBuilder:
         node.description = description
 
     def _coordinate_types(self, space, coords):
-        space.coordinates_type.resize(len(coords))
         for k, (name, index, description) in enumerate(coords):
             if self.h.dd_at_least(4, 0, 0):
+                if k == 0:
+                    space.coordinates_type.resize(len(coords))
                 self._identifier(space.coordinates_type[k], name, index, description)
             else:
+                if k == 0:
+                    space.coordinates_type.resize(len(coords), refcheck=False)
                 space.coordinates_type[k] = index
 
     def _axis_space(self, space, edges, coord, description):

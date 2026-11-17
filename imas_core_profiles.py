@@ -344,7 +344,6 @@ class imas_core_profiles(IdsWriter):
         cp = self.fill.fill_properties(cp)
         self.fill.fill_code_properties(cp)
         cp.ids_properties.homogeneous_time = 1
-        cp.time.resize(ntimep)
         cp.time = self.grid.timep
 
         #NOTE: nc2imas.fill_data and fill_data_nc functions do interpolation. These

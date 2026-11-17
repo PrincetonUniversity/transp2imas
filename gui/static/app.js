@@ -263,7 +263,7 @@ async function scan() {
   } catch (error) { showError(error); }
 }
 
-const VIEW_NAMES = [['convert', 'Convert'], ['explore', 'Explore'], ['reports', 'Reports']];
+const VIEW_NAMES = [['convert', 'Convert'], ['curate', 'Curate'], ['explore', 'Explore'], ['reports', 'Reports']];
 function showView(name, argument) {
   state.view = name;
   for (const button of document.querySelectorAll('#views .view-button')) button.setAttribute('aria-selected', button.dataset.view === name);
@@ -283,9 +283,9 @@ async function start() {
   const config = state.config;
   document.getElementById('roots').textContent = `Roots: ${config.roots.join(', ')} · viewer ${config.version}`;
   const badge = document.getElementById('mode-badge');
-  badge.textContent = config.run_enabled ? 'conversion enabled' : 'read-only';
+  badge.textContent = config.run_enabled ? 'conversion enabled' : 'conversion off';
   badge.setAttribute('class', `pill ${config.run_enabled ? 'enabled' : 'readonly'}`);
-  badge.setAttribute('title', config.run_enabled ? 'This server can start conversions into the scratch IMAS database' : 'No conversion can be started from this server');
+  badge.setAttribute('title', (config.run_enabled ? 'This server can start conversions into the scratch IMAS database. ' : 'No conversion can be started from this server (restart with --enable-run). ') + (config.curate_enabled ? 'Curation can run: it only reads its inputs and writes a report into the job directory.' : 'Curation is unavailable here: ' + config.curate_reason));
   document.getElementById('views').replaceChildren(...VIEW_NAMES.map(([name, label]) => {
     const button = h('button', { class: 'view-button', type: 'button', 'data-view': name, text: label, 'aria-selected': false });
     button.addEventListener('click', () => showView(name));

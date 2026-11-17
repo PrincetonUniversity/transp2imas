@@ -9,6 +9,7 @@
   const query = (params) => Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
 
   async function inspect(path) {
+    clearInterval(ui.timer); ui.timer = null;
     ui.entry = path; ui.describe = null; ui.nodes = null; ui.plot = null; ui.df = null; ui.error = ''; ui.busy = 'Reading the entry…'; draw();
     try {
       ui.describe = await api('imas/describe', { entry: path });
@@ -125,12 +126,42 @@
     if ((isMap || isShape || (payload.kind === 'profile' && !(payload.frames && payload.frames.length))) && time && time.count > 1) {
       const slider = h('input', { type: 'range', min: 0, max: time.count - 1, value: p.time, 'aria-label': 'time' });
       const label = h('span', { class: 'timelabel', text: `t = ${fmt(time.value, 5)} s (slice ${time.index} of ${time.count})` });
+      const loadSlice = async (index) => {
+        if (p.loadingTimeSlice) return;
+        const target = Math.max(0, Math.min(time.count - 1, index));
+        slider.value = target;
+        p.loadingTimeSlice = true;
+        try {
+          p.payload = await fetchPlot(ui.entry, p.spec, target);
+          p.time = target;
+          ui.error = '';
+        } catch (error) {
+          ui.error = error.message;
+          p.playing = false;
+          clearInterval(ui.timer);
+          ui.timer = null;
+        } finally {
+          p.loadingTimeSlice = false;
+          draw();
+        }
+      };
       slider.addEventListener('input', () => { label.textContent = `slice ${slider.value} of ${time.count} (release to load)`; });
-      slider.addEventListener('change', async () => {
-        ui.busy = 'Reading the time slice…'; try { p.payload = await fetchPlot(ui.entry, p.spec, Number(slider.value)); p.time = Number(slider.value); } catch (error) { ui.error = error.message; }
-        ui.busy = ''; draw();
-      });
-      controls.push(h('div', { class: 'toolbar' }, slider, label));
+      slider.addEventListener('change', () => loadSlice(Number(slider.value)));
+      const row = [button('◀', () => loadSlice(p.time - 1), { 'aria-label': 'previous time' })];
+      if (isMap) {
+        const play = button(p.playing ? 'Pause' : 'Play', () => {
+          p.playing = !p.playing;
+          play.textContent = p.playing ? 'Pause' : 'Play';
+          clearInterval(ui.timer);
+          ui.timer = null;
+          if (p.playing) ui.timer = setInterval(() => {
+            if (!p.loadingTimeSlice) loadSlice(p.time + 1 >= time.count ? 0 : p.time + 1);
+          }, 350);
+        });
+        row.push(play);
+      }
+      row.push(button('▶', () => loadSlice(p.time + 1), { 'aria-label': 'next time' }), slider, label);
+      controls.push(h('div', { class: 'toolbar' }, ...row));
     }
     if (isMap) {
       const fill = h('input', { type: 'checkbox', checked: p.fill, 'aria-label': 'colour the map' });

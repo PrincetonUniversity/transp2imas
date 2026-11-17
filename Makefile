@@ -219,6 +219,7 @@ verify-gui:
 	$(PYTHON) examples/verify_gui.py
 	$(PYTHON) examples/verify_gui_convert.py
 	$(PYTHON) examples/verify_gui_plots.py
+	$(PYTHON) examples/verify_gui_curate.py
 
 # Opt-in: needs Playwright with a Chromium build and IMAS-Python in the server interpreter; converts the NSTX case for real.
 verify-gui-browser:

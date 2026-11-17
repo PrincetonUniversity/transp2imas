@@ -198,8 +198,7 @@ class imas_edge_sources(IdsWriter):
         q.grid_index = self.GRID_INDEX
         q.grid_subset_index = self.GRID_SUBSET_INDEX
         data = sign * np.asarray(values[it], dtype=np.float64)
-        q.values.resize(len(data))
-        q.values[:] = data
+        q.values = data
         return True
 
     def _set_momentum_ggd(self, aos, values, it, sign=1.0):
@@ -219,7 +218,7 @@ class imas_edge_sources(IdsWriter):
         q.grid_subset_index = self.GRID_SUBSET_INDEX
         data = sign * np.asarray(values[it], dtype=np.float64)
         arr = getattr(q, field)
-        arr.resize(len(data))
+        arr.value.resize(len(data), refcheck=False)
         arr[:] = data
         return True
 

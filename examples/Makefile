@@ -72,6 +72,7 @@ quick:
 	$(PYTHON) verify_gui.py
 	$(PYTHON) verify_gui_convert.py
 	$(PYTHON) verify_gui_plots.py
+	$(PYTHON) verify_gui_curate.py
 	$(PYTHON) verify_conversion_runner.py
 	$(PYTHON) verify_cocos_signs.py
 	$(PYTHON) verify_code_provenance.py

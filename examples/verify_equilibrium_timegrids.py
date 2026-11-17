@@ -124,7 +124,7 @@ def writer_contract():
     lines = ast.unparse(method)
     require('eqm.time_slice.resize(ntimep)' in lines,
             'equilibrium.time_slice must use TIME3 length')
-    require('eqm.time[:] = timep' in lines,
+    require('eqm.time = timep' in lines,
             'equilibrium.time must use TIME3 values')
     for name in ('elongb', 'triangb', 'triang_lob', 'triang_upb'):
         require(f'{name} = ' in lines and '[:, -1]' in lines,

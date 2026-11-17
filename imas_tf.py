@@ -11,7 +11,6 @@ class imas_tf(IdsWriter):
         tf = self.dd.new_ids('tf')
         #scalar time
         timesc = self.cdf.get_ncvar('TIME')
-        ntimes = len(timesc)
         self.fill.checkErrExit(timesc)
 
         # BZXR(TIME) TESLA*CM; vacuum toroidal field times major radius.
@@ -29,7 +28,6 @@ class imas_tf(IdsWriter):
         tf = self.fill.fill_properties(tf)
         self.fill.fill_code_properties(tf)
         tf.ids_properties.homogeneous_time = 1
-        tf.time.resize(ntimes)
         tf.time = timesc
         self.logger.info('Done TF')
         return [tf]
