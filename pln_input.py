@@ -1,3 +1,4 @@
+#!/usr/bin/python
 """Reader for TRANSP's formatted TF/YF/XF plotting files.
 
 XF data is indexed as byte ranges so large native profile files are not copied
