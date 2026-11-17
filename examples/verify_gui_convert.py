@@ -118,8 +118,11 @@ class PlanTests(unittest.TestCase):
         self.assertEqual((target['machine'], target['shot'], target['run'], target['backend']), ('SYNTHETIC', 1, 2610, 'HDF5'))
         expected = self.config.scratch_database / 'SYNTHETIC' / '4' / '1' / '2610'
         self.assertEqual(target['primary'], str(expected))
-        self.assertEqual(plan['argv'][:4], ['-i', str(self.cdf.resolve()), '-b', 'HDF5'])
-        self.assertEqual(plan['argv'][plan['argv'].index('-u') + 1], str(self.config.scratch_database))
+        argv = plan['argv']
+        self.assertEqual(argv[argv.index('-i') + 1], str(self.cdf.resolve()))
+        self.assertEqual(argv[argv.index('--input-format') + 1], 'netcdf')
+        self.assertEqual(argv[argv.index('-b') + 1], 'HDF5')
+        self.assertEqual(argv[argv.index('-u') + 1], str(self.config.scratch_database))
 
     def test_a_machine_override_and_run_number_change_the_target(self):
         target = self.plan({'dd_version': '3.39.0', 'machine': 'NSTX', 'run': 77})['target']
