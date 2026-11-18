@@ -296,6 +296,13 @@ messages.
   This prevents all-example false failures from `json.dumps` and restores real
   IMAS readback to the end-to-end verification sequence.
 
+## [0.17.0](https://github.com/PrincetonUniversity/transp2imas/compare/v0.16.0...v0.17.0) (2026-11-18)
+
+
+### Features
+
+* Pln support recovery ([#130](https://github.com/PrincetonUniversity/transp2imas/issues/130)) ([f467de4](https://github.com/PrincetonUniversity/transp2imas/commit/f467de4ddcbb7c2f1e817673fe672e65c026cd09))
+
 ## [0.16.0](https://github.com/PrincetonUniversity/transp2imas/compare/v0.15.0...v0.16.0) (2026-11-17)
 
 
