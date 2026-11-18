@@ -126,6 +126,10 @@ def find_runid_shot_code(runid):
 def print_progress(tot, at):
     if not sys.stdout.isatty():
       return
+    # A single time slice has no interval over which to display progress.
+    # Avoid dividing by zero when writers call print_progress(ntime - 1, 0).
+    if tot <= 0:
+      return
     bar = 50
     progr = int(at*bar/tot)
     comp = str(int(at*100/tot)) + '%'
@@ -161,7 +165,11 @@ def build_parser():
     desc = f' (To run all CDF files in <dir_path> and its subdirs: -i all -d <dir_path>)'
     parser = argparse.ArgumentParser(description='Convert TRANSP output CDF to IMAS IDS' + desc)
     parser.add_argument('-i', '--input-cdf', type=str,
-        help='CDF TRANSP output file, with or without .CDF')
+        help='TRANSP output file: <runid>.CDF (default) or native <runid>XF.PLN')
+    parser.add_argument('--input-format', choices=['netcdf', 'pln'], default='netcdf',
+        help='input format; default is NetCDF CDF')
+    parser.add_argument('--pln-time-selection', choices=['last', 'all'], default='all',
+        help='native PLN history: convert the last available time or the whole time history')
     parser.add_argument('-d', '--input-dir', type=str,
         help='input directory (file can be in its subdir), if file not in pwd')
     parser.add_argument('-b', '--backend', type=str, default='MDS',
@@ -216,14 +224,22 @@ def get_args(argv=None):
         parser.print_help(sys.stderr)
         print("Example: \npython convert.py -i 147634G14 [ -r 1 -b MDS -new -l debug]\n")
         sys.exit(1)
+    if args.input_format == 'pln' and not args.machine:
+        raise ValueError('Native PLN input has no machine metadata; pass --machine (for example, --machine NSTU)')
 
-    #get runid, DAT filename from input cdf filename
-    runno, shot, rid = find_runid_shot_code(args.input_cdf)
+    # Get runid and DAT filename from the selected TRANSP output name.
+    run_name = args.input_cdf
+    if args.input_format == 'pln' and Path(run_name).name.upper().endswith('XF.PLN'):
+        run_name = str(Path(run_name).with_name(Path(run_name).name[:-6]))
+    runno, shot, rid = find_runid_shot_code(run_name)
 
     #ncfile and nml file
     nml = str(shot)+rid+'TR.DAT'
     extn = Path(args.input_cdf).suffix
-    ncfile = args.input_cdf if 'CDF' in extn.upper() else args.input_cdf + '.CDF'
+    if args.input_format == 'pln':
+        ncfile = args.input_cdf if Path(args.input_cdf).name.upper().endswith('XF.PLN') else args.input_cdf + 'XF.PLN'
+    else:
+        ncfile = args.input_cdf if 'CDF' in extn.upper() else args.input_cdf + '.CDF'
     fdir = Path(ncfile).parent
     cwd = Path().absolute()
     #if cdf file is not in cwd, then use DAT from dir of cdf file
@@ -246,7 +262,7 @@ def get_args(argv=None):
             nml = res[0]
 
     if not check_file_exists(ncfile):
-        raise Exception(f'NC file {ncfile} not found.')
+        raise Exception(f'Input file {ncfile} not found.')
     if not check_file_exists(nml):
         print(f'*** WARNING: namelist {nml} not found.')
 
@@ -289,5 +305,7 @@ def get_args(argv=None):
     user = args.user if args.user else None
     #new_db = True if occur == 0 else False
 
-    return backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, nzones, debug, ec_nml, args.ip_direction, args.bt_direction, args.dd_version, args.pf_passive_geometry, args.pf_active_geometry, args.ids, args.report_json
+    return (backend, run, occur, user, machine, newdb, ncfile, nml, log, moments, nzones, debug, ec_nml,
+            args.ip_direction, args.bt_direction, args.dd_version, args.pf_passive_geometry, args.pf_active_geometry,
+            args.ids, args.report_json, args.input_format, args.pln_time_selection)
 
