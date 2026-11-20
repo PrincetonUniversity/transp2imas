@@ -158,8 +158,7 @@ class imas_edge_sources(IdsWriter):
                 space.coordinates_type[0], 'rho_tor_norm', 12,
                 'Normalized toroidal flux coordinate')
         else:
-            space.coordinates_type.resize(1)
-            space.coordinates_type[0] = 12
+            space.coordinates_type = np.array([12], dtype=np.int32)
 
     def _fill_grid(self, grid, it):
         grid.time = float(self.time[it])
