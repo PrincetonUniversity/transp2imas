@@ -12,6 +12,7 @@ Examples
 
 import sys
 import imas
+import numpy as np
 
 
 def version_tuple(version):
@@ -481,12 +482,16 @@ def inspect_version(version):
 
     # coordinates_type changes from INT_1D in DD3 to identifier AoS in DD4.
     try:
-        esp.coordinates_type.resize(1)
         if vt[0] >= 4:
+            esp.coordinates_type.resize(1)
             check(hasattr(esp.coordinates_type[0], "index") and hasattr(esp.coordinates_type[0], "name"),
                   "DD4 edge_sources coordinates_type is not identifier AoS", errors)
+        else:
+            esp.coordinates_type = np.array([12], dtype=np.int32)
+            check(list(esp.coordinates_type) == [12],
+                  "DD3 edge_sources coordinates_type does not store integer coordinate codes", errors)
     except Exception as exc:
-        errors.append(f"edge_sources coordinates_type resize failed: {exc}")
+        errors.append(f"edge_sources coordinates_type initialization failed: {exc}")
 
     waves = factory.new("waves")
     waves.coherent_wave.resize(1)
