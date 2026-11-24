@@ -114,12 +114,13 @@ class PlnInput:
         self.runid, self.shot = self._identity()
         self.attributes = {"device": machine, "shot": self.shot, "Runid": self.runid}
         if self.tf_path.is_file():
-            self.profiles, self.axes, self.scalar_names = self._read_tf()
+            self.profiles, self.axes, self.scalar_names, self.tf_attributes = self._read_tf()
             self.variable_schema = {}
             if self.cdf_path is not None:
                 _, _, _, self.variable_schema = self._read_cdf_schema()
         else:
             self.profiles, self.axes, self.scalar_names, self.variable_schema = self._read_cdf_schema()
+            self.tf_attributes = {}
         self.file = self.xf_path.open("rb")
         self.profile_index, profile_times = self._index_xf()
         self.scalar_names, scalar_values, scalar_times = self._read_yf()
@@ -139,7 +140,8 @@ class PlnInput:
         }
         for name in self.scalar_names:
             schema = self.variable_schema.get(name, (("TIME",), None, {}))
-            self.variables[name] = _PlnVariable(self, name, schema[0], schema[2])
+            attributes = self._merge_attributes(self.tf_attributes.get(name), schema[2])
+            self.variables[name] = _PlnVariable(self, name, schema[0], attributes)
         for name, records in self.profile_index.items():
             if len({records[i][2] for i in self._selected_indices}) != 1:
                 continue
@@ -155,7 +157,8 @@ class PlnInput:
                 if axis_type not in self.axes:
                     continue
                 dimensions = ("TIME3", self.axes[axis_type])
-            attributes = schema[2] if schema is not None else {}
+            schema_attributes = schema[2] if schema is not None else {}
+            attributes = self._merge_attributes(self.tf_attributes.get(name), schema_attributes)
             self.variables[name] = _PlnVariable(self, name, dimensions, attributes)
         dataset = _Dataset(self)
         dataset.variables.update(self.variables)
@@ -168,6 +171,16 @@ class PlnInput:
         if not match:
             raise ValueError(f"Cannot derive shot and run id from {self.xf_path.name}")
         return runid, int(match.group(1))
+
+    @staticmethod
+    def _merge_attributes(tf_attributes, schema_attributes):
+        """Use TF.PLN labels as metadata, with nonempty CDF attributes taking precedence."""
+        attributes = dict(tf_attributes or {})
+        for name, value in (schema_attributes or {}).items():
+            if value is None or (isinstance(value, (str, bytes)) and not value.strip()):
+                continue
+            attributes[name] = value
+        return attributes
 
     def _read_cdf_schema(self):
         """Use a matching CDF's declarations to label YF columns when TF.PLN is absent."""
@@ -210,10 +223,15 @@ class PlnInput:
             index += 1
         index += 1
         scalars = []
+        attributes = {}
         for _ in range(nscalar):
             if index + 2 >= len(lines):
                 raise ValueError("Truncated TF.PLN scalar labels")
-            scalars.append(lines[index].split()[0].upper())
+            name = lines[index].split()[0].upper()
+            scalars.append(name)
+            label = self._tf_variable_attributes(lines, index)
+            if label:
+                attributes[name] = label
             index += 3
         profiles = {}
         for _ in range(nprofile):
@@ -222,12 +240,28 @@ class PlnInput:
             parts = lines[index].split()
             if len(parts) < 2:
                 raise ValueError("Malformed TF.PLN profile descriptor")
-            profiles[parts[0].upper()] = int(parts[1])
+            name = parts[0].upper()
+            profiles[name] = int(parts[1])
+            label = self._tf_variable_attributes(lines, index)
+            if label:
+                attributes[name] = label
             index += 3
         # The current IMAS writers accept only TRANSP's zone-centre and zone-boundary
         # radial grids. TF.PLN profile type 1/2 identifies those grids directly.
         axes = {1: "X", 2: "XB"}
-        return profiles, axes, scalars
+        return profiles, axes, scalars, attributes
+
+    @staticmethod
+    def _tf_variable_attributes(lines, index):
+        """Read the unit and descriptive label following a TF.PLN variable name."""
+        attributes = {}
+        units = lines[index + 1].strip()
+        long_name = lines[index + 2].strip()
+        if units:
+            attributes["units"] = units
+        if long_name:
+            attributes["long_name"] = long_name
+        return attributes
 
     def _index_xf(self):
         records = {}
